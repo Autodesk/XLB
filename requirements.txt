@@ -1,0 +1,8 @@
+jax==0.4.6
+jaxlib==0.4.6
+jmp==0.0.4
+matplotlib==3.7.1
+numpy==1.24.2
+pyvista==0.38.5
+Rtree==1.0.1
+trimesh==3.20.2
