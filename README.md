@@ -1,3 +1,6 @@
+[![GitHub star chart](https://img.shields.io/github/stars/Autodesk/XLB?style=social)](https://star-history.com/#Autodesk/XLB)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 <p align="center">
   <img src="assets/logo-transparent.png" alt="" width="700">
 </p>
