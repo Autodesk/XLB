@@ -1,0 +1,146 @@
+# MkDocs.yml
+# The YAML configuration file defines the settings
+# for the entire site, including where pages are found, layout, markdown extensions,
+# plugins, additional css and javascript, and much more
+#
+# The configuration parameters listed below are some examples and explainations of
+# what can be set, but is not all-encompassing. Please see the MkDocs online user
+# guide for a full breakdown of configuration
+
+# This setting is required, and should be a string that is
+# used as the main title for the project documentation
+site_name: ''
+
+# The canonical URL of the site
+# adds a link tag to the generated HTML header
+site_url: https://example.com/
+
+docs_dir: docs
+
+# This will provide a link to the repository in the menu bar
+repo_name: 'Github'
+
+# This should be set to the link to the online repository that contains the site,
+# most likely on Bitbucket
+repo_url: https://github.com/Autodesk/XLB
+
+# This should be the relative path from repo_url to the docs folder
+# This parameter is used by some themes to provide an 'edit' link on each page of the site
+# that takes the user to the markdown source on the repository
+edit_uri: edit/master/docs/
+
+watch:
+- ./src/
+
+# Can be used to add a meta tag to the HTML header
+site_description: 'Documentation for project XLB'
+
+# Sets the theme and theme configuration for the site
+# See https://github.com/mkdocs/mkdocs/wiki/MkDocs-Themes for a list of themes
+# that can be installed.
+theme:
+        # Name of the theme
+        name: material
+        features:
+          - header.autohide
+        logo: assets/logo.svg
+        # Favicon
+        favicon: assets/logo.svg
+        # Directory containing theme customizations
+        # custom_dir: theme_customizations/
+        font:
+          text: Ubuntu
+
+        palette:
+  # Palette toggle for light mode
+        - scheme: default
+          primary: white grey
+          toggle:
+            icon: material/brightness-7
+            name: Switch to dark mode
+
+  # Palette toggle for dark mode
+        - scheme: slate
+          primary: red
+          toggle:
+            icon: material/brightness-4
+            name: Switch to light mode
+
+
+
+# MkDocs uses the Python Markdown library to translate the markdown pages into HTML
+# this configuration parameter allows for Python Markdown extensions to be added that
+# customize how the markdown is formatted
+markdown_extensions:
+  - extra
+  - admonition
+  - codehilite
+  - smarty
+  - pymdownx.arithmatex:
+      generic: true
+  - attr_list
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      use_pygments: true
+      linenums: true
+      anchor_linenums: true
+      linenums_style: table
+  - pymdownx.snippets
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+
+# MkDocs supports plugins written in Python to extend the functionality of the site
+# This parameter contains a list of the MkDocs plugins to add to the site
+plugins:
+  - search
+  - autolinks
+  - mkdocstrings:
+      default_handler: python
+
+  # - toc-sidebar
+  # - tooltipster-links
+
+
+
+#theme:
+#  #name: readthedocs
+#  name: readthedocs
+#  navigation_depth: 4
+#  features:
+#    - content.code.annotate
+#    - navigation.instant
+#    - navigation.tracking
+#    - navigation.tabs
+#    - navigation.tabs.sticky
+#    - navigation.sections
+#    - navigation.expand
+#    - navigation.indexes
+#    - toc.integrate
+
+#markdown_extensions:
+#  - pymdownx.arithmatex:
+#      generic: true
+#  - attr_list
+#  - pymdownx.superfences
+#  - pymdownx.highlight:
+#      use_pygments: true
+#      linenums: true
+#      anchor_linenums: true
+#      linenums_style: table
+##  - pymdownx.snippets
+##  - pymdownx.highlight
+##  - pymdownx.inlinehilite
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - XLB's home: index.md
+  - XLB API:
+    - XLB base: base.md
+    - XLB models: models.md
+    - XLB lattice: lattice.md
+    - XLB utils: utils.md
+    - XLB boundary conditions: boundary_conditions.md
