@@ -4,8 +4,8 @@ on:
     branches:
       - master 
       - main
-    paths:
-      - 'docs/**'
+    # paths:
+    #   - 'docs/**'
   pull_request:
     branches:
       - master 
@@ -29,6 +29,6 @@ jobs:
           path: .cache
           restore-keys: |
             mkdocs-material-
-      - run: pip install mkdocs-material mkdocs-autolinks-plugin
+      - run: pip install mkdocs-material Markdown markdown-it-py mkdocs-autolinks-plugin mkdocstrings mkdocstrings-python mkdocs-autorefs  mkdocs-material-extensions
       - run: mkdocs build
       - run: mkdocs gh-deploy --force
