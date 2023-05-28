@@ -4,14 +4,8 @@ on:
     branches:
       - master 
       - main
-    # paths:
-    #   - 'docs/**'
-  pull_request:
-    branches:
-      - master 
-      - main 
     paths:
-        - 'docs/**'
+      - 'docs/**'
 permissions:
   contents: write
 jobs:
