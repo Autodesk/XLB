@@ -4,6 +4,14 @@ on:
     branches:
       - master 
       - main
+    paths:
+      - 'docs/**'
+  pull_request:
+    branches:
+      - master 
+      - main 
+    paths:
+        - 'docs/**'
 permissions:
   contents: write
 jobs:
@@ -21,5 +29,6 @@ jobs:
           path: .cache
           restore-keys: |
             mkdocs-material-
-      - run: pip install mkdocs-material 
+      - run: pip install mkdocs-material mkdocs-autolinks-plugin
+      - run: mkdocs build
       - run: mkdocs gh-deploy --force
