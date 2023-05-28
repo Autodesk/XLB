@@ -1,6 +1,5 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub star chart](https://img.shields.io/github/stars/Autodesk/XLB?style=social)](https://star-history.com/#Autodesk/XLB)
-
 <p align="center">
   <img src="assets/logo-transparent.png" alt="" width="700">
 </p>
@@ -18,7 +17,7 @@ XLB (Accelerated LB) is a fully differentiable 2D/3D Lattice Boltzmann Method (L
 - **Platform Versatility:** The same XLB code can be executed on a variety of platforms including multi-core CPUs, single or multi-GPU systems, TPUs, and it also supports distributed runs on multi-GPU systems or TPU Pod slices.
 
 ## Documentation
-The documentation can be found [here](https://github.com/Autodesk/XLB/wiki) (in preparation)
+The documentation can be found [here](https://autodesk.github.io/XLB/) (in preparation)
 ## Showcase
 
 The following examples showcase the capabilities of XLB:
@@ -80,9 +79,11 @@ The following examples showcase the capabilities of XLB:
 
 ## Installation Guide
 
-To install XLB, you can run the following commands:
+To use XLB, you must first install JAX and other dependencies using the following commands:
 
 ```bash
+# Please refer to https://github.com/google/jax for the latest installation documentation
+
 pip install --upgrade pip
 
 # For CPU run
@@ -96,10 +97,16 @@ pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-re
 # CUDA 11 and cuDNN 8.6 or newer.
 pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
-# Please refer to https://github.com/google/jax for the latest installation documentation
-
 # Run dependencies
 pip install jmp pyvista numpy matplotlib Rtree trimesh jmp
+```
+
+Run an example:
+```bash
+git clone https://github.com/Autodesk/XLB
+cd XLB
+export PYTHONPATH=.
+python3 examples/cavity2d.py
 ```
 ## Citing XLB
 Accompanying publication coming soon:
