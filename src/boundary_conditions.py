@@ -14,8 +14,12 @@ class BoundaryCondition(object):
     ----------
     lattice : Lattice
         The lattice used in the simulation.
-    nx, ny, nz : int
-        The dimensions of the lattice.
+    nx:
+        The number of nodes in the x direction.
+    ny:
+        The number of nodes in the y direction.
+    nz:
+        The number of nodes in the z direction.
     dim : int
         The number of dimensions in the simulation (2 or 3).
     precision_policy : PrecisionPolicy
@@ -728,8 +732,8 @@ class ZouHe(BoundaryCondition):
         on the prescribed values and the type of boundary condition, and then setting the unknown distribution functions
         based on the non-equilibrium bounce-back method. 
         Tangential velocity is not ensured to be zero by adding transverse contributions based on
-        # Hecth & Harting (2010) (doi:10.1088/1742-5468/2010/01/P01018) as it caused numerical instabilities at higher
-        # Reynolds numbers. One needs to use "Regularized" BC at higher Reynolds.
+        Hecth & Harting (2010) (doi:10.1088/1742-5468/2010/01/P01018) as it caused numerical instabilities at higher
+        Reynolds numbers. One needs to use "Regularized" BC at higher Reynolds.
         """
         # compute the equilibrium based on prescribed values and the type of BC
         feq = self.calculate_equilibrium(fout)

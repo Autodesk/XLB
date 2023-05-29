@@ -211,19 +211,10 @@ class LatticeD2Q9(Lattice):
     D2Q9 stands for two-dimensional nine-velocity model. It is a common model used in the 
     Lat tice Boltzmann Method for simulating fluid flows in two dimensions.
 
-    Parameters:
-    cs: float
-        The speed of sound in the lattice units.
-    cs2: float
-        The square of the speed of sound in the lattice units.
-    inv_cs2: float
-        The inverse of the square of the speed of sound in the lattice units.
-    i_s: numpy.ndarray
-        The indices of the velocities.
-    im: int
-        The number of middle velocities (including the rest velocity).
-    ik: int
-        The number of known or unknown velocities.
+    Parameters
+    ----------
+    precision: str, optional
+        The precision of the lattice. The default is "f32/f32"
     """
     def __init__(self, precision="f32/f32"):
         super().__init__("D2Q9", precision)
@@ -245,7 +236,10 @@ class LatticeD3Q19(Lattice):
     D3Q19 stands for three-dimensional nineteen-velocity model. It is a common model used in the 
     Lattice Boltzmann Method for simulating fluid flows in three dimensions.
 
-    Parameters are the same as in LatticeD2Q9, but with different values.
+    Parameters
+    ----------
+    precision: str, optional
+        The precision of the lattice. The default is "f32/f32"
     """
     def __init__(self, precision="f32/f32"):
         super().__init__("D3Q19", precision)
@@ -268,7 +262,10 @@ class LatticeD3Q27(Lattice):
     D3Q27 stands for three-dimensional twenty-seven-velocity model. It is a common model used in the 
     Lattice Boltzmann Method for simulating fluid flows in three dimensions.
 
-    Parameters are the same as in LatticeD2Q9, but with different values.
+    Parameters
+    ----------
+    precision: str, optional
+        The precision of the lattice. The default is "f32/f32"
     """
 
     def __init__(self, precision="f32/f32"):

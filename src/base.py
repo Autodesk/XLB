@@ -59,12 +59,11 @@ class LBMBase(object):
         self.w = self.lattice.w
         self.dim = self.lattice.d
         self.ret_fpost = False
-        """
-        Adjust the number of grid points in the x direction, if necessary.
-        If the number of grid points is not divisible by the number of devices
-        it increases the number of grid points to the next multiple of the number of devices.
-        This is done in order to accommodate the domain partitioning per XLA device
-        """
+        
+        # Adjust the number of grid points in the x direction, if necessary.
+        # If the number of grid points is not divisible by the number of devices
+        # it increases the number of grid points to the next multiple of the number of devices.
+        # This is done in order to accommodate the domain partitioning per XLA device
         self.nx = nx
         if nx % self.n_devices:
             self.nx = nx + (self.n_devices - nx % self.n_devices)
