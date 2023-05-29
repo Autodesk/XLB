@@ -76,6 +76,14 @@ markdown_extensions:
   - admonition
   - codehilite
   - smarty
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - markdown.extensions.attr_list
+  - markdown.extensions.def_list
+  - markdown.extensions.fenced_code
+  - markdown.extensions.footnotes
+  - markdown.extensions.tables
+  - markdown.extensions.toc
   - pymdownx.arithmatex:
       generic: true
   - attr_list
@@ -95,8 +103,10 @@ plugins:
   - search
   - autolinks
   - mkdocstrings:
-      default_handler: python
-
+      handlers:
+        python:
+          options:
+            separate_signature: true      
   # - toc-sidebar
   # - tooltipster-links
 
