@@ -44,21 +44,21 @@ class Airfoil(KBCSim):
         airfoil_indices = np.argwhere(airfoil_mask)
         wall = np.concatenate((airfoil_indices,
                                self.boundingBoxIndices['bottom'], self.boundingBoxIndices['top']))
-        self.BCs.append(BounceBack(tuple(wall.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
 
         doNothing = self.boundingBoxIndices['right']
-        self.BCs.append(DoNothing(tuple(doNothing.T), self.grid_info, self.precision_policy))
+        self.BCs.append(DoNothing(tuple(doNothing.T), self.gridInfo, self.precisionPolicy))
 
         inlet = self.boundingBoxIndices['left']
-        rho_inlet = np.ones(inlet.shape[0], dtype=self.precision_policy.compute_dtype)
-        vel_inlet = np.zeros(inlet.shape, dtype=self.precision_policy.compute_dtype)
+        rho_inlet = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
+        vel_inlet = np.zeros((inlet.shape), dtype=self.precisionPolicy.compute_dtype)
 
         vel_inlet[:, 0] = inlet_vel
-        self.BCs.append(EquilibriumBC(tuple(inlet.T), self.grid_info, self.precision_policy, rho_inlet, vel_inlet))
+        self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_inlet, vel_inlet))
 
     def output_data(self, **kwargs):
         # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
-        rho = np.array(kwargs['rho'][..., 1:-1])
+        rho = np.array(kwargs['rho'][..., 1:-1, :])
         u = np.array(kwargs['u'][..., 1:-1, :])
         timestep = kwargs['timestep']
         u_prev = kwargs['u_prev'][..., 1:-1, :]
@@ -69,7 +69,7 @@ class Airfoil(KBCSim):
         err = np.sum(np.abs(u_old - u_new))
         print('error= {:07.6f}'.format(err))
         # save_image(timestep, rho, u)
-        fields = {"rho": rho, "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
+        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
 
 if __name__ == '__main__':
@@ -102,4 +102,4 @@ if __name__ == '__main__':
     sim = Airfoil(lattice, omega, nx, ny, nz, precision=precision)
     print('Domain size: ', sim.nx, sim.ny, sim.nz)
 
-    sim.run(20000, print_iter=200, io_iter=1000)
+    sim.run(20000, error_report_rate=200, io_rate=1000)

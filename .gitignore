@@ -142,3 +142,7 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+
+# Checkpoints (default dir for XLB)
+checkpoints/*

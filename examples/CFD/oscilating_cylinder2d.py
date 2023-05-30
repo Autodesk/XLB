@@ -26,7 +26,7 @@ class Cylinder(KBCSim):
     def set_boundary_conditions(self):
 
         wall = np.concatenate([self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
-        self.BCs.append(BounceBack(tuple(wall.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
 
         coord = np.array([np.unravel_index(i, (self.nx, self.ny)) for i in range(self.nx*self.ny)]) 
         xx, yy = coord[:, 0], coord[:, 1]
@@ -55,28 +55,28 @@ class Cylinder(KBCSim):
             # Calculate the velocity of the cylinder. The x-component is always 0 (the cylinder 
             # doesn't move horizontally), and the y-component is the derivative of the sinusoidal 
             # function governing the cylinder's motion, scaled by the amplitude and the scale factor.
-            velocity = jnp.array([0., jnp.cos(time/scale)* A / scale], dtype=self.precision_policy.compute_dtype)
+            velocity = jnp.array([0., jnp.cos(time/scale)* A / scale], dtype=self.precisionPolicy.compute_dtype)
             
             return indices, velocity
 
-        self.BCs.append(BounceBackMoving(self.grid_info, self.precision_policy, update_function=update_function))
+        self.BCs.append(BounceBackMoving(self.gridInfo, self.precisionPolicy, update_function=update_function))
 
 
         outlet = self.boundingBoxIndices['right']
-        self.BCs.append(ExtrapolationOutflow(tuple(outlet.T), self.grid_info, self.precision_policy))
+        self.BCs.append(ExtrapolationOutflow(tuple(outlet.T), self.gridInfo, self.precisionPolicy))
 
         inlet = self.boundingBoxIndices['left']
-        vel_inlet = np.zeros(inlet.shape, dtype=self.precision_policy.compute_dtype)
+        vel_inlet = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
         yy_inlet = yy.reshape(self.nx, self.ny)[tuple(inlet.T)]
         vel_inlet[:, 0] = poiseuille_profile(yy_inlet,
                                              yy_inlet.min(),
                                              yy_inlet.max()-yy_inlet.min(), 3.0 / 2.0 * u_inlet)
-        self.BCs.append(Regularized(tuple(inlet.T), self.grid_info, self.precision_policy, 'velocity', vel_inlet))
+        self.BCs.append(Regularized(tuple(inlet.T), self.gridInfo, self.precisionPolicy, 'velocity', vel_inlet))
 
 
     def output_data(self, **kwargs):
         # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
-        rho = np.array(kwargs["rho"][..., 1:-1])
+        rho = np.array(kwargs["rho"][..., 1:-1, :])
         u = np.array(kwargs["u"][..., 1:-1, :])
         timestep = kwargs["timestep"]
         u_prev = kwargs["u_prev"][..., 1:-1, :]
@@ -96,9 +96,9 @@ class Cylinder(KBCSim):
         print('error= {:07.6f}, CL = {:07.6f}, CD = {:07.6f}'.format(err, cl, cd))
         save_image(timestep, u)
         # u magnitude
-        fields = {'rho': rho, 'u': np.linalg.norm(u, axis=2)}
+        fields = {'rho': rho[..., 0], 'u': np.linalg.norm(u, axis=2)}
         save_fields_vtk(timestep, fields)
-        save_BCs_vtk(timestep, self.BCs, self.grid_info)
+        save_BCs_vtk(timestep, self.BCs, self.gridInfo)
 
 # Helper function to specify a parabolic poiseuille profile
 poiseuille_profile  = lambda x,x0,d,umax: np.maximum(0.,4.*umax/(d**2)*((x-x0)*d-(x-x0)**2))
@@ -124,4 +124,4 @@ if __name__ == '__main__':
 
     # need to retain fpost-collision for computation of lift and drag
     sim.ret_fpost = True
-    sim.run(1000000, print_iter=500, io_iter=500)
+    sim.run(1000000, error_report_rate=500, io_rate=500)

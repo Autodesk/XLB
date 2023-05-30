@@ -10,6 +10,8 @@ from jax.experimental import mesh_utils
 from jax.experimental.shard_map import shard_map
 from jax.experimental.multihost_utils import process_allgather
 from jax import jit, lax, vmap
+from termcolor import colored
+from orbax.checkpoint import *
 import time
 import jax.numpy as jnp
 import numpy as np
@@ -37,43 +39,65 @@ class LBMBase(object):
         optimize (bool, optional): Whether or not to run adjoint optimization (not functional yet). Defaults to False.
     """
     
-    def __init__(self, lattice, omega, nx, ny, nz=0, precision="f32/f32", optimize=False):
+    def __init__(self, **kwargs):
         # Set the precision for computation and storage
+        precision = kwargs.get("precision", "f32/f32")
+        optimize = kwargs.get("optimize", False)
+        checkpoint_rate = kwargs.get("checkpoint_rate", 0)
+        checkpoint_dir = kwargs.get("checkpoint_dir", './checkpoints')
+        
+
         computedType, storedType = self.set_precisions(precision)
-        self.precision_policy = jmp.Policy(compute_dtype=computedType,
+        self.precisionPolicy = jmp.Policy(compute_dtype=computedType,
                                             param_dtype=computedType, output_dtype=storedType)
-        self.precision = precision
         self.optimize = optimize
-        self.n_devices = jax.device_count()
+        self.nDevices = jax.device_count()
 
         # Check for distributed mode
-        if self.n_devices > jax.local_device_count():
+        if self.nDevices > jax.local_device_count():
             print("WARNING: Running in distributed mode. Make sure that jax.distributed.initialize is called before performing any JAX computations.")
         print("XLA backend:", jax.default_backend())
-        print("Number of XLA devices available:", self.n_devices)
-        self.p_i = np.arange(self.n_devices)
+        print("Number of XLA devices available: " + colored(f'{self.nDevices}', 'green'))
+        self.p_i = np.arange(self.nDevices)
+
+        # Set the lattice and relaxation parameter
+        lattice = kwargs.get("lattice", None)
+        if lattice is None:
+            raise ValueError("lattice must be provided")
+        omega = kwargs.get("omega", 1.0)
         self.lattice = lattice
         self.omega = omega
         self.c = self.lattice.c
         self.q = self.lattice.q
         self.w = self.lattice.w
         self.dim = self.lattice.d
+
+        # Run attibutes initialization
         self.ret_fpost = False
+        self.downsampling_factor = 1 # Factor to downsample the output data for I/O
+        self.io_rate = 1 # Rate at which to perform I/O
+        self.error_report_rate = 0 # Rate at which to report the error
+        self.checkpoint_rate = checkpoint_rate # Rate at which to checkpoint the simulation
+
+        mngr_options = CheckpointManagerOptions(save_interval_steps=checkpoint_rate, max_to_keep=1)
+        self.mngr = CheckpointManager(checkpoint_dir, PyTreeCheckpointer(), options=mngr_options)
         
         # Adjust the number of grid points in the x direction, if necessary.
         # If the number of grid points is not divisible by the number of devices
         # it increases the number of grid points to the next multiple of the number of devices.
         # This is done in order to accommodate the domain partitioning per XLA device
+        nx, ny, nz = kwargs.get("nx"), kwargs.get("ny"), kwargs.get("nz")
+        if None in {nx, ny, nz}:
+            raise ValueError("nx, ny, and nz must be provided")
         self.nx = nx
-        if nx % self.n_devices:
-            self.nx = nx + (self.n_devices - nx % self.n_devices)
+        if nx % self.nDevices:
+            self.nx = nx + (self.nDevices - nx % self.nDevices)
             print("nx increased from {} to {} in order to accommodate the domain partitioning per XLA device.".format(nx, self.nx))
-
         self.ny = ny
         self.nz = nz
     
         # Store grid information
-        self.grid_info = {
+        self.gridInfo = {
             "nx": self.nx,
             "ny": self.ny,
             "nz": self.nz,
@@ -84,29 +108,26 @@ class LBMBase(object):
         P = PartitionSpec
 
         # Define the right permutation
-        self.right_perm = [(i, (i + 1) % self.n_devices) for i in range(self.n_devices)]
+        self.rightPerm = [(i, (i + 1) % self.nDevices) for i in range(self.nDevices)]
         # Define the left permutation
-        self.left_perm = [((i + 1) % self.n_devices, i) for i in range(self.n_devices)]
+        self.leftPerm = [((i + 1) % self.nDevices, i) for i in range(self.nDevices)]
 
 
         # Set up the sharding and streaming for 2D and 3D simulations
         if self.dim == 2:
-            self.devices = mesh_utils.create_device_mesh((self.n_devices, 1, 1))
-            self.mesh = Mesh(self.devices, axis_names=("x", "y", "f"))
-            self.namedSharding = NamedSharding(self.mesh, P("x", "y", "f"))
+            self.devices = mesh_utils.create_device_mesh((self.nDevices, 1, 1))
+            self.mesh = Mesh(self.devices, axis_names=("x", "y", "value"))
+            self.sharding = NamedSharding(self.mesh, P("x", "y", "value"))
 
-            self.positionalSharding = PositionalSharding(self.devices)
             self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
                                                       in_specs=P("x", None, None), out_specs=P("x", None, None), check_rep=False))
 
-
         # Set up the sharding and streaming for 2D and 3D simulations
         elif self.dim == 3:
-            self.devices = mesh_utils.create_device_mesh((self.n_devices, 1, 1, 1))
-            self.mesh = Mesh(self.devices, axis_names=("x", "y", "z", "f"))
-            self.namedSharding = NamedSharding(self.mesh, P("x", "y", "z", "f"))
+            self.devices = mesh_utils.create_device_mesh((self.nDevices, 1, 1, 1))
+            self.mesh = Mesh(self.devices, axis_names=("x", "y", "z", "value"))
+            self.sharding = NamedSharding(self.mesh, P("x", "y", "z", "value"))
 
-            self.positionalSharding = PositionalSharding(self.devices)
             self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
                                                       in_specs=P("x", None, None, None), out_specs=P("x", None, None, None), check_rep=False))
         else:
@@ -116,6 +137,8 @@ class LBMBase(object):
         self.boundingBoxIndices = self.bounding_box_indices()
         # Create boundary data for the simulation
         self._create_boundary_data()
+        self.force = self.get_force()
+
 
     def _create_boundary_data(self):
         """
@@ -130,7 +153,7 @@ class LBMBase(object):
         solid_halo_voxels = np.unique(np.vstack(solid_halo_list), axis=0) if solid_halo_list else None
 
         # Create the grid connectivity bitmask on each process
-        create_grid_connectivity_bitmask = jit((self.create_grid_connectivity_bitmask), backend='cpu')
+        create_grid_connectivity_bitmask = jit((self.create_grid_connectivity_bitmask))
         start = time.time()
         connectivity_bitmask = create_grid_connectivity_bitmask(solid_halo_voxels)
         print("Time to create the grid connectivity bitmask:", time.time() - start)
@@ -143,12 +166,12 @@ class LBMBase(object):
 
     # This is another non-JITed way of creating the distributed arrays. It is not used at the moment.
     # def distributed_array_init(self, shape, type, initVal=None):
-    #     sharding_dim = shape[0] // self.n_devices
-    #     sharded_shape = (self.n_devices, sharding_dim,  *shape[1:])
+    #     sharding_dim = shape[0] // self.nDevices
+    #     sharded_shape = (self.nDevices, sharding_dim,  *shape[1:])
     #     device_shape = sharded_shape[1:]
     #     arrays = []
 
-    #     for d, index in self.namedSharding.addressable_devices_indices_map(sharded_shape).items():
+    #     for d, index in self.sharding.addressable_devices_indices_map(sharded_shape).items():
     #         jax.default_device = d
     #         if initVal is None:
     #             x = jnp.zeros(shape=device_shape, dtype=type)
@@ -156,7 +179,7 @@ class LBMBase(object):
     #             x = jnp.full(shape=device_shape, fill_value=initVal, dtype=type)  
     #         arrays += [jax.device_put(x, d)] 
     #     jax.default_device = jax.devices()[0]
-    #     return jax.make_array_from_single_device_arrays(shape, self.namedSharding, arrays)
+    #     return jax.make_array_from_single_device_arrays(shape, self.sharding, arrays)
 
     @partial(jit, static_argnums=(0, 1, 2, 4))
     def distributed_array_init(self, shape, type, initVal=0, sharding=None):
@@ -169,14 +192,14 @@ class LBMBase(object):
             shape (tuple): The shape of the array to be created.
             type (dtype): The data type of the array to be created.
             initVal (scalar, optional): The initial value to fill the array with. Defaults to 0.
-            sharding (Sharding, optional): The sharding strategy to use. Defaults to `self.namedSharding`.
+            sharding (Sharding, optional): The sharding strategy to use. Defaults to `self.sharding`.
 
         Returns
         -------
             jax.numpy.ndarray: A JAX array with the specified shape, data type, initial value, and sharding strategy.
         """
         if sharding is None:
-            sharding = self.namedSharding
+            sharding = self.sharding
         x = jnp.full(shape=shape, fill_value=initVal, dtype=type)        
         return jax.lax.with_sharding_constraint(x, sharding)
     
@@ -194,7 +217,7 @@ class LBMBase(object):
             A JAX array representing the connectivity bitmask of the grid.
         """
         # Halo width (hw_x is different to accommodate the domain partitioning per XLA device)
-        hw_x = self.n_devices
+        hw_x = self.nDevices
         hw_y = hw_z = 1
         if self.dim == 2:
             connectivity_bitmask = jnp.zeros((self.nx, self.ny, self.lattice.q), dtype=bool)
@@ -293,7 +316,7 @@ class LBMBase(object):
         print("         To set explicit initial density and velocity, use self.initialize_macroscopic_fields.")
         return None, None
 
-    def assign_fields_sharding(self):
+    def assign_fields_sharded(self, checkpoint=None):
         """
         This function is used to initialize the simulation by assigning the macroscopic fields and populations.
 
@@ -320,7 +343,7 @@ class LBMBase(object):
             shape = (self.nx, self.ny, self.nz, self.lattice.q)
     
         if rho0 is None or u0 is None:
-            f = self.distributed_array_init(shape, self.precision_policy.output_dtype, initVal=self.w)
+            f = self.distributed_array_init(shape, self.precisionPolicy.output_dtype, initVal=self.w)
         else:
             f = self.initialize_populations(rho0, u0)
 
@@ -363,7 +386,7 @@ class LBMBase(object):
         jax.numpy.ndarray
             The data after being sent to the right neighboring process.
         """
-        return lax.ppermute(x, perm=self.right_perm, axis_name=axis_name)
+        return lax.ppermute(x, perm=self.rightPerm, axis_name=axis_name)
    
     def send_left(self, x, axis_name):
         """
@@ -381,7 +404,7 @@ class LBMBase(object):
         -------
             The data after being sent to the left neighboring process.
         """
-        return lax.ppermute(x, perm=self.left_perm, axis_name=axis_name)
+        return lax.ppermute(x, perm=self.leftPerm, axis_name=axis_name)
     
     def streaming_m(self, f):
         """
@@ -529,17 +552,17 @@ class LBMBase(object):
         """
         # Cast the density and velocity to the compute precision if the castOutput flag is True
         if castOutput:
-            rho, u = self.precision_policy.cast_to_compute((rho, u))
+            rho, u = self.precisionPolicy.cast_to_compute((rho, u))
 
         # Cast c to compute precision so that XLA call FXX matmul, 
         # which is faster (it is faster in some older versions of JAX, newer versions are smart enough to do this automatically)
-        c = jnp.array(self.c, dtype=self.precision_policy.compute_dtype)
+        c = jnp.array(self.c, dtype=self.precisionPolicy.compute_dtype)
         cu = 3.0 * jnp.dot(u, c)
         usqr = 1.5 * jnp.sum(jnp.square(u), axis=-1, keepdims=True)
-        feq = rho[..., None] * self.w * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
+        feq = rho * self.w * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
 
         if castOutput:
-            return self.precision_policy.cast_to_output(feq)
+            return self.precisionPolicy.cast_to_output(feq)
         else:
             return feq
 
@@ -586,9 +609,9 @@ class LBMBase(object):
         u: jax.numpy.ndarray
             Computed velocity.
         """
-        rho = jnp.sum(f, axis=-1)
-        c = jnp.array(self.c, dtype=self.precision_policy.compute_dtype).T
-        u = jnp.dot(f, c) / rho[..., None]
+        rho =jnp.sum(f, axis=-1, keepdims=True)
+        c = jnp.array(self.c, dtype=self.precisionPolicy.compute_dtype).T
+        u = jnp.dot(f, c) / rho
 
         return rho, u
     
@@ -664,8 +687,11 @@ class LBMBase(object):
             return f_poststreaming, f_postcollision
         else:
             return f_poststreaming, None
+        
+    def checkpoint_manager(self):
+        pass
 
-    def run(self, t_max, print_iter=100, io_iter=100, io_ds_factor=1, MLUPS=False):
+    def run(self, t_max, restore_checkpoint=False, MLUPS=False):
         """
         This function runs the LBM simulation for a specified number of time steps.
 
@@ -679,12 +705,9 @@ class LBMBase(object):
         ----------
         t_max: int
             The total number of time steps to run the simulation.
-        print_iter: int, optional
-            The number of time steps between each print of the simulation progress.
-        io_iter: int, optional
-            The number of time steps between each save of the simulation data.
-        io_ds_factor: int, optional
-            The downsampling factor for the simulation data.
+        checkpoint: bool, optional
+            If True, the function loads the simulation data from the last checkpoint and continues and saves 
+            the simulation data with the checkpoint_rate.
         MLUPS: bool, optional
             If True, the function computes and prints the performance of the simulation in MLUPS.
 
@@ -693,45 +716,81 @@ class LBMBase(object):
         f: jax.numpy.ndarray
             The distribution functions after the simulation.
         """
-        f = self.assign_fields_sharding()
-        u_prev, rho_prev = None, None
-
+        f = self.assign_fields_sharded()
+        start_step = 0
+        if restore_checkpoint:
+            latest_step = self.mngr.latest_step()
+            if latest_step is not None:  # existing checkpoint present
+                state = {'f': f}
+                shardings = jax.tree_map(lambda x: x.sharding, state)
+                restore_args = checkpoint_utils.construct_restore_args(state, shardings)
+                try:
+                    f = self.mngr.restore(latest_step, restore_kwargs={'restore_args': restore_args})['f']
+                    print(f"Restored checkpoint at step {latest_step}.")
+                except:
+                    raise ValueError(f"Failed to restore checkpoint at step {latest_step}.")
+                
+                start_step = latest_step + 1
+                if not (t_max > start_step):
+                    raise ValueError(f"Simulation already exceeded maximum allowable steps (t_max = {t_max}). Consider increasing t_max.")
         if MLUPS:
             # Avoid io overhead
-            io_iter = 0
-            print_iter = 0
+            self.io_rate = 0
+            self.error_report_rate = 0
             start = time.time()
-
+        
         # Loop over all time steps
-        for timestep in range(t_max + 1):
-            io_flag = io_iter > 0 and (timestep % io_iter == 0 or timestep == t_max)
-            if io_flag:
-                # Update the macroscopic variables and save the previous values
-                rho, u = self.update_macroscopic(f)
-                rho_prev, u_prev = np.array(process_allgather(rho)), np.array(process_allgather(u))
-                rho_prev = downsample_scalarfield(rho_prev, io_ds_factor)
-                u_prev = downsample_vectorfield(u_prev, io_ds_factor)
-                del u, rho
+        for timestep in range(start_step, t_max + 1):
+            io_flag = self.io_rate > 0 and (timestep % self.io_rate == 0 or timestep == t_max)
+            error_report_flag = self.error_report_rate > 0 and timestep % self.error_report_rate == 0
+            checkpoint_flag = self.checkpoint_rate > 0 and timestep % self.checkpoint_rate == 0
+
+            if error_report_flag:
+                # Update the macroscopic variables and save the previous values (for error computation)
+                rho_prev, u_prev = self.update_macroscopic(f)
 
             # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, ret_fpost=self.ret_fpost)
-
             # Print the progress of the simulation
-            if print_iter > 0 and timestep % print_iter == 0:
-                print(f"{timestep}/{t_max} timesteps complete")
+            if error_report_flag:
+                print(colored("Timestep ", 'blue') + colored(f"{timestep}", 'green') + colored(" of ", 'blue') + colored(f"{t_max}", 'green') + colored(" completed", 'blue'))
+
+                # Compute the error in the macroscopic variables 
+                rho, u = self.update_macroscopic(f)
+                rho_new = jnp.linalg.norm(rho, axis=-1)
+                rho_old = jnp.linalg.norm(rho_prev, axis=-1)
+                u_old = jnp.linalg.norm(u_prev, axis=-1)
+                u_new = jnp.linalg.norm(u, axis=-1)
+                err_u = jnp.sum(np.abs(u_old - u_new))
+                err_rho = jnp.sum(np.abs(rho_old - rho_new))
+
+                # Print the error in the macroscopic variables
+                print(colored("The magnitude of the total absolute difference between the old and new macroscopic values at Timestep ", 'blue') + colored(f"{timestep}", 'green'))
+                print(colored("Density Error: ", 'cyan') + colored(f"{err_rho}", 'red'))
+                print(colored("Velocity Error: ", 'cyan') + colored(f"{err_u}", 'red'))
+                del rho_prev, u_prev, rho, u
 
             if io_flag:
                 # Save the simulation data
                 print(f"Saving data at timestep {timestep}/{t_max}")
                 rho, u = self.update_macroscopic(f)
-                rho = downsample_scalarfield(rho, io_ds_factor)
-                u = downsample_vectorfield(u, io_ds_factor)
+                rho = downsample_field(rho, self.downsampling_factor)
+                u = downsample_field(u, self.downsampling_factor)
 
+                # Gather the data from all processes and convert it to numpy arrays (move to host memory)
                 rho = np.array(process_allgather(rho))
                 u = np.array(process_allgather(u))
 
-                self.handle_io_timestep(timestep, f, fstar, rho, u, rho_prev, u_prev)
+                # Save the data
+                self.handle_io_timestep(timestep, f, fstar, rho, u)
             
+            if checkpoint_flag:
+                # Save the checkpoint
+                print(f"Saving checkpoint at timestep {timestep}/{t_max}")
+                state = {'f': f}
+                self.mngr.save(timestep, state)
+            
+            # Start the timer for the MLUPS computation after the first timestep (to remove compilation overhead)
             if MLUPS and timestep == 1:
                 jax.block_until_ready(f)
                 start = time.time()
@@ -741,16 +800,18 @@ class LBMBase(object):
             jax.block_until_ready(f)
             end = time.time()
             if self.dim == 2:
-                print('Domain: {} x {}'.format(self.nx, self.ny))
-                print("Number of voxels: ", self.nx * self.ny)
-                print(f"MLUPS: {self.nx * self.ny * t_max / (end - start) / 1e6}")
+                print(colored("Domain: ", 'blue') + colored(f"{self.nx} x {self.ny}", 'green') if self.dim == 2 else colored(f"{self.nx} x {self.ny} x {self.nz}", 'green'))
+                print(colored("Number of voxels: ", 'blue') + colored(f"{self.nx * self.ny}", 'green') if self.dim == 2 else colored(f"{self.nx * self.ny * self.nz}", 'green'))
+                print(colored("MLUPS: ", 'blue') + colored(f"{self.nx * self.ny * t_max / (end - start) / 1e6}", 'red'))
+
             elif self.dim == 3:
-                print('Domain: {} x {} x {}'.format(self.nx, self.ny, self.nz))
-                print("Number of voxels: ", self.nx * self.ny * self.nz)
-                print(f"MLUPS: {self.nx * self.ny * self.nz * t_max / (end - start) / 1e6}")
+                print(colored("Domain: ", 'blue') + colored(f"{self.nx} x {self.ny} x {self.nz}", 'green'))
+                print(colored("Number of voxels: ", 'blue') + colored(f"{self.nx * self.ny * self.nz}", 'green'))
+                print(colored("MLUPS: ", 'blue') + colored(f"{self.nx * self.ny * self.nz * t_max / (end - start) / 1e6}", 'red'))
+
         return f
 
-    def handle_io_timestep(self, timestep, f, fstar, rho, u, rho_prev, u_prev):
+    def handle_io_timestep(self, timestep, f, fstar, rho, u):
         """
         This function handles the input/output (I/O) operations at each time step of the simulation.
 
@@ -769,17 +830,11 @@ class LBMBase(object):
             The density field at the current time step.
         u: jax.numpy.ndarray
             The velocity field at the current time step.
-        rho_prev: jax.numpy.ndarray
-            The density field at the previous time step.
-        u_prev: jax.numpy.ndarray
-            The velocity field at the previous time step.
         """
         kwargs = {
             "timestep": timestep,
             "rho": rho,
             "u": u,
-            "u_prev": u_prev,
-            "rho_prev": rho_prev,
             "f_poststreaming": f,
             "f_postcollision": fstar
         }
@@ -836,32 +891,57 @@ class LBMBase(object):
         """
         pass
 
-    @partial(jit, static_argnums=(0,), inline=True)
-    def apply_force(self, fpost_collision, feq, rho, u):
+    def get_force(self):
         """
-        This function applies a force to the fluid in the Lattice Boltzmann Method.
+        This function computes the force to be applied to the fluid in the Lattice Boltzmann Method.
 
         It is intended to be overwritten by the user to specify the force according to the specific 
         problem being solved.
 
-        By default, it does nothing and returns the input post-collision distribution functions 
-        unchanged. When overwritten, it could implement a constant force, a time-dependent force, a 
-        space-dependent force, etc.
+        By default, it does nothing and returns None. When overwritten, it could implement a constant 
+        force term.
+
+        Returns
+        -------
+        force: jax.numpy.ndarray
+            The force to be applied to the fluid.
+        """
+        return
+
+    @partial(jit, static_argnums=(0,), inline=True)
+    def apply_force(self, f_postcollision, feq, rho, u):
+        """
+        add force based on exact-difference method due to Kupershtokh
 
         Parameters
         ----------
-        fpost_collision: jax.numpy.ndarray
+        f_postcollision: jax.numpy.ndarray
             The post-collision distribution functions.
         feq: jax.numpy.ndarray
             The equilibrium distribution functions.
         rho: jax.numpy.ndarray
             The density field.
+
         u: jax.numpy.ndarray
             The velocity field.
-
+        
         Returns
         -------
-        fpost_collision: jax.numpy.ndarray
-            The post-collision distribution functions after the force is applied.
+        f_postcollision: jax.numpy.ndarray
+            The post-collision distribution functions with the force applied.
+        
+        References
+        ----------
+        Kupershtokh, A. (2004). New method of incorporating a body force term into the lattice Boltzmann equation. In
+        Proceedings of the 5th International EHD Workshop (pp. 241-246). University of Poitiers, Poitiers, France.
+        Chikatamarla, S. S., & Karlin, I. V. (2013). Entropic lattice Boltzmann method for turbulent flow simulations:
+        Boundary conditions. Physica A, 392, 1925-1930.
+        Krüger, T., et al. (2017). The lattice Boltzmann method. Springer International Publishing, 10.978-3, 4-15.
         """
-        return fpost_collision
+        deltaU = self.get_force()
+        feq_force = self.equilibrium(rho, u + deltaU, castOutput=False)
+        f_postcollision = f_postcollision + feq_force - feq
+        return f_postcollision
+    
+
+    

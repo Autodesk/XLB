@@ -31,32 +31,32 @@ class Cylinder(KBCSim):
         cx, cy = 2.*diam, 2.*diam
         cylinder = (xx - cx)**2 + (yy-cy)**2 <= (diam/2.)**2
         cylinder = coord[cylinder]
-        self.BCs.append(BounceBackHalfway(tuple(cylinder.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBackHalfway(tuple(cylinder.T), self.gridInfo, self.precisionPolicy))
         # wall = np.concatenate([cylinder, self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
-        # self.BCs.append(BounceBack(tuple(wall.T), self.grid_info, self.precision_policy))
+        # self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
 
         outlet = self.boundingBoxIndices['right']
-        rho_outlet = np.ones(outlet.shape[0], dtype=self.precision_policy.compute_dtype)
-        self.BCs.append(ExtrapolationOutflow(tuple(outlet.T), self.grid_info, self.precision_policy))
-        # self.BCs.append(Regularized(tuple(outlet.T), self.grid_info, self.precision_policy, 'pressure', rho_outlet))
+        rho_outlet = np.ones(outlet.shape[0], dtype=self.precisionPolicy.compute_dtype)
+        self.BCs.append(ExtrapolationOutflow(tuple(outlet.T), self.gridInfo, self.precisionPolicy))
+        # self.BCs.append(Regularized(tuple(outlet.T), self.gridInfo, self.precisionPolicy, 'pressure', rho_outlet))
 
         inlet = self.boundingBoxIndices['left']
-        rho_inlet = np.ones(inlet.shape[0], dtype=self.precision_policy.compute_dtype)
-        vel_inlet = np.zeros(inlet.shape, dtype=self.precision_policy.compute_dtype)
+        rho_inlet = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
+        vel_inlet = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
         yy_inlet = yy.reshape(self.nx, self.ny)[tuple(inlet.T)]
         vel_inlet[:, 0] = poiseuille_profile(yy_inlet,
                                              yy_inlet.min(),
                                              yy_inlet.max()-yy_inlet.min(), 3.0 / 2.0 * u_inlet)
-        # self.BCs.append(EquilibriumBC(tuple(inlet.T), self.grid_info, self.precision_policy, rho_inlet, vel_inlet))
-        self.BCs.append(Regularized(tuple(inlet.T), self.grid_info, self.precision_policy, 'velocity', vel_inlet))
+        # self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_inlet, vel_inlet))
+        self.BCs.append(Regularized(tuple(inlet.T), self.gridInfo, self.precisionPolicy, 'velocity', vel_inlet))
 
         wall = np.concatenate([self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
-        self.BCs.append(BounceBack(tuple(wall.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
 
 
     def output_data(self, **kwargs):
         # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
-        rho = np.array(kwargs["rho"][..., 1:-1])
+        rho = np.array(kwargs["rho"][..., 1:-1, :])
         u = np.array(kwargs["u"][..., 1:-1, :])
         timestep = kwargs["timestep"]
         u_prev = kwargs["u_prev"][..., 1:-1, :]
@@ -100,4 +100,4 @@ if __name__ == '__main__':
 
     # need to retain fpost-collision for computation of lift and drag
     sim.ret_fpost = True
-    sim.run(1000000, print_iter=500, io_iter=500)
+    sim.run(1000000, error_report_rate=500, io_rate=500)

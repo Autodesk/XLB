@@ -14,7 +14,7 @@ class BGKSim(LBMBase):
     """
 
     def __init__(self, lattice, omega, nx, ny, nz=0, precision='f32/f32', optimize=False):
-        super().__init__(lattice, omega, nx, ny, nz, precision, optimize=optimize)
+        super().__init__(lattice, omega, nx, ny, nz, precision=precision, optimize=optimize)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
     def collision(self, f):
@@ -24,12 +24,14 @@ class BGKSim(LBMBase):
         The collision step is where the main physics of the LBM is applied. In the BGK approximation, 
         the distribution function is relaxed towards the equilibrium distribution function.
         """
-        f = self.precision_policy.cast_to_compute(f)
+        f = self.precisionPolicy.cast_to_compute(f)
         rho, u = self.update_macroscopic(f)
         feq = self.equilibrium(rho, u, castOutput=False)
         fneq = f - feq
         fout = f - self.omega * fneq
-        return self.precision_policy.cast_to_output(fout)
+        if self.force is not None:
+            fout = self.apply_force(fout, feq, rho, u)
+        return self.precisionPolicy.cast_to_output(fout)
 
 class KBCSim(LBMBase):
     """
@@ -38,24 +40,24 @@ class KBCSim(LBMBase):
     This class implements the Karlin-Bösch-Chikatamarla (KBC) model for the collision step in the Lattice Boltzmann Method.
     """
 
-    def __init__(self, lattice, omega, nx, ny, nz=0, precision='f32/f32', optimize=False):
-        super().__init__(lattice, omega, nx, ny, nz, precision, optimize=optimize)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
     def collision(self, f):
         """
         KBC collision step for lattice.
         """
-        f = self.precision_policy.cast_to_compute(f)
+        f = self.precisionPolicy.cast_to_compute(f)
         tiny = 1e-32
         beta = self.omega * 0.5
         rho, u = self.update_macroscopic(f)
         feq = self.equilibrium(rho, u, castOutput=False)
         fneq = f - feq
         if self.dim == 2:
-            deltaS = self.fdecompose_shear_d2q9(fneq) * rho[..., None] / 4.0
+            deltaS = self.fdecompose_shear_d2q9(fneq) * rho / 4.0
         else:
-            deltaS = self.fdecompose_shear_d3q27(fneq) * rho[..., None]
+            deltaS = self.fdecompose_shear_d3q27(fneq) * rho
         deltaH = fneq - deltaS
         invBeta = 1.0 / beta
         gamma = invBeta - (2.0 - invBeta) * self.entropic_scalar_product(deltaS, deltaH, feq) / (tiny + self.entropic_scalar_product(deltaH, deltaH, feq))
@@ -63,8 +65,9 @@ class KBCSim(LBMBase):
         fout = f - beta * (2.0 * deltaS + gamma[..., None] * deltaH)
 
         # add external force
-        fout = self.apply_force(fout, feq, rho, u)
-        return self.precision_policy.cast_to_output(fout)
+        if self.force is not None:
+            fout = self.apply_force(fout, feq, rho, u)
+        return self.precisionPolicy.cast_to_output(fout)
 
     @partial(jit, static_argnums=(0,), inline=True)
     def entropic_scalar_product(self, x, y, feq):
@@ -205,49 +208,9 @@ class AdvectionDiffusionBGK(LBMBase):
         """
         BGK collision step for lattice.
         """
-        f = self.precision_policy.cast_to_compute(f)
-        rho = jnp.sum(f, axis=-1)
+        f = self.precisionPolicy.cast_to_compute(f)
+        rho =jnp.sum(f, axis=-1, keepdims=True)
         feq = self.equilibrium(rho, self.vel, castOutput=False)
         fneq = f - feq
         fout = f - self.omega * fneq
-        return self.precision_policy.cast_to_output(fout)
-
-
-class KBCSimForced(KBCSim):
-    """
-    Forced KBC simulation with the external force added using the exact-difference method of Kupershtokh.
-
-    This class extends the KBCSim class to include an external force, which is added using the exact-difference method
-    of Kupershtokh.
-
-    Attributes
-    ----------
-    force : array_like
-        The external force applied in the simulation. Needs to be overwritten by the user.
-
-    References
-    ----------
-    Kupershtokh, A. (2004). New method of incorporating a body force term into the lattice Boltzmann equation. In
-    Proceedings of the 5th International EHD Workshop (pp. 241-246). University of Poitiers, Poitiers, France.
-    Chikatamarla, S. S., & Karlin, I. V. (2013). Entropic lattice Boltzmann method for turbulent flow simulations:
-    Boundary conditions. Physica A, 392, 1925-1930.
-    Krüger, T., et al. (2017). The lattice Boltzmann method. Springer International Publishing, 10.978-3, 4-15.
-    """
-
-    def __init__(self, lattice, omega, nx, ny, nz=0, precision='f32/f32', optimize=False):
-        super().__init__(lattice, omega, nx, ny, nz, precision, optimize=optimize)
-        self.force = self.get_force()
-
-    def get_force(self):
-        # define the external force, needs to be overwritten by the user.
-        return self.precision_policy.cast_to_output(0.0)
-
-    @partial(jit, static_argnums=(0,), inline=True)
-    def apply_force(self, f_postcollision, feq, rho, u):
-        """
-        add exact-difference method due to Kupershtokh
-        """
-        deltaU = self.force
-        feq_force = self.equilibrium(rho, u + deltaU, castOutput=False)
-        f_postcollision = f_postcollision + feq_force - feq
-        return f_postcollision
+        return self.precisionPolicy.cast_to_output(fout)

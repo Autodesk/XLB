@@ -18,37 +18,37 @@ jax.config.update("jax_array", True)
 precision = "f32/f32"
 
 class Cavity(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.downsampling_factor = 2
+        self.error_report_rate=1000
+        self.io_rate=1000
 
     def set_boundary_conditions(self):
 
         # concatenate the indices of the left, right, and bottom walls
         walls = np.concatenate((self.boundingBoxIndices["left"], self.boundingBoxIndices["right"], self.boundingBoxIndices["bottom"]))
         # apply bounce back boundary condition to the walls
-        self.BCs.append(BounceBackHalfway(tuple(walls.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBackHalfway(tuple(walls.T), self.gridInfo, self.precisionPolicy))
 
         # apply inlet equilibrium boundary condition to the top wall
         moving_wall = self.boundingBoxIndices["top"]
 
-        rho_wall = np.ones(moving_wall.shape[0], dtype=self.precision_policy.compute_dtype)
-        vel_wall = np.zeros(moving_wall.shape, dtype=self.precision_policy.compute_dtype)
+        rho_wall = np.ones((moving_wall.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
+        vel_wall = np.zeros(moving_wall.shape, dtype=self.precisionPolicy.compute_dtype)
         vel_wall[:, 0] = u_wall
-        self.BCs.append(EquilibriumBC(tuple(moving_wall.T), self.grid_info, self.precision_policy, rho_wall, vel_wall))
+        self.BCs.append(EquilibriumBC(tuple(moving_wall.T), self.gridInfo, self.precisionPolicy, rho_wall, vel_wall))
 
     def output_data(self, **kwargs):
         # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
         rho = np.array(kwargs["rho"][1:-1, 1:-1])
         u = np.array(kwargs["u"][1:-1, 1:-1, :])
         timestep = kwargs["timestep"]
-        u_prev = kwargs["u_prev"][1:-1, 1:-1, :]
 
-        u_old = np.linalg.norm(u_prev, axis=2)
-        u_new = np.linalg.norm(u, axis=2)
-        err = np.sum(np.abs(u_old - u_new))
-        print("error= {:07.6f}".format(err))
         save_image(timestep, u)
-        fields = {"rho": rho, "u_x": u[..., 0], "u_y": u[..., 1]}
+        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1]}
         save_fields_vtk(timestep, fields)
-        save_BCs_vtk(timestep, self.BCs, self.grid_info)
+        save_BCs_vtk(timestep, self.BCs, self.gridInfo)
 
 if __name__ == "__main__":
     lattice = LatticeD2Q9(precision)
@@ -60,10 +60,25 @@ if __name__ == "__main__":
     u_wall = 0.1
     clength = nx - 1
 
+    checkpoint_rate = 100
+    checkpoint_dir = "./checkpoints"
+
     visc = u_wall * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
     print("omega = ", omega)
     assert omega < 2.0, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
-    sim = Cavity(lattice, omega, nx, ny, precision=precision, optimize=False)
-    sim.run(200000, print_iter=1000, io_iter=1000)
+
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': 301,
+        'ny': 301,
+        'nz': 0,
+        'precision': precision,
+        'checkpoint_rate': checkpoint_rate,
+        'checkpoint_dir': checkpoint_dir
+    }
+
+    sim = Cavity(**kwargs)
+    sim.run(3000, restore_checkpoint=True)

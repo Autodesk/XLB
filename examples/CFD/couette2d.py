@@ -18,21 +18,21 @@ class Couette(BGKSim):
     def set_boundary_conditions(self):
         walls = np.concatenate((self.boundingBoxIndices["top"], self.boundingBoxIndices["bottom"]))
 
-        self.BCs.append(BounceBack(tuple(walls.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBack(tuple(walls.T), self.gridInfo, self.precisionPolicy))
 
         outlet = self.boundingBoxIndices["right"]
         inlet = self.boundingBoxIndices["left"]
 
-        rho_wall = np.ones(inlet.shape[0], dtype=self.precision_policy.compute_dtype)
-        vel_wall = np.zeros(inlet.shape, dtype=self.precision_policy.compute_dtype)
+        rho_wall = np.ones(inlet.shape[0], dtype=self.precisionPolicy.compute_dtype)
+        vel_wall = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
         vel_wall[:, 0] = u_wall
-        self.BCs.append(EquilibriumBC(tuple(inlet.T), self.grid_info, self.precision_policy, rho_wall, vel_wall))
+        self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_wall, vel_wall))
 
-        self.BCs.append(DoNothing(tuple(outlet.T), self.grid_info, self.precision_policy))
+        self.BCs.append(DoNothing(tuple(outlet.T), self.gridInfo, self.precisionPolicy))
 
     def output_data(self, **kwargs):
         # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
-        rho = np.array(kwargs["rho"][..., 1:-1])
+        rho = np.array(kwargs["rho"][..., 1:-1, :])
         u = np.array(kwargs["u"][..., 1:-1, :])
         timestep = kwargs["timestep"]
         u_prev = kwargs["u_prev"][..., 1:-1, :]
@@ -42,7 +42,7 @@ class Couette(BGKSim):
         err = np.sum(np.abs(u_old - u_new))
         print("error= {:07.6f}".format(err))
         save_image(timestep, u)
-        fields = {"rho": rho, "u_x": u[..., 0], "u_y": u[..., 1]}
+        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1]}
         save_fields_vtk(timestep, fields)
 
 if __name__ == "__main__":
@@ -62,4 +62,4 @@ if __name__ == "__main__":
     assert omega < 1.98, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
     sim = Couette(lattice, omega, nx, ny, precision=precision)
-    sim.run(20000, io_iter=10000)
+    sim.run(20000, io_rate=10000)

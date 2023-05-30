@@ -29,15 +29,15 @@ class Cavity(KBCSim):
              self.boundingBoxIndices['front'], self.boundingBoxIndices['back'],
              self.boundingBoxIndices['bottom']))
         # apply bounce back boundary condition to the walls
-        self.BCs.append(BounceBack(tuple(walls.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBack(tuple(walls.T), self.gridInfo, self.precisionPolicy))
 
         # apply inlet equilibrium boundary condition to the top wall
         moving_wall = self.boundingBoxIndices['top']
 
-        rho_wall = np.ones(moving_wall.shape[0], dtype=self.precision_policy.compute_dtype)
-        vel_wall = np.zeros(moving_wall.shape, dtype=self.precision_policy.compute_dtype)
+        rho_wall = np.ones((moving_wall.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
+        vel_wall = np.zeros(moving_wall.shape, dtype=self.precisionPolicy.compute_dtype)
         vel_wall[:, 0] = u_wall
-        self.BCs.append(EquilibriumBC(tuple(moving_wall.T), self.grid_info, self.precision_policy, rho_wall, vel_wall))
+        self.BCs.append(EquilibriumBC(tuple(moving_wall.T), self.gridInfo, self.precisionPolicy, rho_wall, vel_wall))
 
     def output_data(self, **kwargs):
         # 1: -1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
@@ -51,7 +51,7 @@ class Cavity(KBCSim):
 
         err = np.sum(np.abs(u_old - u_new))
         print('error= {:07.6f}'.format(err))
-        fields = {"rho": rho, "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
+        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
         # Calculate the velocity magnitude
         u_mag = np.linalg.norm(u, axis=2)
@@ -74,4 +74,4 @@ if __name__ == '__main__':
     assert omega < 2.0, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
     sim = Cavity(lattice, omega, nx, ny, nz, precision=precision, optimize=False)
-    sim.run(2000, io_iter=100, io_ds_factor=2)
+    sim.run(2000, io_rate=100, io_ds_factor=2)

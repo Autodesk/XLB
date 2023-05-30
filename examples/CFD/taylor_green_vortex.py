@@ -28,7 +28,7 @@ def taylor_green_initial_fields(xx, yy, u0, rho0, nu, time):
     ux = -u0 * np.cos(xx) * np.sin(yy) * np.exp(-2 * nu * time)
     uy = u0 * np.sin(xx) * np.cos(yy) * np.exp(-2 * nu * time)
     rho = 1.0 - rho0 * u0 ** 2 / 12. * (np.cos(2. * xx) + np.cos(2. * yy)) * np.exp(-4 * nu * time)
-    return ux, uy, rho
+    return ux, uy, np.expand_dims(rho, axis=-1)
 
 class TaylorGreenVortex(KBCSim):
 
@@ -38,11 +38,9 @@ class TaylorGreenVortex(KBCSim):
 
     def initialize_macroscopic_fields(self):
         ux, uy, rho = taylor_green_initial_fields(xx, yy, vel_ref, 1, 0., 0.)
-        rho_sharding = PositionalSharding(mesh_utils.create_device_mesh((self.n_devices, 1, 1)))
-        u_sharding = PositionalSharding(mesh_utils.create_device_mesh((self.n_devices, 1, 1, 1)))
-        rho = self.distributed_array_init(rho.shape, self.precision_policy.output_dtype, initVal=1.0, sharding=rho_sharding)
+        rho = self.distributed_array_init(rho.shape, self.precisionPolicy.output_dtype, initVal=1.0, sharding=self.sharding)
         u = np.stack([ux, uy], axis=-1)
-        u = self.distributed_array_init(u.shape, self.precision_policy.output_dtype, initVal=u, sharding=u_sharding)
+        u = self.distributed_array_init(u.shape, self.precisionPolicy.output_dtype, initVal=u, sharding=self.sharding)
         return rho, u
 
     def initialize_populations(self, rho, u):
@@ -50,7 +48,7 @@ class TaylorGreenVortex(KBCSim):
         ADE = AdvectionDiffusionBGK(u, lattice, omegaADE, self.nx, self.ny, precision=precision)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(20000, print_iter=0, io_iter=0)
+        f = ADE.run(20000, error_report_rate=0, io_rate=0)
         return f
 
     def output_data(self, **kwargs):
@@ -92,7 +90,7 @@ if __name__ == "__main__":
         os.system("rm -rf ./*.vtk && rm -rf ./*.png")
         sim = TaylorGreenVortex(lattice, omega, nx, ny, precision=precision, optimize=False)
         endTime = int(20000*nx/32.0)
-        sim.run(endTime, print_iter=5000, io_iter=5000)
+        sim.run(endTime, error_report_rate=5000, io_rate=5000)
     plt.loglog(resList, ErrL2ResList, '-o')
     plt.loglog(resList, 1e-3*(np.array(resList)/128)**(-2), '--')
     plt.savefig('Error.png'); plt.savefig('Error.pdf', format='pdf')

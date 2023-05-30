@@ -43,35 +43,35 @@ class Car(KBCSim):
         tx, ty, tz = np.array([nx, ny, nz]) - car_matrix.shape
         shift = [tx//4, ty//2, 0]
         car_indices = np.argwhere(car_matrix) + shift
-        self.BCs.append(BounceBackHalfway(tuple(car_indices.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBackHalfway(tuple(car_indices.T), self.gridInfo, self.precisionPolicy))
 
         wall = np.concatenate((self.boundingBoxIndices['bottom'], self.boundingBoxIndices['top'],
                                self.boundingBoxIndices['front'], self.boundingBoxIndices['back']))
-        self.BCs.append(BounceBack(tuple(wall.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
 
         doNothing = self.boundingBoxIndices['right']
-        self.BCs.append(DoNothing(tuple(doNothing.T), self.grid_info, self.precision_policy))
+        self.BCs.append(DoNothing(tuple(doNothing.T), self.gridInfo, self.precisionPolicy))
         self.BCs[-1].implementationStep = 'PostCollision'
-        # rho_outlet = np.ones(doNothing.shape[0], dtype=self.precision_policy.compute_dtype)
+        # rho_outlet = np.ones(doNothing.shape[0], dtype=self.precisionPolicy.compute_dtype)
         # self.BCs.append(ZouHe(tuple(doNothing.T),
-        #                                          self.grid_info,
-        #                                          self.precision_policy,
+        #                                          self.gridInfo,
+        #                                          self.precisionPolicy,
         #                                          'pressure', rho_outlet))
 
         inlet = self.boundingBoxIndices['left']
-        rho_inlet = np.ones(inlet.shape[0], dtype=self.precision_policy.compute_dtype)
-        vel_inlet = np.zeros(inlet.shape, dtype=self.precision_policy.compute_dtype)
+        rho_inlet = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
+        vel_inlet = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
 
         vel_inlet[:, 0] = u_inlet
-        self.BCs.append(EquilibriumBC(tuple(inlet.T), self.grid_info, self.precision_policy, rho_inlet, vel_inlet))
+        self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_inlet, vel_inlet))
         # self.BCs.append(ZouHe(tuple(inlet.T),
-        #                                          self.grid_info,
-        #                                          self.precision_policy,
+        #                                          self.gridInfo,
+        #                                          self.precisionPolicy,
         #                                          'velocity', vel_inlet))
 
     def output_data(self, **kwargs):
         # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
-        rho = np.array(kwargs['rho'][..., 1:-1, 1:-1])
+        rho = np.array(kwargs['rho'][..., 1:-1, 1:-1, :])
         u = np.array(kwargs['u'][..., 1:-1, 1:-1, :])
         timestep = kwargs['timestep']
         u_prev = kwargs['u_prev'][..., 1:-1, 1:-1, :]
@@ -90,7 +90,7 @@ class Car(KBCSim):
 
         err = np.sum(np.abs(u_old - u_new))
         print('error= {:07.6f}, CL = {:07.6f}, CD = {:07.6f}'.format(err, cl, cd))
-        fields = {"rho": rho, "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
+        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
 
 if __name__ == '__main__':
@@ -118,4 +118,4 @@ if __name__ == '__main__':
 
     # need to retain fpost-collision for computation of lift and drag
     sim.ret_fpost = True
-    sim.run(200000, print_iter=50, io_iter=1000)
+    sim.run(200000, error_report_rate=50, io_rate=1000)

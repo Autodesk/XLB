@@ -3,7 +3,7 @@ from jax.config import config
 from src.utils import *
 import numpy as np
 from src.lattice import LatticeD3Q27
-from src.models import KBCSimForced, AdvectionDiffusionBGK
+from src.models import KBCSim, AdvectionDiffusionBGK
 import jax.numpy as jnp
 import os
 import matplotlib.pyplot as plt
@@ -42,19 +42,19 @@ def get_dns_data():
         }
     return dns_dic
 
-class turbulentChannel(KBCSimForced):
+class turbulentChannel(KBCSim):
 
     def set_boundary_conditions(self):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
         wall = np.concatenate((self.boundingBoxIndices['bottom'], self.boundingBoxIndices['top']))
-        self.BCs.append(BounceBack(tuple(wall.T), self.grid_info, self.precision_policy))
+        self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
         return
 
     def initialize_macroscopic_fields(self):
-        rho = self.precision_policy.cast_to_output(1.0)
+        rho = self.precisionPolicy.cast_to_output(1.0)
         u = self.distributed_array_init((self.nx, self.ny, self.nz, self.dim),
-                                         self.precision_policy.compute_dtype, initVal=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
-        u = self.precision_policy.cast_to_output(u)
+                                         self.precisionPolicy.compute_dtype, initVal=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
+        u = self.precisionPolicy.cast_to_output(u)
         return rho, u
 
     def initialize_populations(self, rho, u):
@@ -62,14 +62,14 @@ class turbulentChannel(KBCSimForced):
         ADE = AdvectionDiffusionBGK(u, lattice, omegaADE, self.nx, self.ny, self.nz, precision=precision)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(50000, print_iter=0, io_iter=0)
+        f = ADE.run(50000, error_report_rate=0, io_rate=0)
         return f
 
     def get_force(self):
         # define the external force
         force = np.zeros((self.nx, self.ny, self.nz, 3))
         force[..., 0] = Re_tau**2 * visc**2 / h**3
-        return self.precision_policy.cast_to_output(force)
+        return self.precisionPolicy.cast_to_output(force)
 
     def output_data(self, **kwargs):
         rho = np.array(kwargs["rho"])
@@ -91,7 +91,7 @@ class turbulentChannel(KBCSimForced):
         plt.semilogx(yplus, uplus,'r.', yplus, uplus_loglaw, 'k:', dns_dic['y+'], dns_dic['Umean'], 'b-')
         fname = "uplus_" + str(timestep).zfill(4) + '.png'
         plt.savefig(fname)
-        fields = {"rho": rho, "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
+        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
 
 
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     lattice = LatticeD3Q27(precision)
 
     # h: channel half-width
-    h = 50
+    h = 10
 
     # define channel geometry based on h
     nx = 6*h
@@ -124,4 +124,5 @@ if __name__ == "__main__":
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     sim = turbulentChannel(lattice, omega, nx, ny, nz, precision=precision, optimize=False)
-    sim.run(4000000, print_iter=20000, io_iter=20000)
+    sim.run(4000000, error_report_rate=20000, io_rate=20000)
+
