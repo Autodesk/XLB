@@ -130,7 +130,7 @@ class LBMBase(object):
         solid_halo_voxels = np.unique(np.vstack(solid_halo_list), axis=0) if solid_halo_list else None
 
         # Create the grid connectivity bitmask on each process
-        create_grid_connectivity_bitmask = jit((self.create_grid_connectivity_bitmask), backend='cpu')
+        create_grid_connectivity_bitmask = jit((self.create_grid_connectivity_bitmask))
         start = time.time()
         connectivity_bitmask = create_grid_connectivity_bitmask(solid_halo_voxels)
         print("Time to create the grid connectivity bitmask:", time.time() - start)
