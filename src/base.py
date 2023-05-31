@@ -98,7 +98,9 @@ class LBMBase(object):
             self.positionalSharding = PositionalSharding(self.devices)
             self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
                                                       in_specs=P("x", None, None), out_specs=P("x", None, None), check_rep=False))
-
+            
+            self.compute_bitmask = jit(shard_map(self.compute_bitmask_m, mesh=self.mesh,
+                                                        in_specs=P("x", None, None), out_specs=P("x", None, None), check_rep=False))
 
         # Set up the sharding and streaming for 2D and 3D simulations
         elif self.dim == 3:
@@ -109,6 +111,10 @@ class LBMBase(object):
             self.positionalSharding = PositionalSharding(self.devices)
             self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
                                                       in_specs=P("x", None, None, None), out_specs=P("x", None, None, None), check_rep=False))
+            
+            self.compute_bitmask = jit(shard_map(self.compute_bitmask_m, mesh=self.mesh,
+                                                      in_specs=P("x", None, None, None), out_specs=P("x", None, None, None), check_rep=False))
+            
         else:
             raise ValueError(f"dim = {self.dim} not supported")
         
@@ -130,9 +136,8 @@ class LBMBase(object):
         solid_halo_voxels = np.unique(np.vstack(solid_halo_list), axis=0) if solid_halo_list else None
 
         # Create the grid connectivity bitmask on each process
-        create_grid_connectivity_bitmask = jit((self.create_grid_connectivity_bitmask))
         start = time.time()
-        connectivity_bitmask = create_grid_connectivity_bitmask(solid_halo_voxels)
+        connectivity_bitmask = self.create_grid_connectivity_bitmask(solid_halo_voxels)
         print("Time to create the grid connectivity bitmask:", time.time() - start)
 
         start = time.time()
@@ -197,24 +202,27 @@ class LBMBase(object):
         hw_x = self.n_devices
         hw_y = hw_z = 1
         if self.dim == 2:
-            connectivity_bitmask = jnp.zeros((self.nx, self.ny, self.lattice.q), dtype=bool)
+            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.lattice.q), jnp.bool_, initVal=True)
+            connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(None))].set(False)
             if solid_halo_voxels is not None:
-                connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)
-            connectivity_bitmask = jnp.pad(connectivity_bitmask, ((hw_x, hw_x), (hw_y, hw_y), (0, 0)),
-                                           'constant', constant_values=True)
-            connectivity_bitmask = self.compute_bitmask(connectivity_bitmask)
+                solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
+                solid_halo_voxels = solid_halo_voxels.at[:, 1].add(hw_y)
+                connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)  
 
-            return connectivity_bitmask[hw_x:-hw_x, hw_y:-hw_y]
+            connectivity_bitmask = self.compute_bitmask(connectivity_bitmask)
+            return lax.with_sharding_constraint(connectivity_bitmask[hw_x:-hw_x, hw_y:-hw_y], self.namedSharding)
 
         elif self.dim == 3:
-            connectivity_bitmask = jnp.zeros((self.nx, self.ny, self.nz, self.lattice.q), dtype=bool)
+            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.nz + 2 * hw_z, self.lattice.q), jnp.bool_, initVal=True)
+            connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(hw_z, -hw_z), slice(None))].set(False)
             if solid_halo_voxels is not None:
+                solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
+                solid_halo_voxels = solid_halo_voxels.at[:, 1].add(hw_y)
+                solid_halo_voxels = solid_halo_voxels.at[:, 2].add(hw_z)
                 connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)
-            connectivity_bitmask = jnp.pad(connectivity_bitmask, ((hw_x, hw_x), (hw_y, hw_y), (hw_z, hw_z), (0, 0)),
-                                           'constant', constant_values=True)
-            connectivity_bitmask = self.compute_bitmask(connectivity_bitmask)
 
-            return connectivity_bitmask[hw_x:-hw_x, hw_y:-hw_y, hw_z:-hw_z]
+            connectivity_bitmask = self.compute_bitmask(connectivity_bitmask)
+            return lax.with_sharding_constraint(connectivity_bitmask[hw_x:-hw_x, hw_y:-hw_y, hw_z:-hw_z], self.namedSharding)
 
     def bounding_box_indices(self):
         """
@@ -450,7 +458,7 @@ class LBMBase(object):
 
         return vmap(streaming_i, in_axes=(-1, 0), out_axes=-1)(f, self.c.T)
 
-    def compute_bitmask(self, b):    
+    def compute_bitmask_m(self, b):    
         """
         This function computes a bitmask for each direction in the lattice. The bitmask is used to 
         determine which nodes are fluid nodes and which are boundary nodes.
