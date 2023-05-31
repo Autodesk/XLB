@@ -87,4 +87,4 @@ if __name__ == "__main__":
     assert omega < 1.98, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
     sim = ChannelFlow2D(lattice, omega, nx, ny, precision=precision)
-    sim.run(100000, error_report_rate=1000, io_rate=1000)
+    sim.run(100000, print_info_rate=1000, io_rate=1000)

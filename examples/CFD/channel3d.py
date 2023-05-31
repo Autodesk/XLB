@@ -1,3 +1,19 @@
+"""
+This script performs a 3D simulation of turbulent channel flow using the lattice Boltzmann method (LBM). 
+Turbulent channel flow, also known as plane Couette flow, is a fundamental case in the study of wall-bounded turbulent flows.
+
+In this example you'll be introduced to the following concepts:
+
+1. Lattice: A D3Q27 lattice is used, which is a three-dimensional lattice model with 27 discrete velocity directions. This type of lattice allows for a more precise representation of fluid flow in three dimensions.
+
+2. Initial Conditions: The initial conditions for the flow are randomly generated, and the populations are initialized to be the solution of an advection-diffusion equation.
+
+3. Boundary Conditions: Bounce back boundary conditions are applied at the top and bottom walls, simulating a no-slip condition typical for wall-bounded flows.
+
+4. External Force: An external force is applied to drive the flow.
+
+"""
+
 from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
@@ -43,6 +59,8 @@ def get_dns_data():
     return dns_dic
 
 class turbulentChannel(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
@@ -59,10 +77,13 @@ class turbulentChannel(KBCSim):
 
     def initialize_populations(self, rho, u):
         omegaADE = 1.0
-        ADE = AdvectionDiffusionBGK(u, lattice, omegaADE, self.nx, self.ny, self.nz, precision=precision)
+        lattice = LatticeD3Q27(precision)
+
+        kwargs = {'lattice': lattice, 'nx': self.nx, 'ny': self.ny, 'nz': self.nz,  'precision': precision, 'omega': omegaADE, 'vel': u}
+        ADE = AdvectionDiffusionBGK(**kwargs)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(50000, error_report_rate=0, io_rate=0)
+        f = ADE.run(50000)
         return f
 
     def get_force(self):
@@ -123,6 +144,16 @@ if __name__ == "__main__":
     assert omega < 2.0, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
-    sim = turbulentChannel(lattice, omega, nx, ny, nz, precision=precision, optimize=False)
-    sim.run(4000000, error_report_rate=20000, io_rate=20000)
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': nx,
+        'ny': ny,
+        'nz': nz,
+        'precision': precision,
+        'io_rate': 20000,
+        'print_info_rate': 20000,
+    }
+    sim = turbulentChannel(**kwargs)
+    sim.run(4000000)
 

@@ -13,8 +13,8 @@ class BGKSim(LBMBase):
     This class implements the Bhatnagar-Gross-Krook (BGK) approximation for the collision step in the Lattice Boltzmann Method.
     """
 
-    def __init__(self, lattice, omega, nx, ny, nz=0, precision='f32/f32', optimize=False):
-        super().__init__(lattice, omega, nx, ny, nz, precision=precision, optimize=optimize)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
     def collision(self, f):
@@ -199,9 +199,9 @@ class AdvectionDiffusionBGK(LBMBase):
     Advection Diffusion Model based on the BGK model.
     """
 
-    def __init__(self, vel, lattice, omega, nx, ny, nz=0, precision='f32/f32', optimize=False):
-        super().__init__(lattice, omega, nx, ny, nz, precision, optimize=optimize)
-        self.vel = vel
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.vel = kwargs.get("vel", None)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
     def collision(self, f):

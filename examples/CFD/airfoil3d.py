@@ -1,3 +1,32 @@
+"""
+This is a example for simulating fluid flow around a NACA airfoil using the lattice Boltzmann method (LBM). 
+The LBM is a computational fluid dynamics method for simulating fluid flow and is particularly effective 
+for complex geometries and multiphase flow. 
+
+In this example you'll be introduced to the following concepts:
+
+1. Lattice: The example uses a D3Q27 lattice, which is a three-dimensional lattice model that considers 
+    27 discrete velocity directions. This allows for a more accurate representation of the fluid flow 
+    in three dimensions.
+
+2. NACA Airfoil Generation: The example includes a function to generate a NACA airfoil shape, which is 
+    common in aerodynamics. The function allows for customization of the length, thickness, and angle 
+    of the airfoil.
+
+3. Boundary Conditions: The example includes several boundary conditions. These include a "bounce back" 
+    condition on the airfoil surface and the top and bottom of the domain, a "do nothing" condition 
+    at the outlet (right side of the domain), and an "equilibrium" condition at the inlet 
+    (left side of the domain) to simulate a uniform flow.
+
+4. Simulation Parameters: The example allows for the setting of various simulation parameters, 
+    including the Reynolds number, inlet velocity, and characteristic length. 
+
+5. Visualization: The example outputs data in VTK format, which can be visualized using software such 
+    as Paraview. The error between the old and new velocity fields is also printed out at each time step 
+    to monitor the convergence of the solution.
+"""
+
+
 import numpy as np
 # from IPython import display
 import matplotlib.pylab as plt
@@ -16,6 +45,7 @@ import scipy
 
 precision = 'f32/f32'
 
+# Function to create a NACA airfoil shape given its length, thickness, and angle of attack
 def makeNacaAirfoil(length, thickness=30, angle=0):
     def nacaAirfoil(x, thickness, chordLength):
         coeffs = [0.2969, -0.1260, -0.3516, 0.2843, -0.1015]
@@ -34,6 +64,8 @@ def makeNacaAirfoil(length, thickness=30, angle=0):
     return domain
 
 class Airfoil(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         tx, ty = np.array([self.nx, self.ny], dtype=int) - airfoil.shape
@@ -99,7 +131,19 @@ if __name__ == '__main__':
     print('omega = ', omega)
     assert omega < 2.0, "omega must be less than 2.0"
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
-    sim = Airfoil(lattice, omega, nx, ny, nz, precision=precision)
-    print('Domain size: ', sim.nx, sim.ny, sim.nz)
 
-    sim.run(20000, error_report_rate=200, io_rate=1000)
+    # Set the parameters for the simulation
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': nx,
+        'ny': ny,
+        'nz': nz,
+        'precision': precision,
+        'io_rate': 100,
+        'print_info_rate': 100
+    }
+
+    sim = Airfoil(**kwargs)
+    print('Domain size: ', sim.nx, sim.ny, sim.nz)
+    sim.run(20000)

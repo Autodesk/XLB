@@ -1,10 +1,27 @@
+"""
+This example implements a 3D Lid-Driven Cavity Flow simulation using the lattice Boltzmann method (LBM). 
+The Lid-Driven Cavity Flow is a standard test case for numerical schemes applied to fluid dynamics, which involves fluid in a square cavity with a moving lid (top boundary).
+
+In this example you'll be introduced to the following concepts:
+
+1. Lattice: The simulation employs a D2Q9 lattice. It's a 2D lattice model with nine discrete velocity directions, which is typically used for 2D simulations.
+
+2. Boundary Conditions: The code implements two types of boundary conditions:
+
+    BounceBack: This condition is applied to the stationary walls, except the top wall. It models a no-slip boundary where the velocity of fluid at the wall is zero.
+    EquilibriumBC: This condition is used for the moving lid (top boundary). It defines a boundary with a set velocity, simulating the "driving" of the cavity by the lid.
+
+4. Visualization: The simulation outputs data in VTK format for visualization. The data can be visualized using software like Paraview.
+
+"""
+
 import os
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
 
-# disable JIt compilation
+# disable JIT compilation
 # jax.config.update('jax_disable_jit', True)
 
 jax.config.update('jax_array', True)
@@ -21,6 +38,8 @@ precision = 'f32/f32'
 
 
 class Cavity(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         # concatenate the indices of the left, right, and bottom walls
@@ -73,5 +92,16 @@ if __name__ == '__main__':
     print('omega = ', omega)
     assert omega < 2.0, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
-    sim = Cavity(lattice, omega, nx, ny, nz, precision=precision, optimize=False)
-    sim.run(2000, io_rate=100, io_ds_factor=2)
+
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': nx,
+        'ny': ny,
+        'nz': nz,
+        'precision': precision,
+        'io_rate': 100,
+        'print_info_rate': 100,
+    }
+    sim = Cavity(**kwargs)
+    sim.run(2000)

@@ -1,3 +1,10 @@
+"""
+This script computes the MLUPS (Million Lattice Updates per Second) in 3D by simulating fluid flow inside a 2D cavity. 
+This script is equivalent to MLUPS3d.py, but uses JAX distributed to run the simulation on distributed systems (multi-host, multi-GPUs).
+Please refer to https://jax.readthedocs.io/en/latest/multi_process.html for more information on JAX distributed.
+"""
+
+
 from src.models import BGKSim
 from src.lattice import LatticeD3Q19
 import jax.numpy as jnp
@@ -41,7 +48,7 @@ if __name__ == '__main__':
     # (export PYTHONPATH=.; CUDA_VISIBLE_DEVICES=0 python3 examples/performance/MLUPS3d_distributed.py 100 100 & CUDA_VISIBLE_DEVICES=1 python3 examples/performance/MLUPS3d_distributed.py 100 100 &)
     # (export PYTHONPATH=.; for i in `seq 0 1`; do CUDA_VISIBLE_DEVICES=$i python3 examples/performance/MLUPS3d_distributed.py 100 100 >OUT.$i 2>&1; done)
     port = portpicker.pick_unused_port()
-    jax.distributed.initialize(f'127.0.0.1:1234', 2, int(os.environ['CUDA_VISIBLE_DEVICES']))
+    jax.distributed.initialize(f'127.0.0.1:{port}', 2, int(os.environ['CUDA_VISIBLE_DEVICES']))
 
     # Create a 3D lattice with the D3Q19 scheme
     lattice = LatticeD3Q19(precision)

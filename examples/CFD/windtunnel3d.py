@@ -1,3 +1,17 @@
+"""
+This script performs a Lattice Boltzmann Method (LBM) simulation of fluid flow over a car model. Here are the main concepts and steps in the simulation:
+
+Here are the main concepts introduced simulation:
+
+1. Lattice: Given the usually high Reynolds number required for these simulations, a D3Q27 lattice is used, which is a three-dimensional lattice model with 27 discrete velocity directions.
+
+2. Loading geometry and voxelization: The geometry of the car is loaded from a STL file. 
+This is a file format commonly used for 3D models. The model is then voxelized to a binary matrix which represents the presence or absence of the object in the lattice. We use the DrivAer model, which is a common car model used for aerodynamic simulations.
+
+3. Output: After each specified number of iterations, the script outputs the state of the simulation. This includes the error (difference between consecutive velocity fields), lift and drag coefficients, and visualization files in the VTK format.
+"""
+
+
 from time import time
 import trimesh
 from src.boundary_conditions import *
@@ -20,6 +34,8 @@ jax.config.update('jax_array', True)
 precision = 'f32/f32'
 
 class Car(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def voxelize_stl(self, stl_filename, length_lbm_unit):
         mesh = trimesh.load_mesh(stl_filename, process=False)
@@ -114,8 +130,17 @@ if __name__ == '__main__':
 
     assert omega < 2.0, "omega must be less than 2.0"
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
-    sim = Car(lattice, omega, nx, ny, nz, precision=precision, optimize=False)
 
-    # need to retain fpost-collision for computation of lift and drag
-    sim.ret_fpost = True
-    sim.run(200000, error_report_rate=50, io_rate=1000)
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': nx,
+        'ny': ny,
+        'nz': nz,
+        'precision': precision,
+        'io_rate': 100,
+        'print_info_rate': 100,
+        'ret_fpost': True  # Need to retain fpost-collision for computation of lift and drag
+    }
+    sim = Car(**kwargs)
+    sim.run(200000)

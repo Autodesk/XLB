@@ -1,3 +1,7 @@
+"""
+This script computes the MLUPS (Million Lattice Updates per Second) in 3D by simulating fluid flow inside a 2D cavity.
+"""
+
 from src.models import BGKSim
 from src.lattice import LatticeD3Q19
 import jax.numpy as jnp
@@ -17,6 +21,8 @@ from src.boundary_conditions import *
 precision = 'f32/f32'
 
 class Cavity(BGKSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         # concatenate the indices of the left, right, and bottom walls
@@ -61,6 +67,17 @@ if __name__ == '__main__':
     # Check that the relaxation parameter is less than 2
     assert omega < 2.0, "omega must be less than 2.0"
     # Create a new instance of the Cavity class
-    sim = Cavity(lattice, omega, n, n, n, precision=precision)
+
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': n,
+        'ny': n,
+        'nz': n,
+        'precision': precision
+    }
+
+    sim = Cavity(**kwargs)
     # Run the simulation
     sim.run(n_iters, MLUPS=True)
+    

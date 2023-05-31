@@ -1,3 +1,23 @@
+"""
+This script conducts a 2D simulation of flow around a cylinder using the lattice Boltzmann method (LBM). This is a classic problem in fluid dynamics and is often used to examine the behavior of fluid flow over a bluff body.
+
+In this example you'll be introduced to the following concepts:
+
+1. Lattice: A D2Q9 lattice is used, which is a two-dimensional lattice model with nine discrete velocity directions. This type of lattice allows for a precise representation of fluid flow in two dimensions.
+
+2. Boundary Conditions: The script implements several types of boundary conditions:
+
+    BounceBackHalfway: This condition is applied to the cylinder surface, simulating a no-slip condition where the fluid at the cylinder surface has zero velocity.
+    ExtrapolationOutflow: This condition is applied at the outlet (right boundary), where the fluid is allowed to exit the simulation domain freely.
+    Regularized: This condition is applied at the inlet (left boundary) and models the inflow of fluid into the domain with a specified velocity profile. Another Regularized condition is used for the stationary top and bottom walls.
+3. Velocity Profile: The script uses a Poiseuille flow profile for the inlet velocity. This is a parabolic profile commonly seen in pipe flow.
+
+4. Drag and lift calculation: The script computes the lift and drag on the cylinder, which are important quantities in fluid dynamics and aerodynamics.
+
+5. Visualization: The simulation outputs data in VTK format for visualization. It also generates images of the velocity field. The data can be visualized using software like ParaView.
+
+"""
+
 from time import time
 from src.boundary_conditions import *
 from jax.config import config
@@ -22,6 +42,8 @@ u_inlet = 0.005
 diam = 80
 
 class Cylinder(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
 
@@ -52,7 +74,6 @@ class Cylinder(KBCSim):
 
         wall = np.concatenate([self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
         self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
-
 
     def output_data(self, **kwargs):
         # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
@@ -96,8 +117,17 @@ if __name__ == '__main__':
 
     assert omega < 2.0, "omega must be less than 2.0"
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
-    sim = Cylinder(lattice, omega, nx, ny, optimize=False, precision=precision)
 
-    # need to retain fpost-collision for computation of lift and drag
-    sim.ret_fpost = True
-    sim.run(1000000, error_report_rate=500, io_rate=500)
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': nx,
+        'ny': ny,
+        'nz': 0,
+        'precision': precision,
+        'io_rate': 500,
+        'print_info_rate': 500,
+        'ret_fpost': True,    # Need to retain fpost-collision for computation of lift and drag
+    }
+    sim = Cylinder(**kwargs)
+    sim.run(1000000)

@@ -42,15 +42,19 @@ class LBMBase(object):
     def __init__(self, **kwargs):
         # Set the precision for computation and storage
         precision = kwargs.get("precision", "f32/f32")
-        optimize = kwargs.get("optimize", False)
-        checkpoint_rate = kwargs.get("checkpoint_rate", 0)
-        checkpoint_dir = kwargs.get("checkpoint_dir", './checkpoints')
-        
-
         computedType, storedType = self.set_precisions(precision)
         self.precisionPolicy = jmp.Policy(compute_dtype=computedType,
                                             param_dtype=computedType, output_dtype=storedType)
-        self.optimize = optimize
+        
+        self.optimize = kwargs.get("optimize", False)
+        self.checkpoint_rate = kwargs.get("checkpoint_rate", 0)
+        self.checkpoint_dir = kwargs.get("checkpoint_dir", './checkpoints')
+        self.downsampling_factor = kwargs.get("downsampling_factor", 1)
+        self.print_info_rate = kwargs.get("print_info_rate", 100)
+        self.io_rate = kwargs.get("io_rate", 0)
+        self.ret_fpost = kwargs.get("ret_fpost", False)
+
+
         self.nDevices = jax.device_count()
 
         # Check for distributed mode
@@ -72,15 +76,8 @@ class LBMBase(object):
         self.w = self.lattice.w
         self.dim = self.lattice.d
 
-        # Run attibutes initialization
-        self.ret_fpost = False
-        self.downsampling_factor = 1 # Factor to downsample the output data for I/O
-        self.io_rate = 1 # Rate at which to perform I/O
-        self.error_report_rate = 0 # Rate at which to report the error
-        self.checkpoint_rate = checkpoint_rate # Rate at which to checkpoint the simulation
-
-        mngr_options = CheckpointManagerOptions(save_interval_steps=checkpoint_rate, max_to_keep=1)
-        self.mngr = CheckpointManager(checkpoint_dir, PyTreeCheckpointer(), options=mngr_options)
+        mngr_options = CheckpointManagerOptions(save_interval_steps=self.checkpoint_rate, max_to_keep=1)
+        self.mngr = CheckpointManager(self.checkpoint_dir, PyTreeCheckpointer(), options=mngr_options)
         
         # Adjust the number of grid points in the x direction, if necessary.
         # If the number of grid points is not divisible by the number of devices
@@ -736,39 +733,30 @@ class LBMBase(object):
         if MLUPS:
             # Avoid io overhead
             self.io_rate = 0
-            self.error_report_rate = 0
+            self.print_info_rate = 0
             start = time.time()
         
         # Loop over all time steps
         for timestep in range(start_step, t_max + 1):
             io_flag = self.io_rate > 0 and (timestep % self.io_rate == 0 or timestep == t_max)
-            error_report_flag = self.error_report_rate > 0 and timestep % self.error_report_rate == 0
+            print_iter_flag = self.print_info_rate > 0 and timestep % self.print_info_rate == 0
             checkpoint_flag = self.checkpoint_rate > 0 and timestep % self.checkpoint_rate == 0
 
-            if error_report_flag:
+            if io_flag:
                 # Update the macroscopic variables and save the previous values (for error computation)
                 rho_prev, u_prev = self.update_macroscopic(f)
+                rho_prev = downsample_field(rho_prev, self.downsampling_factor)
+                u_prev = downsample_field(u_prev, self.downsampling_factor)
+                # Gather the data from all processes and convert it to numpy arrays (move to host memory)
+                rho_prev = np.array(process_allgather(rho_prev))
+                u_prev = np.array(process_allgather(u_prev))
+
 
             # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, ret_fpost=self.ret_fpost)
             # Print the progress of the simulation
-            if error_report_flag:
+            if print_iter_flag:
                 print(colored("Timestep ", 'blue') + colored(f"{timestep}", 'green') + colored(" of ", 'blue') + colored(f"{t_max}", 'green') + colored(" completed", 'blue'))
-
-                # Compute the error in the macroscopic variables 
-                rho, u = self.update_macroscopic(f)
-                rho_new = jnp.linalg.norm(rho, axis=-1)
-                rho_old = jnp.linalg.norm(rho_prev, axis=-1)
-                u_old = jnp.linalg.norm(u_prev, axis=-1)
-                u_new = jnp.linalg.norm(u, axis=-1)
-                err_u = jnp.sum(np.abs(u_old - u_new))
-                err_rho = jnp.sum(np.abs(rho_old - rho_new))
-
-                # Print the error in the macroscopic variables
-                print(colored("The magnitude of the total absolute difference between the old and new macroscopic values at Timestep ", 'blue') + colored(f"{timestep}", 'green'))
-                print(colored("Density Error: ", 'cyan') + colored(f"{err_rho}", 'red'))
-                print(colored("Velocity Error: ", 'cyan') + colored(f"{err_u}", 'red'))
-                del rho_prev, u_prev, rho, u
 
             if io_flag:
                 # Save the simulation data
@@ -776,13 +764,13 @@ class LBMBase(object):
                 rho, u = self.update_macroscopic(f)
                 rho = downsample_field(rho, self.downsampling_factor)
                 u = downsample_field(u, self.downsampling_factor)
-
+                
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
                 rho = np.array(process_allgather(rho))
                 u = np.array(process_allgather(u))
 
                 # Save the data
-                self.handle_io_timestep(timestep, f, fstar, rho, u)
+                self.handle_io_timestep(timestep, f, fstar, rho, u, rho_prev, u_prev)
             
             if checkpoint_flag:
                 # Save the checkpoint
@@ -811,7 +799,7 @@ class LBMBase(object):
 
         return f
 
-    def handle_io_timestep(self, timestep, f, fstar, rho, u):
+    def handle_io_timestep(self, timestep, f, fstar, rho, u, rho_prev, u_prev):
         """
         This function handles the input/output (I/O) operations at each time step of the simulation.
 
@@ -834,7 +822,9 @@ class LBMBase(object):
         kwargs = {
             "timestep": timestep,
             "rho": rho,
+            "rho_prev": rho_prev,
             "u": u,
+            "u_prev": u_prev,
             "f_poststreaming": f,
             "f_postcollision": fstar
         }

@@ -1,3 +1,21 @@
+"""
+This example implements a 2D Lid-Driven Cavity Flow simulation using the lattice Boltzmann method (LBM). 
+The Lid-Driven Cavity Flow is a standard test case for numerical schemes applied to fluid dynamics, which involves fluid in a square cavity with a moving lid (top boundary).
+
+In this example you'll be introduced to the following concepts:
+
+1. Lattice: The simulation employs a D2Q9 lattice. It's a 2D lattice model with nine discrete velocity directions, which is typically used for 2D simulations.
+
+2. Boundary Conditions: The code implements two types of boundary conditions:
+
+    BounceBackHalfway: This condition is applied to the stationary walls (left, right, and bottom). It models a no-slip boundary where the velocity of fluid at the wall is zero.
+    EquilibriumBC: This condition is used for the moving lid (top boundary). It defines a boundary with a set velocity, simulating the "driving" of the cavity by the lid.
+
+3. Checkpointing: The simulation supports checkpointing. Checkpoints are saved periodically (determined by the 'checkpoint_rate'), allowing the simulation to be stopped and restarted from the last checkpoint. This can be beneficial for long simulations or in case of unexpected interruptions.
+
+4. Visualization: The simulation outputs data in VTK format for visualization. It also provides images of the velocity field and saves the boundary conditions at each time step. The data can be visualized using software like Paraview.
+
+"""
 from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
@@ -20,9 +38,6 @@ precision = "f32/f32"
 class Cavity(KBCSim):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.downsampling_factor = 2
-        self.error_report_rate=1000
-        self.io_rate=1000
 
     def set_boundary_conditions(self):
 
@@ -72,10 +87,12 @@ if __name__ == "__main__":
     kwargs = {
         'lattice': lattice,
         'omega': omega,
-        'nx': 301,
-        'ny': 301,
+        'nx': nx,
+        'ny': ny,
         'nz': 0,
         'precision': precision,
+        'io_rate': 100,
+        'print_info_rate': 100,
         'checkpoint_rate': checkpoint_rate,
         'checkpoint_dir': checkpoint_dir
     }

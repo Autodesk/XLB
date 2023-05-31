@@ -1,3 +1,7 @@
+"""
+This script performs a 2D simulation of Couette flow using the lattice Boltzmann method (LBM). 
+"""
+
 from src.models import BGKSim
 from src.boundary_conditions import *
 from src.lattice import LatticeD2Q9
@@ -14,6 +18,8 @@ precision = "f32/f32"
 
 
 class Couette(BGKSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         walls = np.concatenate((self.boundingBoxIndices["top"], self.boundingBoxIndices["bottom"]))
@@ -23,7 +29,7 @@ class Couette(BGKSim):
         outlet = self.boundingBoxIndices["right"]
         inlet = self.boundingBoxIndices["left"]
 
-        rho_wall = np.ones(inlet.shape[0], dtype=self.precisionPolicy.compute_dtype)
+        rho_wall = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
         vel_wall = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
         vel_wall[:, 0] = u_wall
         self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_wall, vel_wall))
@@ -61,5 +67,16 @@ if __name__ == "__main__":
     print("omega = ", omega)
     assert omega < 1.98, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
-    sim = Couette(lattice, omega, nx, ny, precision=precision)
-    sim.run(20000, io_rate=10000)
+
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': nx,
+        'ny': ny,
+        'nz': 0,
+        'precision': precision,
+        'io_rate': 100,
+        'print_info_rate': 100,
+    }
+    sim = Couette(**kwargs)
+    sim.run(20000)

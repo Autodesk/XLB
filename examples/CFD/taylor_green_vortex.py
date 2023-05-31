@@ -1,3 +1,10 @@
+"""
+The given script sets up a simulation for the Taylor-Green vortex flow.
+The Taylor-Green vortex is a type of two-dimensional, incompressible fluid flow with a known analytical solution, making it an ideal test case for fluid dynamics simulations.
+The flow is characterized by a pair of counter-rotating vortices. In this script, the initial fields for the Taylor-Green vortex are set using a known function.
+"""
+
+
 from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
@@ -45,10 +52,11 @@ class TaylorGreenVortex(KBCSim):
 
     def initialize_populations(self, rho, u):
         omegaADE = 1.0
-        ADE = AdvectionDiffusionBGK(u, lattice, omegaADE, self.nx, self.ny, precision=precision)
+        kwargs = {'lattice': lattice, 'nx': self.nx, 'ny': self.ny, 'nz': self.nz,  'precision': precision, 'omega': omegaADE, 'vel': u, 'print_info_rate': 0, 'io_rate': 0}
+        ADE = AdvectionDiffusionBGK(**kwargs)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(20000, error_report_rate=0, io_rate=0)
+        f = ADE.run(20000)
         return f
 
     def output_data(self, **kwargs):
@@ -88,9 +96,20 @@ if __name__ == "__main__":
         print("omega = ", omega)
         assert omega < 2.0, "omega must be less than 2.0"
         os.system("rm -rf ./*.vtk && rm -rf ./*.png")
-        sim = TaylorGreenVortex(lattice, omega, nx, ny, precision=precision, optimize=False)
+        kwargs = {
+            'lattice': lattice,
+            'omega': omega,
+            'nx': nx,
+            'ny': ny,
+            'nz': 0,
+            'precision': precision,
+            'io_rate': 500,
+            'print_info_rate': 500,
+            'ret_fpost': True,    # Need to retain fpost-collision for computation of lift and drag
+        }
+        sim = TaylorGreenVortex(**kwargs)
         endTime = int(20000*nx/32.0)
-        sim.run(endTime, error_report_rate=5000, io_rate=5000)
+        sim.run(endTime)
     plt.loglog(resList, ErrL2ResList, '-o')
     plt.loglog(resList, 1e-3*(np.array(resList)/128)**(-2), '--')
     plt.savefig('Error.png'); plt.savefig('Error.pdf', format='pdf')
