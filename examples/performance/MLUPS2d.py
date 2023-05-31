@@ -1,3 +1,7 @@
+"""
+This script computes the MLUPS (Million Lattice Updates per Second) in 2D by simulating fluid flow inside a 2D cavity.
+"""
+
 import os
 
 from src.models import BGKSim

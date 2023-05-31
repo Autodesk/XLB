@@ -1,4 +1,4 @@
-::: src.utils.downsample
+::: src.utils.downsample_field
 
 ::: src.utils.save_image
 
