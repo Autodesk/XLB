@@ -140,7 +140,7 @@ if __name__ == '__main__':
         'precision': precision,
         'io_rate': 100,
         'print_info_rate': 100,
-        'ret_fpost': True  # Need to retain fpost-collision for computation of lift and drag
+        'return_fpost': True  # Need to retain fpost-collision for computation of lift and drag
     }
     sim = Car(**kwargs)
     sim.run(200000)

@@ -105,7 +105,7 @@ if __name__ == "__main__":
             'precision': precision,
             'io_rate': 500,
             'print_info_rate': 500,
-            'ret_fpost': True,    # Need to retain fpost-collision for computation of lift and drag
+            'return_fpost': True,    # Need to retain fpost-collision for computation of lift and drag
         }
         sim = TaylorGreenVortex(**kwargs)
         endTime = int(20000*nx/32.0)

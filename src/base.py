@@ -47,14 +47,12 @@ class LBMBase(object):
                                             param_dtype=computedType, output_dtype=storedType)
         
         self.optimize = kwargs.get("optimize", False)
-        self.checkpoint_rate = kwargs.get("checkpoint_rate", 0)
-        self.checkpoint_dir = kwargs.get("checkpoint_dir", './checkpoints')
-        self.downsampling_factor = kwargs.get("downsampling_factor", 1)
-        self.print_info_rate = kwargs.get("print_info_rate", 100)
-        self.io_rate = kwargs.get("io_rate", 0)
-        self.ret_fpost = kwargs.get("ret_fpost", False)
-
-
+        self.checkpointRate = kwargs.get("checkpoint_rate", 0)
+        self.checkpointDir = kwargs.get("checkpoint_dir", './checkpoints')
+        self.downsamplingFactor = kwargs.get("downsampling_factor", 1)
+        self.printInfoRate= kwargs.get("print_info_rate", 100)
+        self.ioRate = kwargs.get("io_rate", 0)
+        self.returnFpost = kwargs.get("return_fpost", False)
         self.nDevices = jax.device_count()
 
         # Check for distributed mode
@@ -76,8 +74,8 @@ class LBMBase(object):
         self.w = self.lattice.w
         self.dim = self.lattice.d
 
-        mngr_options = CheckpointManagerOptions(save_interval_steps=self.checkpoint_rate, max_to_keep=1)
-        self.mngr = CheckpointManager(self.checkpoint_dir, PyTreeCheckpointer(), options=mngr_options)
+        mngr_options = CheckpointManagerOptions(save_interval_steps=self.checkpointRate, max_to_keep=1)
+        self.mngr = CheckpointManager(self.checkpointDir, PyTreeCheckpointer(), options=mngr_options)
         
         # Adjust the number of grid points in the x direction, if necessary.
         # If the number of grid points is not divisible by the number of devices
@@ -119,6 +117,9 @@ class LBMBase(object):
             self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
                                                       in_specs=P("x", None, None), out_specs=P("x", None, None), check_rep=False))
 
+            self.compute_bitmask = jit(shard_map(self.compute_bitmask_m, mesh=self.mesh,
+                                                      in_specs=P("x", None, None), out_specs=P("x", None, None), check_rep=False))
+
         # Set up the sharding and streaming for 2D and 3D simulations
         elif self.dim == 3:
             self.devices = mesh_utils.create_device_mesh((self.nDevices, 1, 1, 1))
@@ -126,6 +127,9 @@ class LBMBase(object):
             self.sharding = NamedSharding(self.mesh, P("x", "y", "z", "value"))
 
             self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
+                                                      in_specs=P("x", None, None, None), out_specs=P("x", None, None, None), check_rep=False))
+            
+            self.compute_bitmask = jit(shard_map(self.compute_bitmask_m, mesh=self.mesh,
                                                       in_specs=P("x", None, None, None), out_specs=P("x", None, None, None), check_rep=False))
         else:
             raise ValueError(f"dim = {self.dim} not supported")
@@ -150,9 +154,8 @@ class LBMBase(object):
         solid_halo_voxels = np.unique(np.vstack(solid_halo_list), axis=0) if solid_halo_list else None
 
         # Create the grid connectivity bitmask on each process
-        create_grid_connectivity_bitmask = jit((self.create_grid_connectivity_bitmask))
         start = time.time()
-        connectivity_bitmask = create_grid_connectivity_bitmask(solid_halo_voxels)
+        connectivity_bitmask = self.create_grid_connectivity_bitmask(solid_halo_voxels)
         print("Time to create the grid connectivity bitmask:", time.time() - start)
 
         start = time.time()
@@ -217,24 +220,26 @@ class LBMBase(object):
         hw_x = self.nDevices
         hw_y = hw_z = 1
         if self.dim == 2:
-            connectivity_bitmask = jnp.zeros((self.nx, self.ny, self.lattice.q), dtype=bool)
+            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.lattice.q), jnp.bool_, initVal=True)
+            connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(None))].set(False)
             if solid_halo_voxels is not None:
-                connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)
-            connectivity_bitmask = jnp.pad(connectivity_bitmask, ((hw_x, hw_x), (hw_y, hw_y), (0, 0)),
-                                           'constant', constant_values=True)
-            connectivity_bitmask = self.compute_bitmask(connectivity_bitmask)
+                solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
+                solid_halo_voxels = solid_halo_voxels.at[:, 1].add(hw_y)
+                connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)  
 
-            return connectivity_bitmask[hw_x:-hw_x, hw_y:-hw_y]
+            connectivity_bitmask = self.compute_bitmask(connectivity_bitmask)
+            return lax.with_sharding_constraint(connectivity_bitmask, self.sharding)
 
         elif self.dim == 3:
-            connectivity_bitmask = jnp.zeros((self.nx, self.ny, self.nz, self.lattice.q), dtype=bool)
+            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.nz + 2 * hw_z, self.lattice.q), jnp.bool_, initVal=True)
+            connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(hw_z, -hw_z), slice(None))].set(False)
             if solid_halo_voxels is not None:
+                solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
+                solid_halo_voxels = solid_halo_voxels.at[:, 1].add(hw_y)
+                solid_halo_voxels = solid_halo_voxels.at[:, 2].add(hw_z)
                 connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)
-            connectivity_bitmask = jnp.pad(connectivity_bitmask, ((hw_x, hw_x), (hw_y, hw_y), (hw_z, hw_z), (0, 0)),
-                                           'constant', constant_values=True)
             connectivity_bitmask = self.compute_bitmask(connectivity_bitmask)
-
-            return connectivity_bitmask[hw_x:-hw_x, hw_y:-hw_y, hw_z:-hw_z]
+            return lax.with_sharding_constraint(connectivity_bitmask, self.sharding)
 
     def bounding_box_indices(self):
         """
@@ -469,8 +474,38 @@ class LBMBase(object):
                 return jnp.roll(f, (c[0], c[1], c[2]), axis=(0, 1, 2))
 
         return vmap(streaming_i, in_axes=(-1, 0), out_axes=-1)(f, self.c.T)
+    
+    def compute_bitmask_m(self, b):
+        """
+        This function computes a bitmask for each direction in the lattice. The bitmask is used to 
+        determine which nodes are fluid nodes and which are boundary nodes.
 
-    def compute_bitmask(self, b):    
+        To enable multi-GPU/TPU functionality, it extracts the left and right boundary slices of the
+        distribution functions that need to be communicated to the neighboring processes.
+
+        The function then sends the left boundary slice to the right neighboring process and the right 
+        boundary slice to the left neighboring process. The received data is then set to the 
+        corresponding indices in the receiving domain.
+
+        Parameters
+        ----------
+        b: jax.numpy.ndarray
+            The array holding the bitmasks for the simulation.
+
+        Returns
+        -------
+        jax.numpy.ndarray
+            The bitmasks after the streaming operation.
+        """
+        b = self.compute_bitmask_p(b)
+        left_comm, right_comm = b[:1, ..., self.lattice.right_indices], b[-1:, ..., self.lattice.left_indices]
+
+        left_comm, right_comm = self.send_right(left_comm, 'x'), self.send_left(right_comm, 'x')
+        b = b.at[:1, ..., self.lattice.right_indices].set(left_comm)
+        b = b.at[-1:, ..., self.lattice.left_indices].set(right_comm)
+        return b
+
+    def compute_bitmask_p(self, b):    
         """
         This function computes a bitmask for each direction in the lattice. The bitmask is used to 
         determine which nodes are fluid nodes and which are boundary nodes.
@@ -646,7 +681,7 @@ class LBMBase(object):
         return fout
 
     @partial(jit, static_argnums=(0, 3), donate_argnums=(1,))
-    def step(self, f_poststreaming, timestep, ret_fpost=False):
+    def step(self, f_poststreaming, timestep, return_fpost=False):
         """
         This function performs a single step of the LBM simulation.
 
@@ -664,7 +699,7 @@ class LBMBase(object):
             The post-streaming distribution functions.
         timestep: int
             The current timestep of the simulation.
-        ret_fpost: bool, optional
+        return_fpost: bool, optional
             If True, the function also returns the post-collision distribution functions.
 
         Returns
@@ -673,14 +708,14 @@ class LBMBase(object):
             The post-streaming distribution functions after the simulation step.
         f_postcollision: jax.numpy.ndarray or None
             The post-collision distribution functions after the simulation step, or None if 
-            ret_fpost is False.
+            return_fpost is False.
         """
         f_postcollision = self.collision(f_poststreaming)
         f_postcollision = self.apply_bc(f_postcollision, f_poststreaming, timestep, "PostCollision")
         f_poststreaming = self.streaming(f_postcollision)
         f_poststreaming = self.apply_bc(f_poststreaming, f_postcollision, timestep, "PostStreaming")
 
-        if ret_fpost:
+        if return_fpost:
             return f_poststreaming, f_postcollision
         else:
             return f_poststreaming, None
@@ -732,28 +767,28 @@ class LBMBase(object):
                     raise ValueError(f"Simulation already exceeded maximum allowable steps (t_max = {t_max}). Consider increasing t_max.")
         if MLUPS:
             # Avoid io overhead
-            self.io_rate = 0
-            self.print_info_rate = 0
+            self.ioRate = 0
+            self.printInfoRate= 0
             start = time.time()
         
         # Loop over all time steps
         for timestep in range(start_step, t_max + 1):
-            io_flag = self.io_rate > 0 and (timestep % self.io_rate == 0 or timestep == t_max)
-            print_iter_flag = self.print_info_rate > 0 and timestep % self.print_info_rate == 0
-            checkpoint_flag = self.checkpoint_rate > 0 and timestep % self.checkpoint_rate == 0
+            io_flag = self.ioRate > 0 and (timestep % self.ioRate == 0 or timestep == t_max)
+            print_iter_flag = self.printInfoRate> 0 and timestep % self.printInfoRate== 0
+            checkpoint_flag = self.checkpointRate > 0 and timestep % self.checkpointRate == 0
 
             if io_flag:
                 # Update the macroscopic variables and save the previous values (for error computation)
                 rho_prev, u_prev = self.update_macroscopic(f)
-                rho_prev = downsample_field(rho_prev, self.downsampling_factor)
-                u_prev = downsample_field(u_prev, self.downsampling_factor)
+                rho_prev = downsample_field(rho_prev, self.downsamplingFactor)
+                u_prev = downsample_field(u_prev, self.downsamplingFactor)
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
                 rho_prev = np.array(process_allgather(rho_prev))
                 u_prev = np.array(process_allgather(u_prev))
 
 
             # Perform one time-step (collision, streaming, and boundary conditions)
-            f, fstar = self.step(f, timestep, ret_fpost=self.ret_fpost)
+            f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
             # Print the progress of the simulation
             if print_iter_flag:
                 print(colored("Timestep ", 'blue') + colored(f"{timestep}", 'green') + colored(" of ", 'blue') + colored(f"{t_max}", 'green') + colored(" completed", 'blue'))
@@ -762,8 +797,8 @@ class LBMBase(object):
                 # Save the simulation data
                 print(f"Saving data at timestep {timestep}/{t_max}")
                 rho, u = self.update_macroscopic(f)
-                rho = downsample_field(rho, self.downsampling_factor)
-                u = downsample_field(u, self.downsampling_factor)
+                rho = downsample_field(rho, self.downsamplingFactor)
+                u = downsample_field(u, self.downsamplingFactor)
                 
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
                 rho = np.array(process_allgather(rho))

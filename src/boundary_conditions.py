@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, device_count
 from functools import partial
 import numpy as np
 class BoundaryCondition(object):
@@ -71,25 +71,51 @@ class BoundaryCondition(object):
         This method creates local bitmask and normal arrays for the boundary condition based on the connectivity bitmask.
         If the boundary condition requires extra configuration, the `configure` method is called.
         """
+
         if self.needsExtraConfiguration:
-            self.configure(connectivity_bitmask)
+            boundaryBitmask = self.get_boundary_bitmask(connectivity_bitmask)
+            self.configure(boundaryBitmask)
             self.needsExtraConfiguration = False
 
-        boundaryBitmask = connectivity_bitmask[self.indices]
+        boundaryBitmask = self.get_boundary_bitmask(connectivity_bitmask)
         self.normals = self.get_normals(boundaryBitmask)
         self.imissing, self.iknown = self.get_missing_indices(boundaryBitmask)
         self.imissingBitmask, self.iknownBitmask, self.imiddleBitmask = self.get_missing_bitmask(boundaryBitmask)
 
         return
 
-    def configure(self, connectivity_bitmask):
+    def get_boundary_bitmask(self, connectivity_bitmask):  
         """
-        Configures the boundary condition.
+        Add jax.device_count() to the self.indices in x-direction, and 1 to the self.indices other directions
+        This is to make sure the boundary condition is applied to the correct nodes as connectivity_bitmask is
+        expanded by (jax.device_count(), 1, 1)
 
         Parameters
         ----------
         connectivity_bitmask : array-like
             The connectivity bitmask for the lattice.
+        
+        Returns
+        -------
+        boundaryBitmask : array-like
+        """   
+        shifted_indices = np.array(self.indices)
+        shifted_indices[0] += device_count()
+        shifted_indices[1:] += 1
+        # Convert back to tuple
+        shifted_indices = tuple(shifted_indices)
+        boundaryBitmask = np.array(connectivity_bitmask[shifted_indices])
+
+        return boundaryBitmask
+
+    def configure(self, boundaryBitmask):
+        """
+        Configures the boundary condition.
+
+        Parameters
+        ----------
+        boundaryBitmask : array-like
+            The connectivity bitmask for the boundary voxels.
 
         Returns
         -------
@@ -449,14 +475,14 @@ class BounceBackHalfway(BoundaryCondition):
         self.needsExtraConfiguration = True
         self.isSolid = True
 
-    def configure(self, connectivity_bitmask):
+    def configure(self, boundaryBitmask):
         """
         Configures the boundary condition.
 
         Parameters
         ----------
-        connectivity_bitmask : array-like
-            The connectivity bitmask for the lattice.
+        boundaryBitmask : array-like
+            The connectivity bitmask for the boundary voxels.
 
         Returns
         -------
@@ -468,7 +494,6 @@ class BounceBackHalfway(BoundaryCondition):
         the boundary nodes to be the indices of fluid nodes adjacent of the solid nodes.
         """
         # Perform index shift for halfway BB.
-        boundaryBitmask = connectivity_bitmask[self.indices]
         shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
         idx_trg = []
@@ -641,12 +666,11 @@ class ZouHe(BoundaryCondition):
         self.prescribed = prescribed
         self.needsExtraConfiguration = True
 
-    def configure(self, connectivity_bitmask):
+    def configure(self, boundaryBitmask):
         """
         Correct boundary indices to ensure that only voxelized surfaces with normal vectors along main cartesian axes
         are assigned this type of BC.
         """
-        boundaryBitmask = connectivity_bitmask[self.indices]
         nv = np.dot(self.lattice.c, ~boundaryBitmask.T)
         corner_voxels = np.count_nonzero(nv, axis=0) > 1
         # removed_voxels = np.array(self.indices)[:, corner_voxels]
@@ -896,7 +920,7 @@ class ExtrapolationOutflow(BoundaryCondition):
         self.needsExtraConfiguration = True
         self.sound_speed = 1./jnp.sqrt(3.)
 
-    def configure(self, connectivity_bitmask):
+    def configure(self, boundaryBitmask):
         """
         Configure the boundary condition by finding neighbouring voxel indices.
 
@@ -905,7 +929,6 @@ class ExtrapolationOutflow(BoundaryCondition):
         connectivity_bitmask : np.ndarray
             The connectivity bitmask for the lattice.
         """        
-        boundaryBitmask = connectivity_bitmask[self.indices]
         shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
         idx_trg = []
