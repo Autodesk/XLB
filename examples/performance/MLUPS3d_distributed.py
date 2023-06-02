@@ -26,6 +26,9 @@ precision = 'f32/f32'
 
 class Cavity(BGKSim):
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     def set_boundary_conditions(self):
         # concatenate the indices of the left, right, and bottom walls
         walls = np.concatenate((self.boundingBoxIndices['left'], self.boundingBoxIndices['right'], self.boundingBoxIndices['bottom'], self.boundingBoxIndices['front'], self.boundingBoxIndices['back']))
@@ -46,9 +49,8 @@ if __name__ == '__main__':
     # Currently set on local host for testing purposes. 
     # Can be tested with 
     # (export PYTHONPATH=.; CUDA_VISIBLE_DEVICES=0 python3 examples/performance/MLUPS3d_distributed.py 100 100 & CUDA_VISIBLE_DEVICES=1 python3 examples/performance/MLUPS3d_distributed.py 100 100 &)
-    # (export PYTHONPATH=.; for i in `seq 0 1`; do CUDA_VISIBLE_DEVICES=$i python3 examples/performance/MLUPS3d_distributed.py 100 100 >OUT.$i 2>&1; done)
     port = portpicker.pick_unused_port()
-    jax.distributed.initialize(f'127.0.0.1:{port}', 2, int(os.environ['CUDA_VISIBLE_DEVICES']))
+    jax.distributed.initialize(f'127.0.0.1:1234', 2, int(os.environ['CUDA_VISIBLE_DEVICES']))
 
     # Create a 3D lattice with the D3Q19 scheme
     lattice = LatticeD3Q19(precision)
@@ -77,6 +79,14 @@ if __name__ == '__main__':
     # Check that the relaxation parameter is less than 2
     assert omega < 2.0, "omega must be less than 2.0"
     # Create a new instance of the Cavity class
-    sim = Cavity(lattice, omega, n, n, n, precision=precision)
-    # Run the simulation
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': n,
+        'ny': n,
+        'nz': n,
+        'precision': precision
+    }
+
+    sim = Cavity(**kwargs)    # Run the simulation
     sim.run(n_iters, MLUPS=True)
