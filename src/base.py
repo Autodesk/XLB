@@ -74,8 +74,13 @@ class LBMBase(object):
         self.w = self.lattice.w
         self.dim = self.lattice.d
 
-        mngr_options = CheckpointManagerOptions(save_interval_steps=self.checkpointRate, max_to_keep=1)
-        self.mngr = CheckpointManager(self.checkpointDir, PyTreeCheckpointer(), options=mngr_options)
+        # Set the checkpoint manager
+        if self.checkpointRate > 0:
+            mngr_options = CheckpointManagerOptions(save_interval_steps=self.checkpointRate, max_to_keep=1)
+            self.mngr = CheckpointManager(self.checkpointDir, PyTreeCheckpointer(), options=mngr_options)
+        else:
+            print("WARNING: Checkpointing is disabled for this simulation.")
+            self.mngr = None
         
         # Adjust the number of grid points in the x direction, if necessary.
         # If the number of grid points is not divisible by the number of devices
@@ -753,6 +758,8 @@ class LBMBase(object):
         if restore_checkpoint:
             latest_step = self.mngr.latest_step()
             if latest_step is not None:  # existing checkpoint present
+                # Assert that the checkpoint manager is not None
+                assert self.mngr is not None, "Checkpoint manager does not exist."
                 state = {'f': f}
                 shardings = jax.tree_map(lambda x: x.sharding, state)
                 restore_args = checkpoint_utils.construct_restore_args(state, shardings)
