@@ -28,10 +28,8 @@ import os
 import jax
 
 # disable JIt compilation
-# jax.config.update('jax_disable_jit', True)
-jax.config.update('jax_array', True)
 
-precision = 'f32/f32'
+jax.config.update('jax_array', True)
 
 class Car(KBCSim):
     def __init__(self, **kwargs):
@@ -78,7 +76,7 @@ class Car(KBCSim):
         rho_inlet = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
         vel_inlet = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
 
-        vel_inlet[:, 0] = u_inlet
+        vel_inlet[:, 0] = prescribed_vel
         self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_inlet, vel_inlet))
         # self.BCs.append(ZouHe(tuple(inlet.T),
         #                                          self.gridInfo,
@@ -98,8 +96,8 @@ class Car(KBCSim):
         boundary_force = np.sum(boundary_force, axis=0)
         drag = np.sqrt(boundary_force[0]**2 + boundary_force[1]**2)     #xy-plane
         lift = boundary_force[2]                                        #z-direction
-        cd = 2. * drag / (u_inlet ** 2 * self.car_area)
-        cl = 2. * lift / (u_inlet ** 2 * self.car_area)
+        cd = 2. * drag / (prescribed_vel ** 2 * self.car_area)
+        cl = 2. * lift / (prescribed_vel ** 2 * self.car_area)
 
         u_old = np.linalg.norm(u_prev, axis=2)
         u_new = np.linalg.norm(u, axis=2)
@@ -110,7 +108,7 @@ class Car(KBCSim):
         save_fields_vtk(timestep, fields)
 
 if __name__ == '__main__':
-
+    precision = 'f32/f32'
     lattice = LatticeD3Q27(precision)
 
     nx = 601
@@ -118,17 +116,15 @@ if __name__ == '__main__':
     nz = 251
 
     Re = 50000.0
-    u_inlet = 0.05
+    prescribed_vel = 0.05
     clength = nx - 1
 
-    visc = u_inlet * clength / Re
+    visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
 
     print('omega = ', omega)
     print("Mesh size: ", nx, ny, nz)
     print("Number of voxels: ", nx * ny * nz)
-
-    assert omega < 2.0, "omega must be less than 2.0"
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
     kwargs = {

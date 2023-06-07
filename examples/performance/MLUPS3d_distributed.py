@@ -76,8 +76,7 @@ if __name__ == '__main__':
     # Compute the relaxation parameter from the viscosity
     omega = 1.0 / (3. * visc + 0.5)
     print('omega = ', omega)
-    # Check that the relaxation parameter is less than 2
-    assert omega < 2.0, "omega must be less than 2.0"
+    
     # Create a new instance of the Cavity class
     kwargs = {
         'lattice': lattice,
@@ -85,8 +84,9 @@ if __name__ == '__main__':
         'nx': n,
         'ny': n,
         'nz': n,
-        'precision': precision
+        'precision': precision,
+        'compute_MLUPS': True
     }
 
     sim = Cavity(**kwargs)    # Run the simulation
-    sim.run(n_iters, MLUPS=True)
+    sim.run(n_iters)

@@ -20,16 +20,9 @@ import matplotlib.pyplot as plt
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
-jax.config.update("jax_array", True)
 # disable JIt compilation
-# jax.config.update('jax_disable_jit', True)
+
 jax.config.update('jax_enable_x64', True)
-
-
-precision = "f64/f64"
-resList = [32, 64, 128, 256, 512]
-ErrL2ResList = []
-
 
 def taylor_green_initial_fields(xx, yy, u0, rho0, nu, time):
     ux = -u0 * np.cos(xx) * np.sin(yy) * np.exp(-2 * nu * time)
@@ -38,6 +31,8 @@ def taylor_green_initial_fields(xx, yy, u0, rho0, nu, time):
     return ux, uy, np.expand_dims(rho, axis=-1)
 
 class TaylorGreenVortex(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         # no boundary conditions implying periodic BC in all directions
@@ -76,7 +71,11 @@ class TaylorGreenVortex(KBCSim):
 
 
 if __name__ == "__main__":
+    precision = "f64/f64"
     lattice = LatticeD2Q9(precision)
+
+    resList = [32, 64, 128, 256, 512]
+    ErrL2ResList = []
 
     for nx in resList:
         print("Running at nx = ny = {:07.6f}".format(nx))
@@ -94,7 +93,6 @@ if __name__ == "__main__":
         visc = vel_ref * nx / Re
         omega = 1.0 / (3.0 * visc + 0.5)
         print("omega = ", omega)
-        assert omega < 2.0, "omega must be less than 2.0"
         os.system("rm -rf ./*.vtk && rm -rf ./*.png")
         kwargs = {
             'lattice': lattice,
@@ -104,8 +102,7 @@ if __name__ == "__main__":
             'nz': 0,
             'precision': precision,
             'io_rate': 500,
-            'print_info_rate': 500,
-            'return_fpost': True,    # Need to retain fpost-collision for computation of lift and drag
+            'print_info_rate': 500
         }
         sim = TaylorGreenVortex(**kwargs)
         endTime = int(20000*nx/32.0)

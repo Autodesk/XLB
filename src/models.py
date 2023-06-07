@@ -202,6 +202,8 @@ class AdvectionDiffusionBGK(LBMBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.vel = kwargs.get("vel", None)
+        if self.vel is None:
+            raise ValueError("Velocity must be specified for AdvectionDiffusionBGK.")
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
     def collision(self, f):

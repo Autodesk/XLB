@@ -14,16 +14,12 @@ import os
 # config.update('jax_disable_jit', True)
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=4'
 
-precision = "f32/f32"
-
-
 class Couette(BGKSim):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         walls = np.concatenate((self.boundingBoxIndices["top"], self.boundingBoxIndices["bottom"]))
-
         self.BCs.append(BounceBack(tuple(walls.T), self.gridInfo, self.precisionPolicy))
 
         outlet = self.boundingBoxIndices["right"]
@@ -31,7 +27,7 @@ class Couette(BGKSim):
 
         rho_wall = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
         vel_wall = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
-        vel_wall[:, 0] = u_wall
+        vel_wall[:, 0] = prescribed_vel
         self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_wall, vel_wall))
 
         self.BCs.append(DoNothing(tuple(outlet.T), self.gridInfo, self.precisionPolicy))
@@ -52,16 +48,16 @@ class Couette(BGKSim):
         save_fields_vtk(timestep, fields)
 
 if __name__ == "__main__":
+    precision = "f32/f32"
     lattice = LatticeD2Q9(precision)
-
     nx = 501
     ny = 101
 
     Re = 100.0
-    u_wall = 0.1
+    prescribed_vel = 0.1
     clength = nx - 1
 
-    visc = u_wall * clength / Re
+    visc = prescribed_vel * clength / Re
 
     omega = 1.0 / (3.0 * visc + 0.5)
     print("omega = ", omega)
@@ -76,7 +72,7 @@ if __name__ == "__main__":
         'nz': 0,
         'precision': precision,
         'io_rate': 100,
-        'print_info_rate': 100,
-    }
+        'print_info_rate': 100
+        }
     sim = Couette(**kwargs)
     sim.run(20000)

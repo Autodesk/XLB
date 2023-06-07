@@ -27,13 +27,10 @@ import matplotlib.pyplot as plt
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
-jax.config.update("jax_array", True)
+
 # disable JIt compilation
-# jax.config.update('jax_disable_jit', True)
+
 jax.config.update('jax_enable_x64', True)
-
-
-precision = "f64/f64"
 
 def vonKarman_loglaw_wall(yplus):
     vonKarmanConst = 0.41
@@ -118,30 +115,28 @@ class turbulentChannel(KBCSim):
 
 
 if __name__ == "__main__":
+    precision = "f64/f64"
     lattice = LatticeD3Q27(precision)
-
     # h: channel half-width
     h = 10
-
-    # define channel geometry based on h
+    # Define channel geometry based on h
     nx = 6*h
     ny = 3*h
     nz = 2*h
 
-    # define flow regime
+    # Define flow regime
     Re_tau = 180
     u_tau = 0.004
-    DeltaPlus = Re_tau/h    # DeltaPlus = u_tau / nu * Delta where u_tau / nu = Re_tau/h
+    # DeltaPlus = Re_tau/h    # DeltaPlus = u_tau / nu * Delta where u_tau / nu = Re_tau/h
     visc = u_tau * h / Re_tau
     omega = 1.0 / (3.0 * visc + 0.5)
 
-    # wall distance in wall units to be used inside output_data
+    # Wall distance in wall units to be used inside output_data
     zz = np.arange(nz)
     zz = np.minimum(zz, zz.max() - zz)
     yplus = zz * u_tau / visc
 
     print("omega = ", omega)
-    assert omega < 2.0, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
@@ -152,8 +147,7 @@ if __name__ == "__main__":
         'nz': nz,
         'precision': precision,
         'io_rate': 20000,
-        'print_info_rate': 20000,
+        'print_info_rate': 20000
     }
     sim = turbulentChannel(**kwargs)
     sim.run(4000000)
-

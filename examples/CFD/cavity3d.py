@@ -19,14 +19,6 @@ import os
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-import jax
-
-# disable JIT compilation
-# jax.config.update('jax_disable_jit', True)
-
-jax.config.update('jax_array', True)
-import jax.numpy as jnp
-
 from src.models import BGKSim, KBCSim
 from src.lattice import LatticeD3Q27
 import numpy as np
@@ -35,7 +27,6 @@ from jax.config import config
 from src.boundary_conditions import *
 
 precision = 'f32/f32'
-
 
 class Cavity(KBCSim):
     def __init__(self, **kwargs):
@@ -55,7 +46,7 @@ class Cavity(KBCSim):
 
         rho_wall = np.ones((moving_wall.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
         vel_wall = np.zeros(moving_wall.shape, dtype=self.precisionPolicy.compute_dtype)
-        vel_wall[:, 0] = u_wall
+        vel_wall[:, 0] = prescribed_vel
         self.BCs.append(EquilibriumBC(tuple(moving_wall.T), self.gridInfo, self.precisionPolicy, rho_wall, vel_wall))
 
     def output_data(self, **kwargs):
@@ -84,13 +75,13 @@ if __name__ == '__main__':
     nz = 101
 
     Re = 50000.0
-    u_wall = 0.1
+    prescribed_vel = 0.1
     clength = nx - 1
 
-    visc = u_wall * clength / Re
+    visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
     print('omega = ', omega)
-    assert omega < 2.0, "omega must be less than 2.0"
+    
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
@@ -102,6 +93,7 @@ if __name__ == '__main__':
         'precision': precision,
         'io_rate': 100,
         'print_info_rate': 100,
+        'downsampling_factor': 2
     }
     sim = Cavity(**kwargs)
     sim.run(2000)

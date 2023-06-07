@@ -33,17 +33,13 @@ import matplotlib.pylab as plt
 from src.models import BGKSim, KBCSim
 from src.boundary_conditions import *
 from src.lattice import *
-import jax.numpy as jnp
 import numpy as np
 from src.utils import *
 from jax.config import config
 import os
-#config.update('jax_disable_jit', True)
 #os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
 import scipy
-
-precision = 'f32/f32'
 
 # Function to create a NACA airfoil shape given its length, thickness, and angle of attack
 def makeNacaAirfoil(length, thickness=30, angle=0):
@@ -85,7 +81,7 @@ class Airfoil(KBCSim):
         rho_inlet = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
         vel_inlet = np.zeros((inlet.shape), dtype=self.precisionPolicy.compute_dtype)
 
-        vel_inlet[:, 0] = inlet_vel
+        vel_inlet[:, 0] = prescribed_vel
         self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_inlet, vel_inlet))
 
     def output_data(self, **kwargs):
@@ -105,12 +101,12 @@ class Airfoil(KBCSim):
         save_fields_vtk(timestep, fields)
 
 if __name__ == '__main__':
-
     airfoil_length = 101
     airfoil_thickness = 30
     airfoil_angle = 20
     airfoil = makeNacaAirfoil(length=airfoil_length, thickness=airfoil_thickness, angle=airfoil_angle).T
 
+    precision = 'f32/f32'
     lattice = LatticeD3Q27(precision=precision)
 
     nx = airfoil.shape[0]
@@ -123,13 +119,13 @@ if __name__ == '__main__':
     nz = 101
 
     Re = 10000.0
-    inlet_vel = 0.1
+    prescribed_vel = 0.1
     clength = airfoil_length
 
-    visc = inlet_vel * clength / Re
+    visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
     print('omega = ', omega)
-    assert omega < 2.0, "omega must be less than 2.0"
+    
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
     # Set the parameters for the simulation
@@ -141,7 +137,7 @@ if __name__ == '__main__':
         'nz': nz,
         'precision': precision,
         'io_rate': 100,
-        'print_info_rate': 100
+        'print_info_rate': 100,
     }
 
     sim = Airfoil(**kwargs)

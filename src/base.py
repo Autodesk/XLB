@@ -19,7 +19,7 @@ import jmp
 import os
 import jax
 
-jax.config.update("jax_array", True)
+
 jax.config.update("jax_spmd_mode", 'allow_all')
 # Disables annoying TF warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
@@ -53,7 +53,15 @@ class LBMBase(object):
         self.printInfoRate= kwargs.get("print_info_rate", 100)
         self.ioRate = kwargs.get("io_rate", 0)
         self.returnFpost = kwargs.get("return_fpost", False)
+        self.computeMLUPS = kwargs.get("compute_MLUPS", False)
+        self.restore_checkpoint = kwargs.get("restore_checkpoint", False)
         self.nDevices = jax.device_count()
+
+        if self.computeMLUPS:
+            self.restore_checkpoint = False
+            self.ioRate = 0
+            self.checkpointRate = 0
+            self.printInfoRate = 0
 
         # Check for distributed mode
         if self.nDevices > jax.local_device_count():
@@ -66,7 +74,11 @@ class LBMBase(object):
         lattice = kwargs.get("lattice", None)
         if lattice is None:
             raise ValueError("lattice must be provided")
-        omega = kwargs.get("omega", 1.0)
+    
+        omega = kwargs.get("omega", None)
+        if omega is None:
+            raise ValueError("omega must be provided")
+        
         self.lattice = lattice
         self.omega = omega
         self.c = self.lattice.c
@@ -85,14 +97,14 @@ class LBMBase(object):
         # Adjust the number of grid points in the x direction, if necessary.
         # If the number of grid points is not divisible by the number of devices
         # it increases the number of grid points to the next multiple of the number of devices.
-        # This is done in order to accommodate the domain partitioning per XLA device
+        # This is done in order to accommodate the domain sharding per XLA device
         nx, ny, nz = kwargs.get("nx"), kwargs.get("ny"), kwargs.get("nz")
         if None in {nx, ny, nz}:
-            raise ValueError("nx, ny, and nz must be provided")
+            raise ValueError("nx, ny, and nz must be provided. For 2D examples, nz must be set to 0.")
         self.nx = nx
         if nx % self.nDevices:
             self.nx = nx + (self.nDevices - nx % self.nDevices)
-            print("nx increased from {} to {} in order to accommodate the domain partitioning per XLA device.".format(nx, self.nx))
+            print("WARNING: nx increased from {} to {} in order to accommodate domain sharding per XLA device.".format(nx, self.nx))
         self.ny = ny
         self.nz = nz
     
@@ -221,7 +233,7 @@ class LBMBase(object):
         -------
             A JAX array representing the connectivity bitmask of the grid.
         """
-        # Halo width (hw_x is different to accommodate the domain partitioning per XLA device)
+        # Halo width (hw_x is different to accommodate the domain sharding per XLA device)
         hw_x = self.nDevices
         hw_y = hw_z = 1
         if self.dim == 2:
@@ -728,7 +740,7 @@ class LBMBase(object):
     def checkpoint_manager(self):
         pass
 
-    def run(self, t_max, restore_checkpoint=False, MLUPS=False):
+    def run(self, t_max):
         """
         This function runs the LBM simulation for a specified number of time steps.
 
@@ -742,12 +754,6 @@ class LBMBase(object):
         ----------
         t_max: int
             The total number of time steps to run the simulation.
-        checkpoint: bool, optional
-            If True, the function loads the simulation data from the last checkpoint and continues and saves 
-            the simulation data with the checkpoint_rate.
-        MLUPS: bool, optional
-            If True, the function computes and prints the performance of the simulation in MLUPS.
-
         Returns
         -------
         f: jax.numpy.ndarray
@@ -755,7 +761,7 @@ class LBMBase(object):
         """
         f = self.assign_fields_sharded()
         start_step = 0
-        if restore_checkpoint:
+        if self.restore_checkpoint:
             latest_step = self.mngr.latest_step()
             if latest_step is not None:  # existing checkpoint present
                 # Assert that the checkpoint manager is not None
@@ -772,12 +778,8 @@ class LBMBase(object):
                 start_step = latest_step + 1
                 if not (t_max > start_step):
                     raise ValueError(f"Simulation already exceeded maximum allowable steps (t_max = {t_max}). Consider increasing t_max.")
-        if MLUPS:
-            # Avoid io overhead
-            self.ioRate = 0
-            self.printInfoRate= 0
+        if self.computeMLUPS:
             start = time.time()
-        
         # Loop over all time steps
         for timestep in range(start_step, t_max + 1):
             io_flag = self.ioRate > 0 and (timestep % self.ioRate == 0 or timestep == t_max)
@@ -821,11 +823,11 @@ class LBMBase(object):
                 self.mngr.save(timestep, state)
             
             # Start the timer for the MLUPS computation after the first timestep (to remove compilation overhead)
-            if MLUPS and timestep == 1:
+            if self.computeMLUPS and timestep == 1:
                 jax.block_until_ready(f)
                 start = time.time()
 
-        if MLUPS:
+        if self.computeMLUPS:
             # Compute and print the performance of the simulation in MLUPS
             jax.block_until_ready(f)
             end = time.time()
