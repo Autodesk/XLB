@@ -1,6 +1,4 @@
-::: src.utils.downsample_scalarfield
-
-::: src.utils.downsample_vectorfield
+::: src.utils.downsample_field
 
 ::: src.utils.save_image
 
