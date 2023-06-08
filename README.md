@@ -76,6 +76,7 @@ The following examples showcase the capabilities of XLB:
 - Distributed Multi-GPU support
 - JAX shard-map and JAX Array support
 - Mixed-Precision support (store vs compute)
+- [Orbax](https://github.com/google/orbax)-based distributed asynchronous checkpointing
 
 ## Installation Guide
 
