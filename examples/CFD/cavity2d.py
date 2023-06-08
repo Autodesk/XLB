@@ -63,10 +63,10 @@ if __name__ == "__main__":
     precision = "f32/f32"
     lattice = LatticeD2Q9(precision)
 
-    nx = 3000
-    ny = 2000
+    nx = 200
+    ny = 200
 
-    Re = 20000.0
+    Re = 200.0
     prescribed_vel = 0.1
     clength = nx - 1
 
@@ -89,8 +89,9 @@ if __name__ == "__main__":
         'io_rate': 100,
         'print_info_rate': 100,
         'checkpoint_rate': checkpoint_rate,
-        'checkpoint_dir': checkpoint_dir
+        'checkpoint_dir': checkpoint_dir,
+        'restore_checkpoint': True,
     }
 
     sim = Cavity(**kwargs)
-    sim.run(3000, restore_checkpoint=True)
+    sim.run(5000)
