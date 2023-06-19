@@ -207,11 +207,19 @@ def save_BCs_vtk(timestep, BCs, gridInfo,  output_dir='.'):
         gridDimensions = (gridInfo['nx'] + 1, gridInfo['ny'] + 1, gridInfo['nz'] + 1)
         fieldDimensions = (gridInfo['nx'], gridInfo['ny'], gridInfo['nz'])
 
-
     grid = pv.UniformGrid(dimensions=gridDimensions)
+
+    # Dictionary to keep track of encountered BC names
+    bcNamesCount = {}
 
     for bc in BCs:
         bcName = bc.name
+        if bcName in bcNamesCount:
+            bcNamesCount[bcName] += 1
+        else:
+            bcNamesCount[bcName] = 0
+        bcName += f"_{bcNamesCount[bcName]}"
+
         if bc.isDynamic:
             bcIndices, _ = bc.update_function(timestep)
         else:
