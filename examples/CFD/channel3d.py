@@ -1,9 +1,25 @@
+"""
+This script performs a 3D simulation of turbulent channel flow using the lattice Boltzmann method (LBM). 
+Turbulent channel flow, also known as plane Couette flow, is a fundamental case in the study of wall-bounded turbulent flows.
+
+In this example you'll be introduced to the following concepts:
+
+1. Lattice: A D3Q27 lattice is used, which is a three-dimensional lattice model with 27 discrete velocity directions. This type of lattice allows for a more precise representation of fluid flow in three dimensions.
+
+2. Initial Conditions: The initial conditions for the flow are randomly generated, and the populations are initialized to be the solution of an advection-diffusion equation.
+
+3. Boundary Conditions: Bounce back boundary conditions are applied at the top and bottom walls, simulating a no-slip condition typical for wall-bounded flows.
+
+4. External Force: An external force is applied to drive the flow.
+
+"""
+
 from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
 import numpy as np
 from src.lattice import LatticeD3Q27
-from src.models import KBCSimForced, AdvectionDiffusionBGK
+from src.models import KBCSim, AdvectionDiffusionBGK
 import jax.numpy as jnp
 import os
 import matplotlib.pyplot as plt
@@ -11,13 +27,10 @@ import matplotlib.pyplot as plt
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
-jax.config.update("jax_array", True)
+
 # disable JIt compilation
-# jax.config.update('jax_disable_jit', True)
+
 jax.config.update('jax_enable_x64', True)
-
-
-precision = "f64/f64"
 
 def vonKarman_loglaw_wall(yplus):
     vonKarmanConst = 0.41
@@ -42,34 +55,39 @@ def get_dns_data():
         }
     return dns_dic
 
-class turbulentChannel(KBCSimForced):
+class turbulentChannel(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
         wall = np.concatenate((self.boundingBoxIndices['bottom'], self.boundingBoxIndices['top']))
-        self.BCs.append(Regularized(tuple(wall.T), self.grid_info, self.precision_policy, 'velocity', np.zeros((wall.shape[0], 3))))
+        self.BCs.append(Regularized(tuple(wall.T), self.gridInfo, self.precisionPolicy, 'velocity', np.zeros((wall.shape[0], 3))))
         return
 
     def initialize_macroscopic_fields(self):
-        rho = self.precision_policy.cast_to_output(1.0)
+        rho = self.precisionPolicy.cast_to_output(1.0)
         u = self.distributed_array_init((self.nx, self.ny, self.nz, self.dim),
-                                         self.precision_policy.compute_dtype, initVal=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
-        u = self.precision_policy.cast_to_output(u)
+                                         self.precisionPolicy.compute_dtype, initVal=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
+        u = self.precisionPolicy.cast_to_output(u)
         return rho, u
 
     def initialize_populations(self, rho, u):
         omegaADE = 1.0
-        ADE = AdvectionDiffusionBGK(u, lattice, omegaADE, self.nx, self.ny, self.nz, precision=precision)
+        lattice = LatticeD3Q27(precision)
+
+        kwargs = {'lattice': lattice, 'nx': self.nx, 'ny': self.ny, 'nz': self.nz,  'precision': precision, 'omega': omegaADE, 'vel': u}
+        ADE = AdvectionDiffusionBGK(**kwargs)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(50000, print_iter=0, io_iter=0)
+        f = ADE.run(50000)
         return f
 
     def get_force(self):
         # define the external force
         force = np.zeros((self.nx, self.ny, self.nz, 3))
         force[..., 0] = Re_tau**2 * visc**2 / h**3
-        return self.precision_policy.cast_to_output(force)
+        return self.precisionPolicy.cast_to_output(force)
 
     def output_data(self, **kwargs):
         rho = np.array(kwargs["rho"])
@@ -94,37 +112,47 @@ class turbulentChannel(KBCSimForced):
         ax.set_ylim([0, 20])
         fname = "uplus_" + str(timestep//10000).zfill(5) + '.pdf'
         plt.savefig(fname, format='pdf')
-        fields = {"rho": rho, "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
+        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
 
 
 
 if __name__ == "__main__":
+    precision = "f64/f64"
     lattice = LatticeD3Q27(precision)
 
     # h: channel half-width
     h = 50
 
-    # define channel geometry based on h
+    # Define channel geometry based on h
     nx = 6*h
     ny = 3*h
     nz = 2*h
 
-    # define flow regime
+    # Define flow regime
     Re_tau = 180
     u_tau = 0.001
     DeltaPlus = Re_tau/h    # DeltaPlus = u_tau / nu * Delta where u_tau / nu = Re_tau/h
     visc = u_tau * h / Re_tau
     omega = 1.0 / (3.0 * visc + 0.5)
 
-    # wall distance in wall units to be used inside output_data
+    # Wall distance in wall units to be used inside output_data
     zz = np.arange(nz)
     zz = np.minimum(zz, zz.max() - zz)
     yplus = zz * u_tau / visc
 
     print("omega = ", omega)
-    assert omega < 2.0, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
-    sim = turbulentChannel(lattice, omega, nx, ny, nz, precision=precision, optimize=False)
-    sim.run(10000000, print_iter=100000, io_iter=500000)
+    kwargs = {
+        'lattice': lattice,
+        'omega': omega,
+        'nx': nx,
+        'ny': ny,
+        'nz': nz,
+        'precision': precision,
+        'io_rate': 500000,
+        'print_info_rate': 100000
+    }
+    sim = turbulentChannel(**kwargs)
+    sim.run(10000000)
