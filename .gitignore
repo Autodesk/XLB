@@ -10,6 +10,7 @@
 *zraw
 *mhd
 *png
+*pdf
 # Exclusions
 !jax-lbm.png
 !airfoil.png
