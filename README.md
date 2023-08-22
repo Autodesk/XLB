@@ -1,3 +1,5 @@
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![GitHub star chart](https://img.shields.io/github/stars/Autodesk/XLB?style=social)](https://star-history.com/#Autodesk/XLB)
 <p align="center">
   <img src="assets/logo-transparent.png" alt="" width="700">
 </p>
@@ -8,14 +10,14 @@ XLB (Accelerated LB) is a fully differentiable 2D/3D Lattice Boltzmann Method (L
 
 ## Key Features
 - **Integration with JAX Ecosystem:** The solver can be easily integrated with JAX's robust ecosystem of machine learning libraries such as [Flax](https://github.com/google/flax), [Haiku](https://github.com/deepmind/dm-haiku), [Optax](https://github.com/deepmind/optax), and many more.
-- **Scalability:** XLB is capable of scaling on distributed multi-GPU systems, enabling the execution of large-scale simulations with billions of voxels.
+- **Scalability:** XLB is capable of scaling on distributed multi-GPU systems, enabling the execution of large-scale simulations on hundreds of GPUs with billions of voxels.
 - **Support for Various LBM Boundary Conditions and Kernels:** XLB supports several LBM boundary conditions and collision kernels.
 - **User-Friendly Interface:** Written entirely in Python, XLB emphasizes a highly accessible interface that allows users to extend the solver with ease and quickly set up and run new simulations.
 - **Leverages JAX Array and Shardmap:** The solver incorporates the new JAX array unified array type and JAX shardmap, providing users with a numpy-like interface. This allows users to focus solely on the semantics, leaving performance optimizations to the compiler.
 - **Platform Versatility:** The same XLB code can be executed on a variety of platforms including multi-core CPUs, single or multi-GPU systems, TPUs, and it also supports distributed runs on multi-GPU systems or TPU Pod slices.
 
 ## Documentation
-The documentation can be found [here](https://github.com/Autodesk/XLB/wiki) (in preparation)
+The documentation can be found [here](https://autodesk.github.io/XLB/) (in preparation)
 ## Showcase
 
 The following examples showcase the capabilities of XLB:
@@ -26,6 +28,14 @@ The following examples showcase the capabilities of XLB:
 <p align="center">
   Lid-driven Cavity flow at Re=100,000 (~25 million voxels)
 </p>
+
+<p align="center">
+  <img src="assets/building.png" alt="" width="700">
+</p>
+<p align="center">
+  Airflow in to, out of, and within a building (~400 million voxels)
+</p>
+
 
 <p align="center">
   <img src="assets/car.png" alt="" width="500">
@@ -74,12 +84,15 @@ The following examples showcase the capabilities of XLB:
 - Distributed Multi-GPU support
 - JAX shard-map and JAX Array support
 - Mixed-Precision support (store vs compute)
+- [Orbax](https://github.com/google/orbax)-based distributed asynchronous checkpointing
 
 ## Installation Guide
 
-To install XLB, you can run the following commands:
+To use XLB, you must first install JAX and other dependencies using the following commands:
 
 ```bash
+# Please refer to https://github.com/google/jax for the latest installation documentation
+
 pip install --upgrade pip
 
 # For CPU run
@@ -93,10 +106,16 @@ pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-re
 # CUDA 11 and cuDNN 8.6 or newer.
 pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
-# Please refer to https://github.com/google/jax for the latest installation documentation
-
 # Run dependencies
 pip install jmp pyvista numpy matplotlib Rtree trimesh jmp
+```
+
+Run an example:
+```bash
+git clone https://github.com/Autodesk/XLB
+cd XLB
+export PYTHONPATH=.
+python3 examples/cavity2d.py
 ```
 ## Citing XLB
 Accompanying publication coming soon:

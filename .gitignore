@@ -10,11 +10,13 @@
 *zraw
 *mhd
 *png
+*pdf
 # Exclusions
 !jax-lbm.png
 !airfoil.png
 !car.png
 !logo-transparent.png
+!building.png
 # Vagrant
 .vagrant/
 
@@ -142,3 +144,7 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+
+# Checkpoints (default dir for XLB)
+checkpoints/*
