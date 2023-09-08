@@ -1,3 +1,10 @@
+"""
+The given script sets up a simulation for the Taylor-Green vortex flow.
+The Taylor-Green vortex is a type of two-dimensional, incompressible fluid flow with a known analytical solution, making it an ideal test case for fluid dynamics simulations.
+The flow is characterized by a pair of counter-rotating vortices. In this script, the initial fields for the Taylor-Green vortex are set using a known function.
+"""
+
+
 from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
@@ -13,24 +20,19 @@ import matplotlib.pyplot as plt
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
-jax.config.update("jax_array", True)
 # disable JIt compilation
-# jax.config.update('jax_disable_jit', True)
+
 jax.config.update('jax_enable_x64', True)
-
-
-precision = "f64/f64"
-resList = [32, 64, 128, 256, 512]
-ErrL2ResList = []
-
 
 def taylor_green_initial_fields(xx, yy, u0, rho0, nu, time):
     ux = -u0 * np.cos(xx) * np.sin(yy) * np.exp(-2 * nu * time)
     uy = u0 * np.sin(xx) * np.cos(yy) * np.exp(-2 * nu * time)
     rho = 1.0 - rho0 * u0 ** 2 / 12. * (np.cos(2. * xx) + np.cos(2. * yy)) * np.exp(-4 * nu * time)
-    return ux, uy, rho
+    return ux, uy, np.expand_dims(rho, axis=-1)
 
 class TaylorGreenVortex(KBCSim):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
         # no boundary conditions implying periodic BC in all directions
@@ -38,19 +40,18 @@ class TaylorGreenVortex(KBCSim):
 
     def initialize_macroscopic_fields(self):
         ux, uy, rho = taylor_green_initial_fields(xx, yy, vel_ref, 1, 0., 0.)
-        rho_sharding = PositionalSharding(mesh_utils.create_device_mesh((self.n_devices, 1, 1)))
-        u_sharding = PositionalSharding(mesh_utils.create_device_mesh((self.n_devices, 1, 1, 1)))
-        rho = self.distributed_array_init(rho.shape, self.precision_policy.output_dtype, initVal=1.0, sharding=rho_sharding)
+        rho = self.distributed_array_init(rho.shape, self.precisionPolicy.output_dtype, initVal=1.0, sharding=self.sharding)
         u = np.stack([ux, uy], axis=-1)
-        u = self.distributed_array_init(u.shape, self.precision_policy.output_dtype, initVal=u, sharding=u_sharding)
+        u = self.distributed_array_init(u.shape, self.precisionPolicy.output_dtype, initVal=u, sharding=self.sharding)
         return rho, u
 
     def initialize_populations(self, rho, u):
         omegaADE = 1.0
-        ADE = AdvectionDiffusionBGK(u, lattice, omegaADE, self.nx, self.ny, precision=precision)
+        kwargs = {'lattice': lattice, 'nx': self.nx, 'ny': self.ny, 'nz': self.nz,  'precision': precision, 'omega': omegaADE, 'vel': u, 'print_info_rate': 0, 'io_rate': 0}
+        ADE = AdvectionDiffusionBGK(**kwargs)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(20000, print_iter=0, io_iter=0)
+        f = ADE.run(20000)
         return f
 
     def output_data(self, **kwargs):
@@ -70,7 +71,11 @@ class TaylorGreenVortex(KBCSim):
 
 
 if __name__ == "__main__":
+    precision = "f64/f64"
     lattice = LatticeD2Q9(precision)
+
+    resList = [32, 64, 128, 256, 512]
+    ErrL2ResList = []
 
     for nx in resList:
         print("Running at nx = ny = {:07.6f}".format(nx))
@@ -88,11 +93,20 @@ if __name__ == "__main__":
         visc = vel_ref * nx / Re
         omega = 1.0 / (3.0 * visc + 0.5)
         print("omega = ", omega)
-        assert omega < 2.0, "omega must be less than 2.0"
         os.system("rm -rf ./*.vtk && rm -rf ./*.png")
-        sim = TaylorGreenVortex(lattice, omega, nx, ny, precision=precision, optimize=False)
+        kwargs = {
+            'lattice': lattice,
+            'omega': omega,
+            'nx': nx,
+            'ny': ny,
+            'nz': 0,
+            'precision': precision,
+            'io_rate': 500,
+            'print_info_rate': 500
+        }
+        sim = TaylorGreenVortex(**kwargs)
         endTime = int(20000*nx/32.0)
-        sim.run(endTime, print_iter=5000, io_iter=5000)
+        sim.run(endTime)
     plt.loglog(resList, ErrL2ResList, '-o')
     plt.loglog(resList, 1e-3*(np.array(resList)/128)**(-2), '--')
     plt.savefig('Error.png'); plt.savefig('Error.pdf', format='pdf')

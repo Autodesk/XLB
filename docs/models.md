@@ -3,5 +3,3 @@
 ::: src.models.KBCSim
 
 ::: src.models.AdvectionDiffusionBGK
-
-::: src.models.KBCSimForced

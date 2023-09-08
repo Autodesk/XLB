@@ -10,7 +10,7 @@ XLB (Accelerated LB) is a fully differentiable 2D/3D Lattice Boltzmann Method (L
 
 ## Key Features
 - **Integration with JAX Ecosystem:** The solver can be easily integrated with JAX's robust ecosystem of machine learning libraries such as [Flax](https://github.com/google/flax), [Haiku](https://github.com/deepmind/dm-haiku), [Optax](https://github.com/deepmind/optax), and many more.
-- **Scalability:** XLB is capable of scaling on distributed multi-GPU systems, enabling the execution of large-scale simulations with billions of voxels.
+- **Scalability:** XLB is capable of scaling on distributed multi-GPU systems, enabling the execution of large-scale simulations on hundreds of GPUs with billions of voxels.
 - **Support for Various LBM Boundary Conditions and Kernels:** XLB supports several LBM boundary conditions and collision kernels.
 - **User-Friendly Interface:** Written entirely in Python, XLB emphasizes a highly accessible interface that allows users to extend the solver with ease and quickly set up and run new simulations.
 - **Leverages JAX Array and Shardmap:** The solver incorporates the new JAX array unified array type and JAX shardmap, providing users with a numpy-like interface. This allows users to focus solely on the semantics, leaving performance optimizations to the compiler.
@@ -28,6 +28,14 @@ The following examples showcase the capabilities of XLB:
 <p align="center">
   Lid-driven Cavity flow at Re=100,000 (~25 million voxels)
 </p>
+
+<p align="center">
+  <img src="assets/building.png" alt="" width="700">
+</p>
+<p align="center">
+  Airflow in to, out of, and within a building (~400 million voxels)
+</p>
+
 
 <p align="center">
   <img src="assets/car.png" alt="" width="500">
@@ -76,6 +84,7 @@ The following examples showcase the capabilities of XLB:
 - Distributed Multi-GPU support
 - JAX shard-map and JAX Array support
 - Mixed-Precision support (store vs compute)
+- [Orbax](https://github.com/google/orbax)-based distributed asynchronous checkpointing
 
 ## Installation Guide
 

@@ -15,43 +15,9 @@ import __main__
 
 
 @partial(jit, static_argnums=(1, 2))
-def downsample_scalarfield(field, factor, method='bicubic'):
+def downsample_field(field, factor, method='bicubic'):
     """
-    Downsample a JAX array scalarfield by a factor of `factor` along each axis.
-
-    Parameters
-    ----------
-    field : jax.numpy.ndarray
-        The input scalar field to be downsampled. This should be a 2D or 3D JAX array.
-    factor : int
-        The factor by which to downsample the field. The dimensions of the field will be divided by this factor.
-    method : str, optional
-        The method to use for downsampling. Default is 'bicubic'.
-
-    Returns
-    -------
-    jax.numpy.ndarray
-        The downsampled field.
-
-    Notes
-    -----
-    This function uses the skimage.transform.resize function to perform the downsampling.
-    """
-    if factor == 1:
-        return field
-    else:
-        if field.ndim == 2:
-            return resize(field, (field.shape[0] // factor, field.shape[1] // factor),
-                          method=method)
-        else:
-            return resize(field, (field.shape[0] // factor, field.shape[1] // factor,
-                             field.shape[2] // factor), method=method)
-
-# A function based on JAX that downsample a JAX array vector where the last dimension is 2 or 3 (vector components)
-@partial(jit, static_argnums=(1, 2))
-def downsample_vectorfield(field, factor, method='bicubic'):
-    """
-    Downsample a JAX array vectorfield by a factor of `factor` along each axis.
+    Downsample a JAX array by a factor of `factor` along each axis.
 
     Parameters
     ----------
@@ -66,28 +32,17 @@ def downsample_vectorfield(field, factor, method='bicubic'):
     -------
     jax.numpy.ndarray
         The downsampled field.
-
-    Notes
-    -----
-    This function uses the skimage.transform.resize function to perform the downsampling.
     """
     if factor == 1:
         return field
     else:
-        if field.ndim == 4:
-            x = resize(field[..., 0], (field.shape[0] // factor, field.shape[1] // factor,
-                             field.shape[2] // factor), method=method)
-            y = resize(field[..., 1], (field.shape[0] // factor, field.shape[1] // factor,
-                                field.shape[2] // factor), method=method)
-            z = resize(field[..., 2], (field.shape[0] // factor, field.shape[1] // factor,
-                                field.shape[2] // factor), method=method)
-            return jnp.stack((x, y, z), axis=-1)
-        elif field.ndim == 3:
-            x = resize(field[..., 0], (field.shape[0] // factor, field.shape[1] // factor),
-                       method=method)
-            y = resize(field[..., 1], (field.shape[0] // factor, field.shape[1] // factor),
-                       method=method)
-            return jnp.stack((x, y), axis=-1)
+        new_shape = tuple(dim // factor for dim in field.shape[:-1])
+        downsampled_components = []
+        for i in range(field.shape[-1]):  # Iterate over the last dimension (vector components)
+            resized = resize(field[..., i], new_shape, method=method)
+            downsampled_components.append(resized)
+
+        return jnp.stack(downsampled_components, axis=-1)
 
 def save_image(timestep, fld, prefix=None):
     """
@@ -252,11 +207,19 @@ def save_BCs_vtk(timestep, BCs, gridInfo,  output_dir='.'):
         gridDimensions = (gridInfo['nx'] + 1, gridInfo['ny'] + 1, gridInfo['nz'] + 1)
         fieldDimensions = (gridInfo['nx'], gridInfo['ny'], gridInfo['nz'])
 
-
     grid = pv.UniformGrid(dimensions=gridDimensions)
+
+    # Dictionary to keep track of encountered BC names
+    bcNamesCount = {}
 
     for bc in BCs:
         bcName = bc.name
+        if bcName in bcNamesCount:
+            bcNamesCount[bcName] += 1
+        else:
+            bcNamesCount[bcName] = 0
+        bcName += f"_{bcNamesCount[bcName]}"
+
         if bc.isDynamic:
             bcIndices, _ = bc.update_function(timestep)
         else:

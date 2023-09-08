@@ -31,18 +31,18 @@ class Lattice(object):
         self.d = int(dq[0])
         self.q = int(dq[1])
         if precision == "f32/f32" or precision == "f32/f16":
-            self.precision_policy = jnp.float32
+            self.precisionPolicy = jnp.float32
         elif precision == "f64/f64" or precision == "f64/f32" or precision == "f64/f16":
-            self.precision_policy = jnp.float64
+            self.precisionPolicy = jnp.float64
         elif precision == "f16/f16":
-            self.precision_policy = jnp.float16
+            self.precisionPolicy = jnp.float16
         else:
             raise ValueError("precision not supported")
 
         # Construct the properties of the lattice
         self.c = jnp.array(self.construct_lattice_velocity(), dtype=jnp.int8)
-        self.w = jnp.array(self.construct_lattice_weight(), dtype=self.precision_policy)
-        self.cc = jnp.array(self.construct_lattice_moment(), dtype=self.precision_policy)
+        self.w = jnp.array(self.construct_lattice_weight(), dtype=self.precisionPolicy)
+        self.cc = jnp.array(self.construct_lattice_moment(), dtype=self.precisionPolicy)
         self.opp_indices = jnp.array(self.construct_opposite_indices(), dtype=jnp.int8)
         self.main_indices = jnp.array(self.construct_main_indices(), dtype=jnp.int8)
         self.right_indices = np.array(self.construct_right_indices(), dtype=jnp.int8)

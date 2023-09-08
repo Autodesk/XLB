@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, device_count
 from functools import partial
 import numpy as np
 class BoundaryCondition(object):
@@ -38,13 +38,13 @@ class BoundaryCondition(object):
         The step in the lattice Boltzmann method algorithm at which the boundary condition is applied. This should be set in subclasses.
     """
 
-    def __init__(self, indices, grid_info, precision_policy):
-        self.lattice = grid_info["lattice"]
-        self.nx = grid_info["nx"]
-        self.ny = grid_info["ny"]
-        self.nz = grid_info["nz"]
-        self.dim = grid_info["dim"]
-        self.precision_policy = precision_policy
+    def __init__(self, indices, gridInfo, precision_policy):
+        self.lattice = gridInfo["lattice"]
+        self.nx = gridInfo["nx"]
+        self.ny = gridInfo["ny"]
+        self.nz = gridInfo["nz"]
+        self.dim = gridInfo["dim"]
+        self.precisionPolicy = precision_policy
         self.indices = indices
         self.name = None
         self.isSolid = False
@@ -71,25 +71,51 @@ class BoundaryCondition(object):
         This method creates local bitmask and normal arrays for the boundary condition based on the connectivity bitmask.
         If the boundary condition requires extra configuration, the `configure` method is called.
         """
+
         if self.needsExtraConfiguration:
-            self.configure(connectivity_bitmask)
+            boundaryBitmask = self.get_boundary_bitmask(connectivity_bitmask)
+            self.configure(boundaryBitmask)
             self.needsExtraConfiguration = False
 
-        boundaryBitmask = connectivity_bitmask[self.indices]
+        boundaryBitmask = self.get_boundary_bitmask(connectivity_bitmask)
         self.normals = self.get_normals(boundaryBitmask)
         self.imissing, self.iknown = self.get_missing_indices(boundaryBitmask)
         self.imissingBitmask, self.iknownBitmask, self.imiddleBitmask = self.get_missing_bitmask(boundaryBitmask)
 
         return
 
-    def configure(self, connectivity_bitmask):
+    def get_boundary_bitmask(self, connectivity_bitmask):  
         """
-        Configures the boundary condition.
+        Add jax.device_count() to the self.indices in x-direction, and 1 to the self.indices other directions
+        This is to make sure the boundary condition is applied to the correct nodes as connectivity_bitmask is
+        expanded by (jax.device_count(), 1, 1)
 
         Parameters
         ----------
         connectivity_bitmask : array-like
             The connectivity bitmask for the lattice.
+        
+        Returns
+        -------
+        boundaryBitmask : array-like
+        """   
+        shifted_indices = np.array(self.indices)
+        shifted_indices[0] += device_count()
+        shifted_indices[1:] += 1
+        # Convert back to tuple
+        shifted_indices = tuple(shifted_indices)
+        boundaryBitmask = np.array(connectivity_bitmask[shifted_indices])
+
+        return boundaryBitmask
+
+    def configure(self, boundaryBitmask):
+        """
+        Configures the boundary condition.
+
+        Parameters
+        ----------
+        boundaryBitmask : array-like
+            The connectivity bitmask for the boundary voxels.
 
         Returns
         -------
@@ -252,11 +278,11 @@ class BoundaryCondition(object):
         performed in the compute precision specified by the precision policy. The result is not cast to the output precision as
         this is function is used inside other functions that require the compute precision.
         """
-        rho, u = self.precision_policy.cast_to_compute((rho, u))
-        c = jnp.array(self.lattice.c, dtype=self.precision_policy.compute_dtype)
+        rho, u = self.precisionPolicy.cast_to_compute((rho, u))
+        c = jnp.array(self.lattice.c, dtype=self.precisionPolicy.compute_dtype)
         cu = 3.0 * jnp.dot(u, c)
         usqr = 1.5 * jnp.sum(u**2, axis=-1, keepdims=True)
-        feq = rho[..., None] * self.lattice.w * (1.0 + 1.0 * cu + 0.5 * cu**2 - usqr)
+        feq = rho * self.lattice.w * (1.0 + 1.0 * cu + 0.5 * cu**2 - usqr)
 
         return feq
 
@@ -314,7 +340,7 @@ class BoundaryCondition(object):
         The force is computed based on the post-streaming and post-collision distribution functions. This method
         should be called after the boundary conditions are imposed.
         """
-        c = jnp.array(self.lattice.c, dtype=self.precision_policy.compute_dtype)
+        c = jnp.array(self.lattice.c, dtype=self.precisionPolicy.compute_dtype)
         nbd = len(self.indices[0])
         bindex = np.arange(nbd)[:, None]
         phi = f_postcollision[self.indices][bindex, self.iknown] + \
@@ -337,8 +363,8 @@ class BounceBack(BoundaryCondition):
         The step in the lattice Boltzmann method algorithm at which the boundary condition is applied. For this class,
         it is "PostCollision".
     """
-    def __init__(self, indices, grid_info, precision_policy):
-        super().__init__(indices, grid_info, precision_policy)
+    def __init__(self, indices, gridInfo, precision_policy):
+        super().__init__(indices, gridInfo, precision_policy)
         self.name = "BounceBackFullway"
         self.implementationStep = "PostCollision"
 
@@ -389,10 +415,10 @@ class BounceBackMoving(BoundaryCondition):
         condition based on the current time step. The signature of the function is `update_function(time) -> (indices, vel)`,
 
     """
-    def __init__(self, grid_info, precision_policy, update_function=None):
+    def __init__(self, gridInfo, precision_policy, update_function=None):
         # We get the indices at time zero to pass to the parent class for initialization
         indices, _ = update_function(0)
-        super().__init__(indices, grid_info, precision_policy)
+        super().__init__(indices, gridInfo, precision_policy)
         self.name = "BounceBackFullwayMoving"
         self.implementationStep = "PostCollision"
         self.isDynamic = True
@@ -418,7 +444,7 @@ class BounceBackMoving(BoundaryCondition):
             The modified output distribution functions after applying the boundary condition.
         """
         indices, vel = self.update_function(time)
-        c = jnp.array(self.lattice.c, dtype=self.precision_policy.compute_dtype)
+        c = jnp.array(self.lattice.c, dtype=self.precisionPolicy.compute_dtype)
         cu = 3.0 * jnp.dot(vel, c)
         return fout.at[indices].set(fin[indices][..., self.lattice.opp_indices] - 6.0 * self.lattice.w * cu)
 
@@ -442,21 +468,21 @@ class BounceBackHalfway(BoundaryCondition):
     isSolid : bool
         Whether the boundary condition represents a solid boundary. For this class, it is True.
     """
-    def __init__(self, indices, grid_info, precision_policy):
-        super().__init__(indices, grid_info, precision_policy)
+    def __init__(self, indices, gridInfo, precision_policy):
+        super().__init__(indices, gridInfo, precision_policy)
         self.name = "BounceBackHalfway"
         self.implementationStep = "PostStreaming"
         self.needsExtraConfiguration = True
         self.isSolid = True
 
-    def configure(self, connectivity_bitmask):
+    def configure(self, boundaryBitmask):
         """
         Configures the boundary condition.
 
         Parameters
         ----------
-        connectivity_bitmask : array-like
-            The connectivity bitmask for the lattice.
+        boundaryBitmask : array-like
+            The connectivity bitmask for the boundary voxels.
 
         Returns
         -------
@@ -468,7 +494,6 @@ class BounceBackHalfway(BoundaryCondition):
         the boundary nodes to be the indices of fluid nodes adjacent of the solid nodes.
         """
         # Perform index shift for halfway BB.
-        boundaryBitmask = connectivity_bitmask[self.indices]
         shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
         idx_trg = []
@@ -520,10 +545,9 @@ class EquilibriumBC(BoundaryCondition):
         The equilibrium distribution function at the boundary nodes.
     """
 
-    def __init__(self, indices, grid_info, precision_policy, rho, u):
-        super().__init__(indices, grid_info, precision_policy)
-        self.out = self.precision_policy.cast_to_output(
-            self.equilibrium(rho, u))
+    def __init__(self, indices, gridInfo, precision_policy, rho, u):
+        super().__init__(indices, gridInfo, precision_policy)
+        self.out = self.precisionPolicy.cast_to_output(self.equilibrium(rho, u))
         self.name = "EquilibriumBC"
         self.implementationStep = "PostStreaming"
 
@@ -552,7 +576,7 @@ class EquilibriumBC(BoundaryCondition):
         return self.out
 
 class DoNothing(BoundaryCondition):
-    def __init__(self, indices, grid_info, precision_policy):
+    def __init__(self, indices, gridInfo, precision_policy):
         """
         Do-nothing boundary condition for a lattice Boltzmann method simulation.
 
@@ -578,7 +602,7 @@ class DoNothing(BoundaryCondition):
         may be even a wall (consider pipebend example). If we correct imissing directions and assign "fin", this method becomes
         much less stable and also one needs to correctly take care of corner cases.
         """
-        super().__init__(indices, grid_info, precision_policy)
+        super().__init__(indices, gridInfo, precision_policy)
         self.name = "DoNothing"
         self.implementationStep = "PostStreaming"
 
@@ -634,20 +658,19 @@ class ZouHe(BoundaryCondition):
     Zou, Q., & He, X. (1997). On pressure and velocity boundary conditions for the lattice Boltzmann BGK model.
     Physics of Fluids, 9(6), 1591-1598. doi:10.1063/1.869307
     """
-    def __init__(self, indices, grid_info, precision_policy, type, prescribed):
-        super().__init__(indices, grid_info, precision_policy)
+    def __init__(self, indices, gridInfo, precision_policy, type, prescribed):
+        super().__init__(indices, gridInfo, precision_policy)
         self.name = "ZouHe"
         self.implementationStep = "PostStreaming"
         self.type = type
         self.prescribed = prescribed
         self.needsExtraConfiguration = True
 
-    def configure(self, connectivity_bitmask):
+    def configure(self, boundaryBitmask):
         """
         Correct boundary indices to ensure that only voxelized surfaces with normal vectors along main cartesian axes
         are assigned this type of BC.
         """
-        boundaryBitmask = connectivity_bitmask[self.indices]
         nv = np.dot(self.lattice.c, ~boundaryBitmask.T)
         corner_voxels = np.count_nonzero(nv, axis=0) > 1
         # removed_voxels = np.array(self.indices)[:, corner_voxels]
@@ -674,8 +697,8 @@ class ZouHe(BoundaryCondition):
         """
         unormal = np.sum(self.normals*vel, axis=1)
 
-        rho = 1.0/(1.0 + unormal) * (jnp.sum(fpop[self.indices] * self.imiddleBitmask, axis=1) +
-                                  2.*jnp.sum(fpop[self.indices] * self.iknownBitmask, axis=1))
+        rho = (1.0/(1.0 + unormal))[..., None] * (jnp.sum(fpop[self.indices] * self.imiddleBitmask, axis=1, keepdims=True) +
+                                  2.*jnp.sum(fpop[self.indices] * self.iknownBitmask, axis=1, keepdims=True))
         return rho
 
     @partial(jit, static_argnums=(0,), inline=True)
@@ -766,8 +789,8 @@ class Regularized(ZouHe):
     lattice Boltzmann method. Physical Review E, 77(5), 056703. doi:10.1103/PhysRevE.77.056703
     """
 
-    def __init__(self, indices, grid_info, precision_policy, type, prescribed):
-        super().__init__(indices, grid_info, precision_policy, type, prescribed)
+    def __init__(self, indices, gridInfo, precision_policy, type, prescribed):
+        super().__init__(indices, gridInfo, precision_policy, type, prescribed)
         self.name = "Regularized"
         #TODO for Hesam: check to understand why corner cases cause instability here.
         # self.needsExtraConfiguration = False
@@ -891,13 +914,13 @@ class ExtrapolationOutflow(BoundaryCondition):
     doi:10.1016/j.camwa.2015.05.001.
     """
 
-    def __init__(self, indices, grid_info, precision_policy):
-        super().__init__(indices, grid_info, precision_policy)
+    def __init__(self, indices, gridInfo, precision_policy):
+        super().__init__(indices, gridInfo, precision_policy)
         self.name = "ExtrapolationOutflow"
         self.needsExtraConfiguration = True
         self.sound_speed = 1./jnp.sqrt(3.)
 
-    def configure(self, connectivity_bitmask):
+    def configure(self, boundaryBitmask):
         """
         Configure the boundary condition by finding neighbouring voxel indices.
 
@@ -906,7 +929,6 @@ class ExtrapolationOutflow(BoundaryCondition):
         connectivity_bitmask : np.ndarray
             The connectivity bitmask for the lattice.
         """        
-        boundaryBitmask = connectivity_bitmask[self.indices]
         shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
         idx_trg = []
