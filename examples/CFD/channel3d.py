@@ -62,7 +62,7 @@ class turbulentChannel(KBCSim):
     def set_boundary_conditions(self):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
         wall = np.concatenate((self.boundingBoxIndices['bottom'], self.boundingBoxIndices['top']))
-        self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
+        self.BCs.append(Regularized(tuple(wall.T), self.gridInfo, self.precisionPolicy, 'velocity', np.zeros((wall.shape[0], 3))))
         return
 
     def initialize_macroscopic_fields(self):
@@ -107,8 +107,11 @@ class turbulentChannel(KBCSim):
         dns_dic = get_dns_data()
         plt.clf()
         plt.semilogx(yplus, uplus,'r.', yplus, uplus_loglaw, 'k:', dns_dic['y+'], dns_dic['Umean'], 'b-')
-        fname = "uplus_" + str(timestep).zfill(4) + '.png'
-        plt.savefig(fname)
+        ax = plt.gca()
+        ax.set_xlim([0.1, 300])
+        ax.set_ylim([0, 20])
+        fname = "uplus_" + str(timestep//10000).zfill(5) + '.pdf'
+        plt.savefig(fname, format='pdf')
         fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
 
@@ -117,8 +120,10 @@ class turbulentChannel(KBCSim):
 if __name__ == "__main__":
     precision = "f64/f64"
     lattice = LatticeD3Q27(precision)
+
     # h: channel half-width
-    h = 10
+    h = 50
+
     # Define channel geometry based on h
     nx = 6*h
     ny = 3*h
@@ -126,8 +131,8 @@ if __name__ == "__main__":
 
     # Define flow regime
     Re_tau = 180
-    u_tau = 0.004
-    # DeltaPlus = Re_tau/h    # DeltaPlus = u_tau / nu * Delta where u_tau / nu = Re_tau/h
+    u_tau = 0.001
+    DeltaPlus = Re_tau/h    # DeltaPlus = u_tau / nu * Delta where u_tau / nu = Re_tau/h
     visc = u_tau * h / Re_tau
     omega = 1.0 / (3.0 * visc + 0.5)
 
@@ -146,8 +151,8 @@ if __name__ == "__main__":
         'ny': ny,
         'nz': nz,
         'precision': precision,
-        'io_rate': 20000,
-        'print_info_rate': 20000
+        'io_rate': 500000,
+        'print_info_rate': 100000
     }
     sim = turbulentChannel(**kwargs)
-    sim.run(4000000)
+    sim.run(10000000)

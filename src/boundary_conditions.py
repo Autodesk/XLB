@@ -445,8 +445,8 @@ class BounceBackMoving(BoundaryCondition):
         """
         indices, vel = self.update_function(time)
         c = jnp.array(self.lattice.c, dtype=self.precisionPolicy.compute_dtype)
-        cu = 3.0 * jnp.dot(vel, c)
-        return fout.at[indices].set(fin[indices][..., self.lattice.opp_indices] - 6.0 * self.lattice.w * cu)
+        cu = 6.0 * self.lattice.w * jnp.dot(vel, c)
+        return fout.at[indices].set(fin[indices][..., self.lattice.opp_indices] - cu)
 
 
 class BounceBackHalfway(BoundaryCondition):
@@ -467,13 +467,16 @@ class BounceBackHalfway(BoundaryCondition):
         Whether the boundary condition needs extra configuration before it can be applied. For this class, it is True.
     isSolid : bool
         Whether the boundary condition represents a solid boundary. For this class, it is True.
+    vel : array-like
+        The prescribed value of velocity vector for the boundary condition. No-slip BC is assumed if vel=None (default).
     """
-    def __init__(self, indices, gridInfo, precision_policy):
+    def __init__(self, indices, gridInfo, precision_policy, vel=None):
         super().__init__(indices, gridInfo, precision_policy)
         self.name = "BounceBackHalfway"
         self.implementationStep = "PostStreaming"
         self.needsExtraConfiguration = True
         self.isSolid = True
+        self.vel = vel
 
     def configure(self, boundaryBitmask):
         """
@@ -523,7 +526,12 @@ class BounceBackHalfway(BoundaryCondition):
         nbd = len(self.indices[0])
         bindex = np.arange(nbd)[:, None]
         fbd = fout[self.indices]
-        fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown])
+        if self.vel is not None:
+            c = jnp.array(self.lattice.c, dtype=self.precisionPolicy.compute_dtype)
+            cu = 6.0 * self.lattice.w * jnp.dot(self.vel, c)
+            fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown] - cu[bindex, self.iknown])
+        else:
+            fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown])
 
         return fbd
     
@@ -926,8 +934,8 @@ class ExtrapolationOutflow(BoundaryCondition):
 
         Parameters
         ----------
-        connectivity_bitmask : np.ndarray
-            The connectivity bitmask for the lattice.
+        boundaryBitmask : np.ndarray
+            The connectivity bitmask for the boundary voxels.
         """        
         shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
