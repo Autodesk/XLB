@@ -44,7 +44,10 @@ class Cylinder(KBCSim):
         cx, cy = 2.*diam, 2.*diam
         cylinder = (xx - cx)**2 + (yy-cy)**2 <= (diam/2.)**2
         cylinder = coord[cylinder]
-        self.BCs.append(BounceBackHalfway(tuple(cylinder.T), self.gridInfo, self.precisionPolicy))
+        implicit_distance = np.reshape((xx - cx)**2 + (yy-cy)**2 - (diam/2.)**2, (self.nx, self.ny))
+        self.BCs.append(InterpolatedBounceBackLocal(tuple(cylinder.T), implicit_distance,
+                                               self.gridInfo, self.precisionPolicy))
+
         # wall = np.concatenate([cylinder, self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
         # self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
 

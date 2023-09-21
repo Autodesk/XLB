@@ -495,11 +495,11 @@ class BounceBackHalfway(BoundaryCondition):
         the boundary nodes to be the indices of fluid nodes adjacent of the solid nodes.
         """
         # Perform index shift for halfway BB.
-        shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
+        hasFluidNeighbour = ~boundaryBitmask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
         idx_trg = []
         for i in range(self.lattice.q):
-            idx_trg.append(idx[shiftDir[:, i], :] + self.lattice.c[:, i])
+            idx_trg.append(idx[hasFluidNeighbour[:, i], :] + self.lattice.c[:, i])
         indices_new = np.unique(np.vstack(idx_trg), axis=0)
         self.indices = tuple(indices_new.T)
         return
@@ -935,11 +935,11 @@ class ExtrapolationOutflow(BoundaryCondition):
         boundaryBitmask : np.ndarray
             The connectivity bitmask for the boundary voxels.
         """        
-        shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
+        hasFluidNeighbour = ~boundaryBitmask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
         idx_trg = []
         for i in range(self.lattice.q):
-            idx_trg.append(idx[shiftDir[:, i], :] + self.lattice.c[:, i])
+            idx_trg.append(idx[hasFluidNeighbour[:, i], :] + self.lattice.c[:, i])
         indices_nbr = np.unique(np.vstack(idx_trg), axis=0)
         self.indices_nbr = tuple(indices_nbr.T)
 
@@ -1007,4 +1007,116 @@ class ExtrapolationOutflow(BoundaryCondition):
         bindex = np.arange(nbd)[:, None]
         fbd = fout[self.indices]
         fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown])
+        return fbd
+
+
+class InterpolatedBounceBackLocal(BoundaryCondition):
+    """
+    A local single-node interpolated bounce-back boundary condition for a lattice Boltzmann method simulation.
+
+    This class implements a interpolated bounce-back boundary condition. The boundary condition is applied after
+    the streaming step.
+
+    Attributes
+    ----------
+    name : str
+        The name of the boundary condition. For this class, it is "InterpolatedBounceBack".
+    implementationStep : str
+        The step in the lattice Boltzmann method algorithm at which the boundary condition is applied. For this class,
+        it is "PostStreaming".
+    isSolid : bool
+        Whether the boundary condition represents a solid boundary. For this class, it is True.
+    needsExtraConfiguration : bool
+        Whether the boundary condition needs extra configuration before it can be applied. For this class, it is True.
+    implicit_distances : array-like
+        An array of shape (nx,ny,nz) indicating the signed-distance field from the solid walls
+    """
+
+    def __init__(self, indices, implicit_distances, grid_info, precision_policy):
+
+        super().__init__(indices, grid_info, precision_policy)
+        self.name = "InterpolatedBounceBackLocal"
+        self.implementationStep = "PostStreaming"
+        self.implicit_distances = implicit_distances
+        self.weights = None
+        self.isSolid = True
+        self.needsExtraConfiguration = True
+
+    def configure(self, boundaryBitmask):
+        """
+        Configures the boundary condition.
+
+        Parameters
+        ----------
+        boundaryBitmask : array-like
+            The connectivity bitmask for the boundary voxels.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This method performs an index shift for the halfway bounce-back boundary condition. It updates the indices of
+        the boundary nodes to be the indices of fluid nodes adjacent of the solid nodes.
+        """
+        # Perform index shift for halfway BB.
+        hasFluidNeighbour = ~boundaryBitmask[:, self.lattice.opp_indices]
+        idx = np.array(self.indices).T
+        idx_trg = []
+        for i in range(self.lattice.q):
+            idx_trg.append(idx[hasFluidNeighbour[:, i], :] + self.lattice.c[:, i])
+        indices_new = np.unique(np.vstack(idx_trg), axis=0)
+        self.indices = tuple(indices_new.T)
+        return
+
+    def set_proximity_ratio(self):
+        """
+        Creates the interpolation data needed for the boundary condition.
+
+        Returns
+        -------
+        None. The function updates the object's weights attribute in place.
+        """
+        idx = np.array(self.indices).T
+        self.weights = np.full((idx.shape[0], self.lattice.q), 0.5)
+        c = np.array(self.lattice.c)
+        sdf_f = self.implicit_distances[self.indices]
+        for q in range(1, self.lattice.q):
+            solid_indices = idx + c[:, q]
+            solid_indices_tuple = tuple(map(tuple, solid_indices.T))
+            sdf_s = self.implicit_distances[solid_indices_tuple]
+            mask = self.iknownBitmask[:, q]
+            self.weights[mask, q] = sdf_f[mask] / (sdf_f[mask] - sdf_s[mask])
+        return
+
+    @partial(jit, static_argnums=(0,))
+    def apply(self, fout, fin):
+        """
+        Applies the halfway bounce-back boundary condition.
+
+        Parameters
+        ----------
+        fout : jax.numpy.ndarray
+            The output distribution functions.
+        fin : jax.numpy.ndarray
+            The input distribution functions.
+
+        Returns
+        -------
+        jax.numpy.ndarray
+            The modified output distribution functions after applying the boundary condition.
+        """
+        if self.weights is None:
+            self.set_proximity_ratio()
+        nbd = len(self.indices[0])
+        bindex = np.arange(nbd)[:, None]
+        fbd = fout[self.indices]
+        f_postcollision_iknown = fin[self.indices][bindex, self.iknown]
+        f_postcollision_imissing = fin[self.indices][bindex, self.imissing]
+        f_poststreaming_iknown = fout[self.indices][bindex, self.iknown]
+        fmissing = ((1. - self.weights) * f_postcollision_iknown +
+                    self.weights * (f_postcollision_imissing + f_poststreaming_iknown)) / (1.0 + self.weights)
+        fbd = fbd.at[bindex, self.imissing].set(fmissing)
+
         return fbd
