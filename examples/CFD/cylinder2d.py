@@ -27,13 +27,14 @@ from src.lattice import LatticeD2Q9
 from src.models import BGKSim, KBCSim
 import jax.numpy as jnp
 import os
+import json
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
 jax.config.update('jax_enable_x64', True)
 
-class Cylinder(KBCSim):
+class Cylinder(BGKSim):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -45,8 +46,8 @@ class Cylinder(KBCSim):
         cylinder = (xx - cx)**2 + (yy-cy)**2 <= (diam/2.)**2
         cylinder = coord[cylinder]
         implicit_distance = np.reshape((xx - cx)**2 + (yy-cy)**2 - (diam/2.)**2, (self.nx, self.ny))
-        self.BCs.append(InterpolatedBounceBackLocal(tuple(cylinder.T), implicit_distance,
-                                               self.gridInfo, self.precisionPolicy))
+        self.BCs.append(InterpolatedBounceBackBouzidi(tuple(cylinder.T), implicit_distance, self.gridInfo, self.precisionPolicy))
+        # self.BCs.append(BounceBackHalfway(tuple(cylinder.T), self.gridInfo, self.precisionPolicy))
 
         # wall = np.concatenate([cylinder, self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
         # self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
@@ -76,53 +77,72 @@ class Cylinder(KBCSim):
         timestep = kwargs["timestep"]
         u_prev = kwargs["u_prev"][..., 1:-1, :]
 
-        # compute lift and drag over the cyliner
-        cylinder = self.BCs[0]
-        boundary_force = cylinder.momentum_exchange_force(kwargs['f_poststreaming'], kwargs['f_postcollision'])
-        boundary_force = np.sum(boundary_force, axis=0)
-        drag = boundary_force[0]
-        lift = boundary_force[1]
-        cd = 2. * drag / (prescribed_vel ** 2 * diam)
-        cl = 2. * lift / (prescribed_vel ** 2 * diam)
+        if timestep == 0:
+            self.CL_max = 0.0
+            self.CD_max = 0.0
+        if timestep > 0.8 * t_max:
+            # compute lift and drag over the cyliner
+            cylinder = self.BCs[0]
+            boundary_force = cylinder.momentum_exchange_force(kwargs['f_poststreaming'], kwargs['f_postcollision'])
+            boundary_force = np.sum(np.array(boundary_force), axis=0)
+            drag = boundary_force[0]
+            lift = boundary_force[1]
+            cd = 2. * drag / (prescribed_vel ** 2 * diam)
+            cl = 2. * lift / (prescribed_vel ** 2 * diam)
 
-        u_old = np.linalg.norm(u_prev, axis=2)
-        u_new = np.linalg.norm(u, axis=2)
-        err = np.sum(np.abs(u_old - u_new))
-        print('error= {:07.6f}, CL = {:07.6f}, CD = {:07.6f}'.format(err, cl, cd))
-        save_image(timestep, u)
+            u_old = np.linalg.norm(u_prev, axis=2)
+            u_new = np.linalg.norm(u, axis=2)
+            err = np.sum(np.abs(u_old - u_new))
+            self.CL_max = max(self.CL_max, cl)
+            self.CD_max = max(self.CD_max, cd)
+            print('error= {:07.6f}, CL = {:07.6f}, CD = {:07.6f}'.format(err, cl, cd))
+        # save_image(timestep, u)
 
 # Helper function to specify a parabolic poiseuille profile
 poiseuille_profile  = lambda x,x0,d,umax: np.maximum(0.,4.*umax/(d**2)*((x-x0)*d-(x-x0)**2))
 
 if __name__ == '__main__':
     precision = 'f64/f64'
-    prescribed_vel = 0.005
-    diam = 80
-    lattice = LatticeD2Q9(precision)
+    diam_list = [10, 20, 30, 40, 60, 80]
+    CL_list, CD_list = [], []
+    result_dict = {}
+    result_dict['resolution_list'] = diam_list
+    for diam in diam_list:
+        scale_factor = 80 / diam
+        prescribed_vel = 0.003 * scale_factor
+        lattice = LatticeD2Q9(precision)
 
-    nx = int(22*diam)
-    ny = int(4.1*diam)
+        nx = int(22*diam)
+        ny = int(4.1*diam)
 
-    Re = 100.0
-    visc = prescribed_vel * diam / Re
-    omega = 1.0 / (3. * visc + 0.5)
+        Re = 100.0
+        visc = prescribed_vel * diam / Re
+        omega = 1.0 / (3. * visc + 0.5)
 
-    print('omega = ', omega)
-    print("Mesh size: ", nx, ny)
-    print("Number of voxels: ", nx * ny)
-    
-    os.system('rm -rf ./*.vtk && rm -rf ./*.png')
+        print('omega = ', omega)
+        print("Mesh size: ", nx, ny)
+        print("Number of voxels: ", nx * ny)
+        
+        os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
-    kwargs = {
-        'lattice': lattice,
-        'omega': omega,
-        'nx': nx,
-        'ny': ny,
-        'nz': 0,
-        'precision': precision,
-        'io_rate': 500,
-        'print_info_rate': 500,
-        'return_fpost': True    # Need to retain fpost-collision for computation of lift and drag
-    }
-    sim = Cylinder(**kwargs)
-    sim.run(1000000)
+        kwargs = {
+            'lattice': lattice,
+            'omega': omega,
+            'nx': nx,
+            'ny': ny,
+            'nz': 0,
+            'precision': precision,
+            'io_rate': int(500 / scale_factor),
+            'print_info_rate': int(10000 / scale_factor),
+            'return_fpost': True    # Need to retain fpost-collision for computation of lift and drag
+        }
+        sim = Cylinder(**kwargs)
+        t_max = int(1000000 / scale_factor)
+        sim.run(t_max)
+        CL_list.append(sim.CL_max)
+        CD_list.append(sim.CD_max)
+
+    result_dict['CL'] = CL_list
+    result_dict['CD'] = CD_list
+    with open('data.json', 'w') as fp:
+        json.dump(result_dict, fp)
