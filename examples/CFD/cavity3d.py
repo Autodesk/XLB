@@ -17,7 +17,7 @@ In this example you'll be introduced to the following concepts:
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 from src.models import BGKSim, KBCSim
-from src.lattice import LatticeD3Q19
+from src.lattice import LatticeD3Q19, LatticeD3Q27
 from src.utils import *
 from jax.config import config
 from src.boundary_conditions import *
@@ -26,17 +26,21 @@ import json, codecs
 precision = 'f64/f64'
 config.update('jax_enable_x64', True)
 
-class Cavity(BGKSim):
+class Cavity(KBCSim):
+    # Note: We have used BGK with D3Q19 (or D3Q27) for Re=(1000, 3200) and KBC with D3Q27 for Re=10,000
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def set_boundary_conditions(self):
+        # Note:
+        # We have used halfway BB for Re=(1000, 3200) and regularized BC for Re=10,000
 
-        # apply inlet equilibrium boundary condition to the top wall
+        # apply inlet boundary condition to the top wall
         moving_wall = self.boundingBoxIndices['top']
         vel_wall = np.zeros(moving_wall.shape, dtype=self.precisionPolicy.compute_dtype)
         vel_wall[:, 0] = prescribed_vel
-        self.BCs.append(BounceBackHalfway(tuple(moving_wall.T), self.gridInfo, self.precisionPolicy, vel_wall))
+        # self.BCs.append(BounceBackHalfway(tuple(moving_wall.T), self.gridInfo, self.precisionPolicy, vel_wall))
+        self.BCs.append(Regularized(tuple(moving_wall.T), self.gridInfo, self.precisionPolicy, 'velocity', vel_wall))
 
         # concatenate the indices of the left, right, and bottom walls
         walls = np.concatenate(
@@ -44,7 +48,9 @@ class Cavity(BGKSim):
              self.boundingBoxIndices['front'], self.boundingBoxIndices['back'],
              self.boundingBoxIndices['bottom']))
         # apply bounce back boundary condition to the walls
-        self.BCs.append(BounceBackHalfway(tuple(walls.T), self.gridInfo, self.precisionPolicy))
+        # self.BCs.append(BounceBackHalfway(tuple(walls.T), self.gridInfo, self.precisionPolicy))
+        vel_wall = np.zeros(walls.shape, dtype=self.precisionPolicy.compute_dtype)
+        self.BCs.append(Regularized(tuple(walls.T), self.gridInfo, self.precisionPolicy, 'velocity', vel_wall))
         return
 
     def output_data(self, **kwargs):
@@ -78,15 +84,21 @@ class Cavity(BGKSim):
         # live_volume_randering(timestep, u_mag)
 
 if __name__ == '__main__':
-    lattice = LatticeD3Q19(precision)
+    # Note: 
+    # We have used BGK with D3Q19 (or D3Q27) for Re=(1000, 3200) and KBC with D3Q27 for Re=10,000
+    lattice = LatticeD3Q27(precision)
 
     nx = 256
     ny = 256
     nz = 256
 
-    Re = 1000.0
+    Re = 10000.0
     prescribed_vel = 0.06
     clength = nx - 2
+
+    # characteristic time
+    tc = prescribed_vel/clength
+    niter_max = int(500//tc)
 
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
@@ -101,9 +113,9 @@ if __name__ == '__main__':
         'ny': ny,
         'nz': nz,
         'precision': precision,
-        'io_rate': 10000,
-        'print_info_rate': 10000,
+        'io_rate': int(10//tc),
+        'print_info_rate': int(10//tc),
         'downsampling_factor': 1
     }
     sim = Cavity(**kwargs)
-    sim.run(1000000)
+    sim.run(niter_max)
