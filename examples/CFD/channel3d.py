@@ -55,7 +55,7 @@ def get_dns_data():
         }
     return dns_dic
 
-class turbulentChannel(KBCSim):
+class TurbulentChannel(KBCSim):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -63,12 +63,11 @@ class turbulentChannel(KBCSim):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
         wall = np.concatenate((self.boundingBoxIndices['bottom'], self.boundingBoxIndices['top']))
         self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
-        return
 
     def initialize_macroscopic_fields(self):
         rho = self.precisionPolicy.cast_to_output(1.0)
         u = self.distributed_array_init((self.nx, self.ny, self.nz, self.dim),
-                                         self.precisionPolicy.compute_dtype, initVal=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
+                                         self.precisionPolicy.compute_dtype, init_val=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
         u = self.precisionPolicy.cast_to_output(u)
         return rho, u
 
@@ -149,5 +148,5 @@ if __name__ == "__main__":
         'io_rate': 20000,
         'print_info_rate': 20000
     }
-    sim = turbulentChannel(**kwargs)
+    sim = TurbulentChannel(**kwargs)
     sim.run(4000000)

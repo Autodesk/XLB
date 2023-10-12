@@ -1,23 +1,29 @@
-from src.boundary_conditions import *
-from jax.config import config
-from src.utils import *
-from functools import partial
-from jax.sharding import NamedSharding
-from jax.sharding import PartitionSpec
-from jax.sharding import PositionalSharding
-from jax.sharding import Mesh
-from jax.experimental import mesh_utils
-from jax.experimental.shard_map import shard_map
-from jax.experimental.multihost_utils import process_allgather
-from jax import jit, lax, vmap
-from termcolor import colored
-from orbax.checkpoint import *
-import time
-import jax.numpy as jnp
-import numpy as np
-import jmp
+# Standard Libraries
 import os
+import time
+
+# Third-Party Libraries
 import jax
+import jax.numpy as jnp
+import jmp
+import numpy as np
+from termcolor import colored
+
+# JAX-related imports
+from jax import jit, lax, vmap
+from jax.config import config
+from jax.experimental import mesh_utils
+from jax.experimental.multihost_utils import process_allgather
+from jax.experimental.shard_map import shard_map
+from jax.sharding import NamedSharding, PartitionSpec, PositionalSharding, Mesh
+import orbax.checkpoint as orb
+# functools imports
+from functools import partial
+
+# Local/Custom Libraries
+# from src.boundary_conditions import *
+from src.utils import downsample_field
+
 
 
 jax.config.update("jax_spmd_mode", 'allow_all')
@@ -88,8 +94,8 @@ class LBMBase(object):
 
         # Set the checkpoint manager
         if self.checkpointRate > 0:
-            mngr_options = CheckpointManagerOptions(save_interval_steps=self.checkpointRate, max_to_keep=1)
-            self.mngr = CheckpointManager(self.checkpointDir, PyTreeCheckpointer(), options=mngr_options)
+            mngr_options = orb.CheckpointManagerOptions(save_interval_steps=self.checkpointRate, max_to_keep=1)
+            self.mngr = orb.CheckpointManager(self.checkpointDir, orb.PyTreeCheckpointer(), options=mngr_options)
         else:
             print("WARNING: Checkpointing is disabled for this simulation.")
             self.mngr = None
@@ -152,7 +158,7 @@ class LBMBase(object):
             raise ValueError(f"dim = {self.dim} not supported")
         
         # Compute the bounding box indices for boundary conditions
-        self.boundingBoxIndices = self.bounding_box_indices()
+        self.boundingBoxIndices= self.bounding_box_indices()
         # Create boundary data for the simulation
         self._create_boundary_data()
         self.force = self.get_force()
@@ -182,7 +188,7 @@ class LBMBase(object):
         print("Time to create the local bitmasks and normal arrays:", time.time() - start)
 
     # This is another non-JITed way of creating the distributed arrays. It is not used at the moment.
-    # def distributed_array_init(self, shape, type, initVal=None):
+    # def distributed_array_init(self, shape, type, init_val=None):
     #     sharding_dim = shape[0] // self.nDevices
     #     sharded_shape = (self.nDevices, sharding_dim,  *shape[1:])
     #     device_shape = sharded_shape[1:]
@@ -190,16 +196,16 @@ class LBMBase(object):
 
     #     for d, index in self.sharding.addressable_devices_indices_map(sharded_shape).items():
     #         jax.default_device = d
-    #         if initVal is None:
+    #         if init_val is None:
     #             x = jnp.zeros(shape=device_shape, dtype=type)
     #         else:
-    #             x = jnp.full(shape=device_shape, fill_value=initVal, dtype=type)  
+    #             x = jnp.full(shape=device_shape, fill_value=init_val, dtype=type)  
     #         arrays += [jax.device_put(x, d)] 
     #     jax.default_device = jax.devices()[0]
     #     return jax.make_array_from_single_device_arrays(shape, self.sharding, arrays)
 
     @partial(jit, static_argnums=(0, 1, 2, 4))
-    def distributed_array_init(self, shape, type, initVal=0, sharding=None):
+    def distributed_array_init(self, shape, type, init_val=0, sharding=None):
         """
         Initialize a distributed array using JAX, with a specified shape, data type, and initial value.
         Optionally, provide a custom sharding strategy.
@@ -208,7 +214,7 @@ class LBMBase(object):
         ----------
             shape (tuple): The shape of the array to be created.
             type (dtype): The data type of the array to be created.
-            initVal (scalar, optional): The initial value to fill the array with. Defaults to 0.
+            init_val (scalar, optional): The initial value to fill the array with. Defaults to 0.
             sharding (Sharding, optional): The sharding strategy to use. Defaults to `self.sharding`.
 
         Returns
@@ -217,7 +223,7 @@ class LBMBase(object):
         """
         if sharding is None:
             sharding = self.sharding
-        x = jnp.full(shape=shape, fill_value=initVal, dtype=type)        
+        x = jnp.full(shape=shape, fill_value=init_val, dtype=type)        
         return jax.lax.with_sharding_constraint(x, sharding)
     
     @partial(jit, static_argnums=(0,))
@@ -237,7 +243,7 @@ class LBMBase(object):
         hw_x = self.nDevices
         hw_y = hw_z = 1
         if self.dim == 2:
-            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.lattice.q), jnp.bool_, initVal=True)
+            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.lattice.q), jnp.bool_, init_val=True)
             connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(None))].set(False)
             if solid_halo_voxels is not None:
                 solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
@@ -248,7 +254,7 @@ class LBMBase(object):
             return lax.with_sharding_constraint(connectivity_bitmask, self.sharding)
 
         elif self.dim == 3:
-            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.nz + 2 * hw_z, self.lattice.q), jnp.bool_, initVal=True)
+            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.nz + 2 * hw_z, self.lattice.q), jnp.bool_, init_val=True)
             connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(hw_z, -hw_z), slice(None))].set(False)
             if solid_halo_voxels is not None:
                 solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
@@ -273,18 +279,18 @@ class LBMBase(object):
             # For a 2D grid, the bounding box consists of four edges: bottom, top, left, and right.
             # Each edge is represented as an array of indices. For example, the bottom edge includes
             # all points where the y-coordinate is 0, so its indices are [[i, 0] for i in range(self.nx)].
-            boundingBox = {"bottom": np.array([[i, 0] for i in range(self.nx)], dtype=int),
+            bounding_box = {"bottom": np.array([[i, 0] for i in range(self.nx)], dtype=int),
                            "top": np.array([[i, self.ny - 1] for i in range(self.nx)], dtype=int),
                            "left": np.array([[0, i] for i in range(self.ny)], dtype=int),
                            "right": np.array([[self.nx - 1, i] for i in range(self.ny)], dtype=int)}
                             
-            return boundingBox
+            return bounding_box
 
         elif self.dim == 3:
             # For a 3D grid, the bounding box consists of six faces: bottom, top, left, right, front, and back.
             # Each face is represented as an array of indices. For example, the bottom face includes all points
             # where the z-coordinate is 0, so its indices are [[i, j, 0] for i in range(self.nx) for j in range(self.ny)].
-            boundingBox = {
+            bounding_box = {
                 "bottom": np.array([[i, j, 0] for i in range(self.nx) for j in range(self.ny)], dtype=int),
                 "top": np.array([[i, j, self.nz - 1] for i in range(self.nx) for j in range(self.ny)],dtype=int),
                 "left": np.array([[0, j, k] for j in range(self.ny) for k in range(self.nz)], dtype=int),
@@ -292,7 +298,7 @@ class LBMBase(object):
                 "front": np.array([[i, 0, k] for i in range(self.nx) for k in range(self.nz)], dtype=int),
                 "back": np.array([[i, self.ny - 1, k] for i in range(self.nx) for k in range(self.nz)], dtype=int)}
 
-            return boundingBox
+            return bounding_box
 
     def set_precisions(self, precision):
         """
@@ -335,7 +341,7 @@ class LBMBase(object):
         print("         To set explicit initial density and velocity, use self.initialize_macroscopic_fields.")
         return None, None
 
-    def assign_fields_sharded(self, checkpoint=None):
+    def assign_fields_sharded(self):
         """
         This function is used to initialize the simulation by assigning the macroscopic fields and populations.
 
@@ -362,7 +368,7 @@ class LBMBase(object):
             shape = (self.nx, self.ny, self.nz, self.lattice.q)
     
         if rho0 is None or u0 is None:
-            f = self.distributed_array_init(shape, self.precisionPolicy.output_dtype, initVal=self.w)
+            f = self.distributed_array_init(shape, self.precisionPolicy.output_dtype, init_val=self.w)
         else:
             f = self.initialize_populations(rho0, u0)
 
@@ -575,13 +581,13 @@ class LBMBase(object):
         return vmap(compute_bitmask_i, in_axes=(None, 0), out_axes=-1)(b, self.lattice.i_s)
 
     @partial(jit, static_argnums=(0, 3), inline=True)
-    def equilibrium(self, rho, u, castOutput=True):
+    def equilibrium(self, rho, u, cast_output=True):
         """
         This function computes the equilibrium distribution function in the Lattice Boltzmann Method.
         The equilibrium distribution function is a function of the macroscopic density and velocity.
 
-        The function first casts the density and velocity to the compute precision if the castOutput flag is True.
-        The function finally casts the equilibrium distribution function to the output precision if the castOutput 
+        The function first casts the density and velocity to the compute precision if the cast_output flag is True.
+        The function finally casts the equilibrium distribution function to the output precision if the cast_output 
         flag is True.
 
         Parameters
@@ -590,7 +596,7 @@ class LBMBase(object):
             The macroscopic density.
         u: jax.numpy.ndarray
             The macroscopic velocity.
-        castOutput: bool, optional
+        cast_output: bool, optional
             A flag indicating whether to cast the density, velocity, and equilibrium distribution function to the 
             compute and output precisions. Default is True.
 
@@ -599,8 +605,8 @@ class LBMBase(object):
         feq: ja.numpy.ndarray
             The equilibrium distribution function.
         """
-        # Cast the density and velocity to the compute precision if the castOutput flag is True
-        if castOutput:
+        # Cast the density and velocity to the compute precision if the cast_output flag is True
+        if cast_output:
             rho, u = self.precisionPolicy.cast_to_compute((rho, u))
 
         # Cast c to compute precision so that XLA call FXX matmul, 
@@ -610,7 +616,7 @@ class LBMBase(object):
         usqr = 1.5 * jnp.sum(jnp.square(u), axis=-1, keepdims=True)
         feq = rho * self.w * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
 
-        if castOutput:
+        if cast_output:
             return self.precisionPolicy.cast_to_output(feq)
         else:
             return feq
@@ -736,9 +742,6 @@ class LBMBase(object):
             return f_poststreaming, f_postcollision
         else:
             return f_poststreaming, None
-        
-    def checkpoint_manager(self):
-        pass
 
     def run(self, t_max):
         """
@@ -768,11 +771,11 @@ class LBMBase(object):
                 assert self.mngr is not None, "Checkpoint manager does not exist."
                 state = {'f': f}
                 shardings = jax.tree_map(lambda x: x.sharding, state)
-                restore_args = checkpoint_utils.construct_restore_args(state, shardings)
+                restore_args = orb.checkpoint_utils.construct_restore_args(state, shardings)
                 try:
                     f = self.mngr.restore(latest_step, restore_kwargs={'restore_args': restore_args})['f']
                     print(f"Restored checkpoint at step {latest_step}.")
-                except:
+                except ValueError:
                     raise ValueError(f"Failed to restore checkpoint at step {latest_step}.")
                 
                 start_step = latest_step + 1
@@ -940,7 +943,7 @@ class LBMBase(object):
         force: jax.numpy.ndarray
             The force to be applied to the fluid.
         """
-        return
+        pass
 
     @partial(jit, static_argnums=(0,), inline=True)
     def apply_force(self, f_postcollision, feq, rho, u):
@@ -972,8 +975,8 @@ class LBMBase(object):
         Boundary conditions. Physica A, 392, 1925-1930.
         Krüger, T., et al. (2017). The lattice Boltzmann method. Springer International Publishing, 10.978-3, 4-15.
         """
-        deltaU = self.get_force()
-        feq_force = self.equilibrium(rho, u + deltaU, castOutput=False)
+        delta_u = self.get_force()
+        feq_force = self.equilibrium(rho, u + delta_u, cast_output=False)
         f_postcollision = f_postcollision + feq_force - feq
         return f_postcollision
     

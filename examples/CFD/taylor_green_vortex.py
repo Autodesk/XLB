@@ -40,9 +40,9 @@ class TaylorGreenVortex(KBCSim):
 
     def initialize_macroscopic_fields(self):
         ux, uy, rho = taylor_green_initial_fields(xx, yy, vel_ref, 1, 0., 0.)
-        rho = self.distributed_array_init(rho.shape, self.precisionPolicy.output_dtype, initVal=1.0, sharding=self.sharding)
+        rho = self.distributed_array_init(rho.shape, self.precisionPolicy.output_dtype, init_val=1.0, sharding=self.sharding)
         u = np.stack([ux, uy], axis=-1)
-        u = self.distributed_array_init(u.shape, self.precisionPolicy.output_dtype, initVal=u, sharding=self.sharding)
+        u = self.distributed_array_init(u.shape, self.precisionPolicy.output_dtype, init_val=u, sharding=self.sharding)
         return rho, u
 
     def initialize_populations(self, rho, u):
