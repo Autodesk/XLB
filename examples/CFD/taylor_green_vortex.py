@@ -5,18 +5,20 @@ The flow is characterized by a pair of counter-rotating vortices. In this script
 """
 
 
-from src.boundary_conditions import *
-from src.utils import *
-import numpy as np
-from src.lattice import LatticeD2Q9
-from src.models import BGKSim, KBCSim, AdvectionDiffusionBGK
 import os
-import matplotlib.pyplot as plt
 import json
+import jax
+import numpy as np
+import matplotlib.pyplot as plt
+
+from src.utils import *
+from src.boundary_conditions import *
+from src.models import BGKSim, KBCSim, AdvectionDiffusionBGK
+from src.lattice import LatticeD2Q9
+
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-import jax
 # disable JIt compilation
 
 jax.config.update('jax_enable_x64', True)

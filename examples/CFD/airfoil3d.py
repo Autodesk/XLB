@@ -31,6 +31,7 @@ import numpy as np
 # from IPython import display
 import matplotlib.pylab as plt
 from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD3Q19, LatticeD3Q27
 from src.boundary_conditions import *
 import numpy as np
 from src.utils import *
@@ -106,6 +107,8 @@ if __name__ == '__main__':
     airfoil = makeNacaAirfoil(length=airfoil_length, thickness=airfoil_thickness, angle=airfoil_angle).T
     precision = 'f32/f32'
 
+    lattice = LatticeD3Q27(precision)
+
     nx = airfoil.shape[0]
     ny = airfoil.shape[1]
 
@@ -124,6 +127,7 @@ if __name__ == '__main__':
 
     # Set the parameters for the simulation
     kwargs = {
+        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

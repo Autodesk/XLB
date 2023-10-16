@@ -19,13 +19,14 @@ import os
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-from src.models import BGKSim, KBCSim
+
 import numpy as np
 from src.utils import *
 from jax.config import config
-from src.boundary_conditions import *
 
-precision = 'f32/f32'
+from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD3Q19, LatticeD3Q27
+from src.boundary_conditions import *
 
 class Cavity(KBCSim):
     def __init__(self, **kwargs):
@@ -75,12 +76,16 @@ if __name__ == '__main__':
     prescribed_vel = 0.1
     clength = nx - 1
 
+    precision = 'f32/f32'
+    lattice = LatticeD3Q27(precision)
+
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
     
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
+        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

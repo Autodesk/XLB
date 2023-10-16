@@ -159,16 +159,12 @@ class LBMBase(object):
     @lattice.setter
     def lattice(self, value):
         if value is None:
-            if isinstance(self, src.models.BGKSim):
-                lattice_class = LatticeD2Q9 if self.nz == 0 else LatticeD3Q19
-            elif isinstance(self, src.models.KBCSim):
-                lattice_class = LatticeD2Q9 if self.nz == 0 else LatticeD3Q27
-            else:
-                # Default values for other base classes (e.g., advection-diffusion)
-                lattice_class = LatticeD2Q9 if self.nz == 0 else LatticeD3Q19
-                
-            value = lattice_class(self._precision)
-            
+            raise ValueError("Lattice type must be provided.")
+        if self.nz == 0 and not isinstance(value, LatticeD2Q9):
+            raise ValueError("For 2D simulations, lattice type must be LatticeD2Q9.")
+        if self.nz != 0 and isinstance(self, src.models.KBCSim) and not isinstance(value, LatticeD3Q27):
+            raise ValueError("For 3D KBC simulations, lattice type must be LatticeD3Q19,")
+                            
         self._lattice = value
 
     @property

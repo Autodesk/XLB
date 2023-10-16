@@ -144,6 +144,7 @@ if __name__ == "__main__":
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
+        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

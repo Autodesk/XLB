@@ -12,19 +12,21 @@ This is a file format commonly used for 3D models. The model is then voxelized t
 """
 
 
-from time import time
-import trimesh
-from src.boundary_conditions import *
-from jax.config import config
-from src.utils import *
-import numpy as np
-from src.models import BGKSim, KBCSim
-import jax.numpy as jnp
 import os
+import jax
+import trimesh
+from time import time
+import numpy as np
+import jax.numpy as jnp
+from jax.config import config
+
+from src.utils import *
+from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD3Q19, LatticeD3Q27
+from src.boundary_conditions import *
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-import jax
 
 # disable JIt compilation
 
@@ -108,6 +110,7 @@ class Car(KBCSim):
 
 if __name__ == '__main__':
     precision = 'f32/f32'
+    lattice = LatticeD3Q19(precision)
 
     nx = 601
     ny = 351
@@ -123,6 +126,7 @@ if __name__ == '__main__':
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
     kwargs = {
+        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,
