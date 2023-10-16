@@ -5,22 +5,27 @@ Please refer to https://jax.readthedocs.io/en/latest/multi_process.html for more
 """
 
 
-from src.models import BGKSim
-from src.lattice import LatticeD3Q19
-import jax.numpy as jnp
-import numpy as np
-from src.utils import *
-from jax.config import config
+# Standard Libraries
+import argparse
 import os
 from time import time
-import argparse
-import jax
 import portpicker
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+from jax.config import config
+
+from src.boundary_conditions import *
+from src.lattice import LatticeD3Q19
+from src.models import BGKSim
+from src.utils import *
+
 #config.update('jax_disable_jit', True)
 # Use 8 CPU devices
 #os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 #config.update("jax_enable_x64", True)
-from src.boundary_conditions import *
 
 precision = 'f32/f32'
 

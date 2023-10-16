@@ -18,7 +18,6 @@ from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
 import numpy as np
-from src.lattice import LatticeD3Q19, LatticeD3Q27
 from src.models import BGKSim, KBCSim
 import jax.numpy as jnp
 import os
@@ -109,7 +108,6 @@ class Car(KBCSim):
 
 if __name__ == '__main__':
     precision = 'f32/f32'
-    lattice = LatticeD3Q27(precision)
 
     nx = 601
     ny = 351
@@ -122,13 +120,9 @@ if __name__ == '__main__':
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
 
-    print('omega = ', omega)
-    print("Mesh size: ", nx, ny, nz)
-    print("Number of voxels: ", nx * ny * nz)
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

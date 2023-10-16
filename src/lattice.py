@@ -1,6 +1,6 @@
+import re
 import numpy as np
 import jax.numpy as jnp
-import re
 
 
 class Lattice(object):
@@ -75,7 +75,7 @@ class Lattice(object):
             The indices of the right velocities.
         """
         c = self.c.T
-        return np.where(c[:, 0] == 1)[0]
+        return np.nonzero(c[:, 0] == 1)[0]
     
     def construct_left_indices(self):
         """
@@ -88,7 +88,7 @@ class Lattice(object):
             The indices of the left velocities.
         """
         c = self.c.T
-        return np.where(c[:, 0] == -1)[0]
+        return np.nonzero(c[:, 0] == -1)[0]
     
     def construct_main_indices(self):
         """
@@ -103,10 +103,10 @@ class Lattice(object):
         """
         c = self.c.T
         if self.d == 2:
-            return np.where((np.abs(c[:, 0]) + np.abs(c[:, 1]) == 1))[0]
+            return np.nonzero((np.abs(c[:, 0]) + np.abs(c[:, 1]) == 1))[0]
 
         elif self.d == 3:
-            return np.where((np.abs(c[:, 0]) + np.abs(c[:, 1]) + np.abs(c[:, 2]) == 1))[0]
+            return np.nonzero((np.abs(c[:, 0]) + np.abs(c[:, 1]) + np.abs(c[:, 2]) == 1))[0]
 
     def construct_lattice_velocity(self):
         """
@@ -165,7 +165,7 @@ class Lattice(object):
             w[0] = 1.0 / 3.0
         elif self.name == "D3Q27":
             cl = np.linalg.norm(c, axis=1)
-            w[cl == 1.0] = 2.0 / 27.0
+            w[np.isclose(cl, 1.0, atol=1e-8)] = 2.0 / 27.0
             w[(cl > 1) & (cl <= np.sqrt(2))] = 1.0 / 54.0
             w[(cl > np.sqrt(2)) & (cl <= np.sqrt(3))] = 1.0 / 216.0
             w[0] = 8.0 / 27.0
@@ -202,7 +202,9 @@ class Lattice(object):
                 cntr += 1
 
         return cc
-
+    
+    def __str__(self):
+        return self.name
 
 class LatticeD2Q9(Lattice):
     """

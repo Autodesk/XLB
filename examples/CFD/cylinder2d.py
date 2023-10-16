@@ -23,7 +23,6 @@ from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
 import numpy as np
-from src.lattice import LatticeD2Q9
 from src.models import BGKSim, KBCSim
 import jax.numpy as jnp
 import os
@@ -95,7 +94,6 @@ if __name__ == '__main__':
     precision = 'f64/f64'
     prescribed_vel = 0.005
     diam = 80
-    lattice = LatticeD2Q9(precision)
 
     nx = int(22*diam)
     ny = int(4.1*diam)
@@ -111,7 +109,6 @@ if __name__ == '__main__':
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

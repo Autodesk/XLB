@@ -4,7 +4,6 @@ This script performs a 2D simulation of Couette flow using the lattice Boltzmann
 
 from src.models import BGKSim
 from src.boundary_conditions import *
-from src.lattice import LatticeD2Q9
 import jax.numpy as jnp
 import numpy as np
 from src.utils import *
@@ -49,7 +48,6 @@ class Couette(BGKSim):
 
 if __name__ == "__main__":
     precision = "f32/f32"
-    lattice = LatticeD2Q9(precision)
     nx = 501
     ny = 101
 
@@ -60,12 +58,10 @@ if __name__ == "__main__":
     visc = prescribed_vel * clength / Re
 
     omega = 1.0 / (3.0 * visc + 0.5)
-    print("omega = ", omega)
     assert omega < 1.98, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

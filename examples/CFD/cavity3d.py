@@ -20,7 +20,6 @@ import os
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 from src.models import BGKSim, KBCSim
-from src.lattice import LatticeD3Q27
 import numpy as np
 from src.utils import *
 from jax.config import config
@@ -68,8 +67,6 @@ class Cavity(KBCSim):
         # live_volume_randering(timestep, u_mag)
 
 if __name__ == '__main__':
-    lattice = LatticeD3Q27(precision)
-
     nx = 101
     ny = 101
     nz = 101
@@ -80,12 +77,10 @@ if __name__ == '__main__':
 
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
-    print('omega = ', omega)
     
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,
