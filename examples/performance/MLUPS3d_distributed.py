@@ -18,7 +18,6 @@ import numpy as np
 from jax.config import config
 
 from src.boundary_conditions import *
-from src.lattice import LatticeD3Q19
 from src.models import BGKSim
 from src.utils import *
 
@@ -57,9 +56,6 @@ if __name__ == '__main__':
     port = portpicker.pick_unused_port()
     jax.distributed.initialize(f'127.0.0.1:1234', 2, int(os.environ['CUDA_VISIBLE_DEVICES']))
 
-    # Create a 3D lattice with the D3Q19 scheme
-    lattice = LatticeD3Q19(precision)
-
     # Create a parser that will read the command line arguments
     parser = argparse.ArgumentParser("Calculate MLUPS for a 3D cavity flow simulation")
     parser.add_argument("N", help="The total number of voxels in one direction. The final dimension will be N*NxN", default=100, type=int)
@@ -80,11 +76,9 @@ if __name__ == '__main__':
     visc = u_wall * clength / Re
     # Compute the relaxation parameter from the viscosity
     omega = 1.0 / (3. * visc + 0.5)
-    print('omega = ', omega)
     
     # Create a new instance of the Cavity class
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': n,
         'ny': n,

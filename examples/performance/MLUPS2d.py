@@ -3,17 +3,15 @@ This script computes the MLUPS (Million Lattice Updates per Second) in 2D by sim
 """
 
 import os
-
-from src.models import BGKSim
-from src.lattice import LatticeD2Q9
-
 import jax.numpy as jnp
 import numpy as np
 from src.utils import *
 from jax.config import config
 from time import time
 import argparse
+
 from src.boundary_conditions import *
+from src.models import BGKSim
 
 class Cavity(BGKSim):
     def __init__(self, **kwargs):
@@ -36,7 +34,6 @@ class Cavity(BGKSim):
 
 if __name__ == '__main__':
     precision = 'f32/f32'
-    lattice = LatticeD2Q9(precision)
 
     parser = argparse.ArgumentParser("simple_example")
     parser.add_argument("N", help="The total number of voxels will be NxN", type=int)
@@ -54,7 +51,6 @@ if __name__ == '__main__':
     print('omega = ', omega)
 
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': n,
         'ny': n,
