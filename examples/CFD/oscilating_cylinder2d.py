@@ -24,7 +24,6 @@ from src.boundary_conditions import *
 from jax.config import config
 from src.utils import *
 import numpy as np
-from src.lattice import LatticeD2Q9
 from src.models import BGKSim, KBCSim
 import jax.numpy as jnp
 import os
@@ -118,7 +117,6 @@ poiseuille_profile  = lambda x,x0,d,umax: np.maximum(0.,4.*umax/(d**2)*((x-x0)*d
 
 if __name__ == '__main__':
     precision = 'f64/f64'
-    lattice = LatticeD2Q9(precision)
 
     prescribed_vel = 0.005
     diam = 20
@@ -129,13 +127,8 @@ if __name__ == '__main__':
     visc = prescribed_vel * diam / Re
     omega = 1.0 / (3. * visc + 0.5)
 
-    print('omega = ', omega)
-    print("Mesh size: ", nx, ny)
-    print("Number of voxels: ", nx * ny)
-
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

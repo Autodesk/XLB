@@ -202,7 +202,9 @@ class Lattice(object):
                 cntr += 1
 
         return cc
-
+    
+    def __str__(self):
+        return self.name
 
 class LatticeD2Q9(Lattice):
     """

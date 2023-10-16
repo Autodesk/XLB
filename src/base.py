@@ -21,10 +21,9 @@ import orbax.checkpoint as orb
 from functools import partial
 
 # Local/Custom Libraries
-# from src.boundary_conditions import *
+import src.models
 from src.utils import downsample_field
-
-
+from src.lattice import LatticeD2Q9, LatticeD3Q19, LatticeD3Q27
 
 jax.config.update("jax_spmd_mode", 'allow_all')
 # Disables annoying TF warnings
@@ -42,26 +41,30 @@ class LBMBase(object):
         ny (int): Number of grid points in the y-direction.
         nz (int, optional): Number of grid points in the z-direction. Defaults to 0.
         precision (str, optional): A string specifying the precision used for the simulation. Defaults to "f32/f32".
-        optimize (bool, optional): Whether or not to run adjoint optimization (not functional yet). Defaults to False.
     """
     
     def __init__(self, **kwargs):
-        # Set the precision for computation and storage
-        precision = kwargs.get("precision", "f32/f32")
-        computedType, storedType = self.set_precisions(precision)
+        self.omega = kwargs.get("omega")
+        self.nx = kwargs.get("nx")
+        self.ny = kwargs.get("ny")
+        self.nz = kwargs.get("nz")
+
+        self.precision = kwargs.get("precision")
+        computedType, storedType = self.set_precisions(self.precision)
         self.precisionPolicy = jmp.Policy(compute_dtype=computedType,
                                             param_dtype=computedType, output_dtype=storedType)
         
-        self.optimize = kwargs.get("optimize", False)
+        self.lattice = kwargs.get("lattice")
         self.checkpointRate = kwargs.get("checkpoint_rate", 0)
         self.checkpointDir = kwargs.get("checkpoint_dir", './checkpoints')
         self.downsamplingFactor = kwargs.get("downsampling_factor", 1)
-        self.printInfoRate= kwargs.get("print_info_rate", 100)
+        self.printInfoRate = kwargs.get("print_info_rate", 100)
         self.ioRate = kwargs.get("io_rate", 0)
         self.returnFpost = kwargs.get("return_fpost", False)
         self.computeMLUPS = kwargs.get("compute_MLUPS", False)
         self.restore_checkpoint = kwargs.get("restore_checkpoint", False)
         self.nDevices = jax.device_count()
+        self.backend = jax.default_backend()
 
         if self.computeMLUPS:
             self.restore_checkpoint = False
@@ -72,21 +75,7 @@ class LBMBase(object):
         # Check for distributed mode
         if self.nDevices > jax.local_device_count():
             print("WARNING: Running in distributed mode. Make sure that jax.distributed.initialize is called before performing any JAX computations.")
-        print("XLA backend:", jax.default_backend())
-        print("Number of XLA devices available: " + colored(f'{self.nDevices}', 'green'))
-        self.p_i = np.arange(self.nDevices)
-
-        # Set the lattice and relaxation parameter
-        lattice = kwargs.get("lattice", None)
-        if lattice is None:
-            raise ValueError("lattice must be provided")
-    
-        omega = kwargs.get("omega", None)
-        if omega is None:
-            raise ValueError("omega must be provided")
-        
-        self.lattice = lattice
-        self.omega = omega
+                    
         self.c = self.lattice.c
         self.q = self.lattice.q
         self.w = self.lattice.w
@@ -97,7 +86,6 @@ class LBMBase(object):
             mngr_options = orb.CheckpointManagerOptions(save_interval_steps=self.checkpointRate, max_to_keep=1)
             self.mngr = orb.CheckpointManager(self.checkpointDir, orb.PyTreeCheckpointer(), options=mngr_options)
         else:
-            print("WARNING: Checkpointing is disabled for this simulation.")
             self.mngr = None
         
         # Adjust the number of grid points in the x direction, if necessary.
@@ -113,14 +101,16 @@ class LBMBase(object):
             print("WARNING: nx increased from {} to {} in order to accommodate domain sharding per XLA device.".format(nx, self.nx))
         self.ny = ny
         self.nz = nz
+
+        self.show_simulation_parameters()
     
         # Store grid information
         self.gridInfo = {
             "nx": self.nx,
             "ny": self.ny,
             "nz": self.nz,
-            "dim": lattice.d,
-            "lattice": lattice
+            "dim": self.lattice.d,
+            "lattice": self.lattice
         }
 
         P = PartitionSpec
@@ -129,7 +119,6 @@ class LBMBase(object):
         self.rightPerm = [(i, (i + 1) % self.nDevices) for i in range(self.nDevices)]
         # Define the left permutation
         self.leftPerm = [((i + 1) % self.nDevices, i) for i in range(self.nDevices)]
-
 
         # Set up the sharding and streaming for 2D and 3D simulations
         if self.dim == 2:
@@ -163,6 +152,212 @@ class LBMBase(object):
         self._create_boundary_data()
         self.force = self.get_force()
 
+    @property
+    def lattice(self):
+        return self._lattice
+
+    @lattice.setter
+    def lattice(self, value):
+        if value is None:
+            if isinstance(self, src.models.BGKSim):
+                lattice_class = LatticeD2Q9 if self.nz == 0 else LatticeD3Q19
+            elif isinstance(self, src.models.KBCSim):
+                lattice_class = LatticeD2Q9 if self.nz == 0 else LatticeD3Q27
+            else:
+                # Default values for other base classes (e.g., advection-diffusion)
+                lattice_class = LatticeD2Q9 if self.nz == 0 else LatticeD3Q19
+                
+            value = lattice_class(self._precision)
+            
+        self._lattice = value
+
+    @property
+    def omega(self):
+        return self._omega
+
+    @omega.setter
+    def omega(self, value):
+        if value is None:
+            raise ValueError("omega must be provided")
+        if not isinstance(value, float):
+            raise TypeError("omega must be a float")
+        self._omega = value
+
+    @property
+    def nx(self):
+        return self._nx
+
+    @nx.setter
+    def nx(self, value):
+        if value is None:
+            raise ValueError("nx must be provided")
+        if not isinstance(value, int):
+            raise TypeError("nx must be an integer")
+        self._nx = value
+
+    @property
+    def ny(self):
+        return self._ny
+
+    @ny.setter
+    def ny(self, value):
+        if value is None:
+            raise ValueError("ny must be provided")
+        if not isinstance(value, int):
+            raise TypeError("ny must be an integer")
+        self._ny = value
+
+    @property
+    def nz(self):
+        return self._nz
+
+    @nz.setter
+    def nz(self, value):
+        if value is None:
+            raise ValueError("nz must be provided")
+        if not isinstance(value, int):
+            raise TypeError("nz must be an integer")
+        self._nz = value
+
+    @property
+    def precision(self):
+        return self._precision
+
+    @precision.setter
+    def precision(self, value):
+        if not isinstance(value, str):
+            raise TypeError("precision must be a string")
+        self._precision = value
+
+    @property
+    def checkpointRate(self):
+        return self._checkpointRate
+
+    @checkpointRate.setter
+    def checkpointRate(self, value):
+        if not isinstance(value, int):
+            raise TypeError("checkpointRate must be an integer")
+        self._checkpointRate = value
+
+    @property
+    def checkpointDir(self):
+        return self._checkpointDir
+
+    @checkpointDir.setter
+    def checkpointDir(self, value):
+        if not isinstance(value, str):
+            raise TypeError("checkpointDir must be a string")
+        self._checkpointDir = value
+
+    @property
+    def downsamplingFactor(self):
+        return self._downsamplingFactor
+
+    @downsamplingFactor.setter
+    def downsamplingFactor(self, value):
+        if not isinstance(value, int):
+            raise TypeError("downsamplingFactor must be an integer")
+        self._downsamplingFactor = value
+
+    @property
+    def printInfoRate(self):
+        return self._printInfoRate
+
+    @printInfoRate.setter
+    def printInfoRate(self, value):
+        if not isinstance(value, int):
+            raise TypeError("printInfoRate must be an integer")
+        self._printInfoRate = value
+
+    @property
+    def ioRate(self):
+        return self._ioRate
+
+    @ioRate.setter
+    def ioRate(self, value):
+        if not isinstance(value, int):
+            raise TypeError("ioRate must be an integer")
+        self._ioRate = value
+
+    @property
+    def returnFpost(self):
+        return self._returnFpost
+
+    @returnFpost.setter
+    def returnFpost(self, value):
+        if not isinstance(value, bool):
+            raise TypeError("returnFpost must be a boolean")
+        self._returnFpost = value
+
+    @property
+    def computeMLUPS(self):
+        return self._computeMLUPS
+
+    @computeMLUPS.setter
+    def computeMLUPS(self, value):
+        if not isinstance(value, bool):
+            raise TypeError("computeMLUPS must be a boolean")
+        self._computeMLUPS = value
+
+    @property
+    def restore_checkpoint(self):
+        return self._restore_checkpoint
+
+    @restore_checkpoint.setter
+    def restore_checkpoint(self, value):
+        if not isinstance(value, bool):
+            raise TypeError("restore_checkpoint must be a boolean")
+        self._restore_checkpoint = value
+
+    @property
+    def nDevices(self):
+        return self._nDevices
+
+    @nDevices.setter
+    def nDevices(self, value):
+        if not isinstance(value, int):
+            raise TypeError("nDevices must be an integer")
+        self._nDevices = value
+
+    def show_simulation_parameters(self):
+        attributes_to_show = [
+            'omega', 'nx', 'ny', 'nz', 'dim', 'precision', 'lattice', 
+            'checkpointRate', 'checkpointDir', 'downsamplingFactor', 
+            'printInfoRate', 'ioRate', 'computeMLUPS', 
+            'restore_checkpoint', 'backend', 'nDevices'
+        ]
+
+        descriptive_names = {
+            'omega': 'Omega',
+            'nx': 'Grid Points in X',
+            'ny': 'Grid Points in Y',
+            'nz': 'Grid Points in Z',
+            'dim': 'Dimensionality',
+            'precision': 'Precision Policy',
+            'lattice': 'Lattice Type',
+            'checkpointRate': 'Checkpoint Rate',
+            'checkpointDir': 'Checkpoint Directory',
+            'downsamplingFactor': 'Downsampling Factor',
+            'printInfoRate': 'Print Info Rate',
+            'ioRate': 'I/O Rate',
+            'computeMLUPS': 'Compute MLUPS',
+            'restore_checkpoint': 'Restore Checkpoint',
+            'backend': 'Backend',
+            'nDevices': 'Number of Devices'
+        }
+        simulation_name = self.__class__.__name__
+        
+        print(colored(f'**** Simulation Parameters for {simulation_name} ****', 'green'))
+                
+        header = f"{colored('Parameter', 'blue'):>30} | {colored('Value', 'yellow')}"
+        print(header)
+        print('-' * 50)
+        
+        for attr in attributes_to_show:
+            value = getattr(self, attr, 'Attribute not set')
+            descriptive_name = descriptive_names.get(attr, attr)  # Use the attribute name as a fallback
+            row = f"{colored(descriptive_name, 'blue'):>30} | {colored(value, 'yellow')}"
+            print(row)
 
     def _create_boundary_data(self):
         """

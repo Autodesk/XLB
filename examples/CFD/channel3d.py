@@ -115,7 +115,6 @@ class TurbulentChannel(KBCSim):
 
 if __name__ == "__main__":
     precision = "f64/f64"
-    lattice = LatticeD3Q27(precision)
     # h: channel half-width
     h = 10
     # Define channel geometry based on h
@@ -135,11 +134,9 @@ if __name__ == "__main__":
     zz = np.minimum(zz, zz.max() - zz)
     yplus = zz * u_tau / visc
 
-    print("omega = ", omega)
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
-        'lattice': lattice,
         'omega': omega,
         'nx': nx,
         'ny': ny,

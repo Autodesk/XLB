@@ -92,7 +92,6 @@ if __name__ == "__main__":
 
         visc = vel_ref * nx / Re
         omega = 1.0 / (3.0 * visc + 0.5)
-        print("omega = ", omega)
         os.system("rm -rf ./*.vtk && rm -rf ./*.png")
         kwargs = {
             'lattice': lattice,
