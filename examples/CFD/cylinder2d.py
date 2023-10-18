@@ -17,20 +17,20 @@ In this example you'll be introduced to the following concepts:
 5. Visualization: The simulation outputs data in VTK format for visualization. It also generates images of the velocity field. The data can be visualized using software like ParaView.
 
 """
-
-from time import time
-from src.boundary_conditions import *
-from jax.config import config
-from src.utils import *
-import numpy as np
-from src.lattice import LatticeD2Q9
-from src.models import BGKSim, KBCSim
-import jax.numpy as jnp
 import os
+import jax
+from time import time
+from jax.config import config
+import numpy as np
+import jax.numpy as jnp
+
+from src.utils import *
+from src.boundary_conditions import *
+from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD2Q9
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-import jax
 jax.config.update('jax_enable_x64', True)
 
 class Cylinder(KBCSim):
@@ -93,9 +93,10 @@ poiseuille_profile  = lambda x,x0,d,umax: np.maximum(0.,4.*umax/(d**2)*((x-x0)*d
 
 if __name__ == '__main__':
     precision = 'f64/f64'
+    lattice = LatticeD2Q9(precision)
+
     prescribed_vel = 0.005
     diam = 80
-    lattice = LatticeD2Q9(precision)
 
     nx = int(22*diam)
     ny = int(4.1*diam)

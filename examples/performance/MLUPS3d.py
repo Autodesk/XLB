@@ -2,22 +2,22 @@
 This script computes the MLUPS (Million Lattice Updates per Second) in 3D by simulating fluid flow inside a 2D cavity.
 """
 
-from src.models import BGKSim
-from src.lattice import LatticeD3Q19
+import os
+import argparse
+
+import jax
 import jax.numpy as jnp
 import numpy as np
-from src.utils import *
 from jax.config import config
-import os
 from time import time
-import argparse
-import jax
 #config.update('jax_disable_jit', True)
 # Use 8 CPU devices
 #os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 #config.update("jax_enable_x64", True)
+from src.utils import *
 from src.boundary_conditions import *
-
+from src.models import BGKSim
+from src.lattice import LatticeD3Q19
 class Cavity(BGKSim):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -38,9 +38,7 @@ class Cavity(BGKSim):
 
 if __name__ == '__main__':
     precision = 'f32/f32'
-    # Create a 3D lattice with the D3Q19 scheme
     lattice = LatticeD3Q19(precision)
-
     # Create a parser that will read the command line arguments
     parser = argparse.ArgumentParser("Calculate MLUPS for a 3D cavity flow simulation")
     parser.add_argument("N", help="The total number of voxels all directions. The final dimension will be N*NxN", default=100, type=int)
@@ -61,7 +59,6 @@ if __name__ == '__main__':
     visc = u_wall * clength / Re
     # Compute the relaxation parameter from the viscosity
     omega = 1.0 / (3. * visc + 0.5)
-    print('omega = ', omega)
 
     kwargs = {
         'lattice': lattice,

@@ -2,14 +2,16 @@
 This script performs a 2D simulation of Couette flow using the lattice Boltzmann method (LBM). 
 """
 
-from src.models import BGKSim
-from src.boundary_conditions import *
-from src.lattice import LatticeD2Q9
+import os
 import jax.numpy as jnp
 import numpy as np
 from src.utils import *
 from jax.config import config
-import os
+
+
+from src.models import BGKSim
+from src.boundary_conditions import *
+from src.lattice import LatticeD2Q9
 
 # config.update('jax_disable_jit', True)
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=4'
@@ -60,7 +62,6 @@ if __name__ == "__main__":
     visc = prescribed_vel * clength / Re
 
     omega = 1.0 / (3.0 * visc + 0.5)
-    print("omega = ", omega)
     assert omega < 1.98, "omega must be less than 2.0"
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 

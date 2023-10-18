@@ -55,7 +55,7 @@ def get_dns_data():
         }
     return dns_dic
 
-class turbulentChannel(KBCSim):
+class TurbulentChannel(KBCSim):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -68,7 +68,7 @@ class turbulentChannel(KBCSim):
     def initialize_macroscopic_fields(self):
         rho = self.precisionPolicy.cast_to_output(1.0)
         u = self.distributed_array_init((self.nx, self.ny, self.nz, self.dim),
-                                         self.precisionPolicy.compute_dtype, initVal=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
+                                         self.precisionPolicy.compute_dtype, init_val=1e-2 * np.random.random((self.nx, self.ny, self.nz, self.dim)))
         u = self.precisionPolicy.cast_to_output(u)
         return rho, u
 
@@ -141,7 +141,6 @@ if __name__ == "__main__":
     zz = np.minimum(zz, zz.max() - zz)
     yplus = zz * u_tau / visc
 
-    print("omega = ", omega)
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {

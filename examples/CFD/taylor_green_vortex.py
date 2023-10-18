@@ -5,18 +5,20 @@ The flow is characterized by a pair of counter-rotating vortices. In this script
 """
 
 
-from src.boundary_conditions import *
-from src.utils import *
-import numpy as np
-from src.lattice import LatticeD2Q9
-from src.models import BGKSim, KBCSim, AdvectionDiffusionBGK
 import os
-import matplotlib.pyplot as plt
 import json
+import jax
+import numpy as np
+import matplotlib.pyplot as plt
+
+from src.utils import *
+from src.boundary_conditions import *
+from src.models import BGKSim, KBCSim, AdvectionDiffusionBGK
+from src.lattice import LatticeD2Q9
+
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-import jax
 # disable JIt compilation
 
 jax.config.update('jax_enable_x64', True)
@@ -37,9 +39,9 @@ class TaylorGreenVortex(KBCSim):
 
     def initialize_macroscopic_fields(self):
         ux, uy, rho = taylor_green_initial_fields(xx, yy, vel_ref, 1, 0., 0.)
-        rho = self.distributed_array_init(rho.shape, self.precisionPolicy.output_dtype, initVal=1.0, sharding=self.sharding)
+        rho = self.distributed_array_init(rho.shape, self.precisionPolicy.output_dtype, init_val=1.0, sharding=self.sharding)
         u = np.stack([ux, uy], axis=-1)
-        u = self.distributed_array_init(u.shape, self.precisionPolicy.output_dtype, initVal=u, sharding=self.sharding)
+        u = self.distributed_array_init(u.shape, self.precisionPolicy.output_dtype, init_val=u, sharding=self.sharding)
         return rho, u
 
     def initialize_populations(self, rho, u):
@@ -95,7 +97,6 @@ if __name__ == "__main__":
 
             visc = vel_ref * nx / Re
             omega = 1.0 / (3.0 * visc + 0.5)
-            print("omega = ", omega)
             os.system("rm -rf ./*.vtk && rm -rf ./*.png")
             kwargs = {
                 'lattice': lattice,

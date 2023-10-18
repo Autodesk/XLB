@@ -26,7 +26,7 @@ class BGKSim(LBMBase):
         """
         f = self.precisionPolicy.cast_to_compute(f)
         rho, u = self.update_macroscopic(f)
-        feq = self.equilibrium(rho, u, castOutput=False)
+        feq = self.equilibrium(rho, u, cast_output=False)
         fneq = f - feq
         fout = f - self.omega * fneq
         if self.force is not None:
@@ -39,8 +39,9 @@ class KBCSim(LBMBase):
 
     This class implements the Karlin-Bösch-Chikatamarla (KBC) model for the collision step in the Lattice Boltzmann Method.
     """
-
     def __init__(self, **kwargs):
+        if kwargs.get('lattice').name != 'D3Q27' and kwargs.get('nz') > 0:
+            raise ValueError("KBC collision operator in 3D must only be used with D3Q27 lattice.")
         super().__init__(**kwargs)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
@@ -52,7 +53,7 @@ class KBCSim(LBMBase):
         tiny = 1e-32
         beta = self.omega * 0.5
         rho, u = self.update_macroscopic(f)
-        feq = self.equilibrium(rho, u, castOutput=False)
+        feq = self.equilibrium(rho, u, cast_output=False)
         fneq = f - feq
         if self.dim == 2:
             deltaS = self.fdecompose_shear_d2q9(fneq) * rho / 4.0
@@ -212,7 +213,7 @@ class AdvectionDiffusionBGK(LBMBase):
         """
         f = self.precisionPolicy.cast_to_compute(f)
         rho =jnp.sum(f, axis=-1, keepdims=True)
-        feq = self.equilibrium(rho, self.vel, castOutput=False)
+        feq = self.equilibrium(rho, self.vel, cast_output=False)
         fneq = f - feq
         fout = f - self.omega * fneq
         return self.precisionPolicy.cast_to_output(fout)

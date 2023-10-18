@@ -16,18 +16,18 @@ In this example you'll be introduced to the following concepts:
 4. Visualization: The simulation outputs data in VTK format for visualization. It also provides images of the velocity field and saves the boundary conditions at each time step. The data can be visualized using software like Paraview.
 
 """
-from src.boundary_conditions import *
 from jax.config import config
-from src.utils import *
 import numpy as np
-from src.lattice import LatticeD2Q9
-from src.models import BGKSim, KBCSim
 import jax.numpy as jnp
 import os
 
+from src.boundary_conditions import *
+from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD2Q9
+from src.utils import *
+
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-import jax
 
 class Cavity(KBCSim):
     def __init__(self, **kwargs):
@@ -71,11 +71,10 @@ if __name__ == "__main__":
     clength = nx - 1
 
     checkpoint_rate = 1000
-    checkpoint_dir = "./checkpoints"
+    checkpoint_dir = os.path.abspath("./checkpoints")
 
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
-    print("omega = ", omega)
     
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
