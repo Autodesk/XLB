@@ -23,7 +23,6 @@ from functools import partial
 # Local/Custom Libraries
 import src.models
 from src.utils import downsample_field
-from src.lattice import LatticeD2Q9, LatticeD3Q19, LatticeD3Q27
 
 jax.config.update("jax_spmd_mode", 'allow_all')
 # Disables annoying TF warnings
@@ -160,10 +159,10 @@ class LBMBase(object):
     def lattice(self, value):
         if value is None:
             raise ValueError("Lattice type must be provided.")
-        if self.nz == 0 and not isinstance(value, LatticeD2Q9):
+        if self.nz == 0 and value.name not in ['D2Q9']:
             raise ValueError("For 2D simulations, lattice type must be LatticeD2Q9.")
-        if self.nz != 0 and isinstance(self, src.models.KBCSim) and not isinstance(value, LatticeD3Q27):
-            raise ValueError("For 3D KBC simulations, lattice type must be LatticeD3Q19,")
+        if self.nz != 0 and value.name not in ['D3Q19', 'D3Q27']:
+            raise ValueError("For 3D simulations, lattice type must be LatticeD3Q19, or LatticeD3Q27.")
                             
         self._lattice = value
 

@@ -39,8 +39,9 @@ class KBCSim(LBMBase):
 
     This class implements the Karlin-Bösch-Chikatamarla (KBC) model for the collision step in the Lattice Boltzmann Method.
     """
-
     def __init__(self, **kwargs):
+        if kwargs.get('lattice').name != 'D3Q27' and kwargs.get('nz') > 0:
+            raise ValueError("KBC collision operator in 3D must only be used with D3Q27 lattice.")
         super().__init__(**kwargs)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))

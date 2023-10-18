@@ -110,7 +110,7 @@ class Car(KBCSim):
 
 if __name__ == '__main__':
     precision = 'f32/f32'
-    lattice = LatticeD3Q19(precision)
+    lattice = LatticeD3Q27(precision)
 
     nx = 601
     ny = 351
