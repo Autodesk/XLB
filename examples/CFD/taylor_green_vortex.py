@@ -48,7 +48,7 @@ class TaylorGreenVortex(KBCSim):
         ADE = AdvectionDiffusionBGK(**kwargs)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(int(20000*32/nx))
+        f = ADE.run(int(20000*nx/32))
         return f
 
     def output_data(self, **kwargs):
