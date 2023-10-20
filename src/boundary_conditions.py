@@ -467,6 +467,8 @@ class BounceBackHalfway(BoundaryCondition):
         Whether the boundary condition needs extra configuration before it can be applied. For this class, it is True.
     isSolid : bool
         Whether the boundary condition represents a solid boundary. For this class, it is True.
+    vel : array-like
+        The prescribed value of velocity vector for the boundary condition. No-slip BC is assumed if vel=None (default).
     """
     def __init__(self, indices, gridInfo, precision_policy, vel=None):
         super().__init__(indices, gridInfo, precision_policy)

@@ -17,21 +17,21 @@ In this example you'll be introduced to the following concepts:
 5. Visualization: The simulation outputs data in VTK format for visualization. It also generates images of the velocity field. The data can be visualized using software like ParaView.
 
 """
-
-from time import time
-from src.boundary_conditions import *
-from jax.config import config
-from src.utils import *
-import numpy as np
-from src.lattice import LatticeD2Q9
-from src.models import BGKSim, KBCSim
-import jax.numpy as jnp
 import os
 import json
+import jax
+from time import time
+from jax.config import config
+import numpy as np
+import jax.numpy as jnp
+
+from src.utils import *
+from src.boundary_conditions import *
+from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD2Q9
 
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-import jax
 jax.config.update('jax_enable_x64', True)
 
 class Cylinder(BGKSim):
@@ -47,16 +47,13 @@ class Cylinder(BGKSim):
         cylinder = coord[cylinder]
         implicit_distance = np.reshape((xx - cx)**2 + (yy-cy)**2 - (diam/2.)**2, (self.nx, self.ny))
         self.BCs.append(InterpolatedBounceBackBouzidi(tuple(cylinder.T), implicit_distance, self.gridInfo, self.precisionPolicy))
-        # self.BCs.append(BounceBackHalfway(tuple(cylinder.T), self.gridInfo, self.precisionPolicy))
 
-        # wall = np.concatenate([cylinder, self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
-        # self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
-
+        # Outflow BC
         outlet = self.boundingBoxIndices['right']
         rho_outlet = np.ones(outlet.shape[0], dtype=self.precisionPolicy.compute_dtype)
         self.BCs.append(ExtrapolationOutflow(tuple(outlet.T), self.gridInfo, self.precisionPolicy))
-        # self.BCs.append(Regularized(tuple(outlet.T), self.gridInfo, self.precisionPolicy, 'pressure', rho_outlet))
 
+        # Inlet BC
         inlet = self.boundingBoxIndices['left']
         rho_inlet = np.ones((inlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
         vel_inlet = np.zeros(inlet.shape, dtype=self.precisionPolicy.compute_dtype)
@@ -64,14 +61,15 @@ class Cylinder(BGKSim):
         vel_inlet[:, 0] = poiseuille_profile(yy_inlet,
                                              yy_inlet.min(),
                                              yy_inlet.max()-yy_inlet.min(), 3.0 / 2.0 * prescribed_vel)
-        # self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_inlet, vel_inlet))
         self.BCs.append(Regularized(tuple(inlet.T), self.gridInfo, self.precisionPolicy, 'velocity', vel_inlet))
 
+        # No-slip BC for top and bottom
         wall = np.concatenate([self.boundingBoxIndices['top'], self.boundingBoxIndices['bottom']])
-        self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
+        vel_wall = np.zeros(wall.shape, dtype=self.precisionPolicy.compute_dtype)
+        self.BCs.append(Regularized(tuple(wall.T), self.gridInfo, self.precisionPolicy, 'velocity', vel_wall))
 
     def output_data(self, **kwargs):
-        # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
+        # 1:-1 to remove boundary voxels (not needed for visualization when using bounce-back)
         rho = np.array(kwargs["rho"][..., 1:-1, :])
         u = np.array(kwargs["u"][..., 1:-1, :])
         timestep = kwargs["timestep"]
@@ -96,14 +94,15 @@ class Cylinder(BGKSim):
             self.CL_max = max(self.CL_max, cl)
             self.CD_max = max(self.CD_max, cd)
             print('error= {:07.6f}, CL = {:07.6f}, CD = {:07.6f}'.format(err, cl, cd))
-        # save_image(timestep, u)
+            save_image(timestep, u)
 
 # Helper function to specify a parabolic poiseuille profile
 poiseuille_profile  = lambda x,x0,d,umax: np.maximum(0.,4.*umax/(d**2)*((x-x0)*d-(x-x0)**2))
 
 if __name__ == '__main__':
     precision = 'f64/f64'
-    diam_list = [10, 20, 30, 40, 60, 80]
+    # diam_list = [10, 20, 30, 40, 60, 80]
+    diam_list = [80]
     CL_list, CD_list = [], []
     result_dict = {}
     result_dict['resolution_list'] = diam_list
@@ -118,10 +117,6 @@ if __name__ == '__main__':
         Re = 100.0
         visc = prescribed_vel * diam / Re
         omega = 1.0 / (3. * visc + 0.5)
-
-        print('omega = ', omega)
-        print("Mesh size: ", nx, ny)
-        print("Number of voxels: ", nx * ny)
         
         os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 

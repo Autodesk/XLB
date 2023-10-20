@@ -16,14 +16,17 @@ In this example you'll be introduced to the following concepts:
 """
 # Use 8 CPU devices
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
-from src.models import BGKSim, KBCSim
-from src.lattice import LatticeD3Q19, LatticeD3Q27
+
+import numpy as np
 from src.utils import *
 from jax.config import config
-from src.boundary_conditions import *
 import json, codecs
 
-precision = 'f64/f64'
+from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD3Q19, LatticeD3Q27
+from src.boundary_conditions import *
+
+
 config.update('jax_enable_x64', True)
 
 class Cavity(KBCSim):
@@ -86,6 +89,7 @@ class Cavity(KBCSim):
 if __name__ == '__main__':
     # Note: 
     # We have used BGK with D3Q19 (or D3Q27) for Re=(1000, 3200) and KBC with D3Q27 for Re=10,000
+    precision = 'f64/f64'
     lattice = LatticeD3Q27(precision)
 
     nx = 256
@@ -102,8 +106,6 @@ if __name__ == '__main__':
 
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
-    print('omega = ', omega)
-
     os.system("rm -rf ./*.vtk && rm -rf ./*.png")
 
     kwargs = {
