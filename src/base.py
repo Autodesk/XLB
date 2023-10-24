@@ -11,17 +11,16 @@ from termcolor import colored
 
 # JAX-related imports
 from jax import jit, lax, vmap
-from jax.config import config
 from jax.experimental import mesh_utils
 from jax.experimental.multihost_utils import process_allgather
 from jax.experimental.shard_map import shard_map
 from jax.sharding import NamedSharding, PartitionSpec, PositionalSharding, Mesh
 import orbax.checkpoint as orb
+
 # functools imports
 from functools import partial
 
 # Local/Custom Libraries
-import src.models
 from src.utils import downsample_field
 
 jax.config.update("jax_spmd_mode", 'allow_all')
