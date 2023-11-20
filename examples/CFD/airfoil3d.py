@@ -41,6 +41,9 @@ import os
 import jax
 import scipy
 
+# PhantomGaze for rendering
+import phantomgaze as pg
+
 # Function to create a NACA airfoil shape given its length, thickness, and angle of attack
 def makeNacaAirfoil(length, thickness=30, angle=0):
     def nacaAirfoil(x, thickness, chordLength):
@@ -74,6 +77,11 @@ class Airfoil(KBCSim):
                                self.boundingBoxIndices['bottom'], self.boundingBoxIndices['top']))
         self.BCs.append(BounceBack(tuple(wall.T), self.gridInfo, self.precisionPolicy))
 
+        # Store wall boundary for visualization
+        self.boundary = jnp.zeros((self.nx, self.ny, self.nz), dtype=jnp.float32)
+        self.boundary = self.boundary.at[tuple(wall.T)].set(1.0)
+        self.boundary = self.boundary[2:-2, 2:-2, 2:-2]
+
         doNothing = self.boundingBoxIndices['right']
         self.BCs.append(DoNothing(tuple(doNothing.T), self.gridInfo, self.precisionPolicy))
 
@@ -85,20 +93,61 @@ class Airfoil(KBCSim):
         self.BCs.append(EquilibriumBC(tuple(inlet.T), self.gridInfo, self.precisionPolicy, rho_inlet, vel_inlet))
 
     def output_data(self, **kwargs):
-        # 1:-1 to remove boundary voxels (not needed for visualization when using full-way bounce-back)
-        rho = np.array(kwargs['rho'][..., 1:-1, :])
-        u = np.array(kwargs['u'][..., 1:-1, :])
-        timestep = kwargs['timestep']
-        u_prev = kwargs['u_prev'][..., 1:-1, :]
+        # Compute q-criterion and vorticity using finite differences
+        # Get velocity field
+        u = kwargs['u'][..., 1:-1, :]
 
-        u_old = np.linalg.norm(u_prev, axis=2)
-        u_new = np.linalg.norm(u, axis=2)
+        # vorticity and q-criterion
+        norm_mu, q = q_criterion(u)
 
-        err = np.sum(np.abs(u_old - u_new))
-        print('error= {:07.6f}'.format(err))
-        # save_image(timestep, rho, u)
-        fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
-        save_fields_vtk(timestep, fields)
+        # Make phantomgaze volume
+        dx = 0.01
+        origin = (0.0, 0.0, 0.0)
+        upper_bound = (self.boundary.shape[0] * dx, self.boundary.shape[1] * dx, self.boundary.shape[2] * dx)
+        q_volume = pg.objects.Volume(
+            q,
+            spacing=(dx, dx, dx),
+            origin=origin,
+        )
+        norm_mu_volume = pg.objects.Volume(
+            norm_mu,
+            spacing=(dx, dx, dx),
+            origin=origin,
+        )
+        boundary_volume = pg.objects.Volume(
+            self.boundary,
+            spacing=(dx, dx, dx),
+            origin=origin,
+        )
+
+        # Make colormap for norm_mu
+        colormap = pg.Colormap("jet", vmin=0.0, vmax=0.05)
+
+        # Get camera parameters
+        focal_point = (self.boundary.shape[0] * dx / 2, self.boundary.shape[1] * dx / 2, self.boundary.shape[2] * dx / 2)
+        radius = 3.0
+        angle = kwargs['timestep'] * 0.0001
+        camera_position = (focal_point[0] + radius * np.sin(angle), focal_point[1], focal_point[2] + radius * np.cos(angle))
+
+        # Rotate camera 
+        camera = pg.Camera(position=camera_position, focal_point=focal_point, view_up=(0.0, 1.0, 0.0), max_depth=30.0, height=1080, width=1920)
+
+        # Make wireframe
+        screen_buffer = pg.render.wireframe(lower_bound=origin, upper_bound=upper_bound, thickness=0.01, camera=camera)
+
+        # Render axes
+        screen_buffer = pg.render.axes(size=0.1, center=(0.0, 0.0, 1.1), camera=camera, screen_buffer=screen_buffer)
+
+        # Render q-criterion
+        screen_buffer = pg.render.contour(q_volume, threshold=0.00003, color=norm_mu_volume, colormap=colormap, camera=camera, screen_buffer=screen_buffer)
+
+        # Render boundary
+        boundary_colormap = pg.Colormap("Greys_r", vmin=0.0, vmax=3.0, opacity=np.linspace(0.0, 6.0, 256)) # This will make it grey
+        screen_buffer = pg.render.volume(boundary_volume, camera=camera, colormap=boundary_colormap, screen_buffer=screen_buffer)
+
+        # Show the rendered image
+        plt.imsave('q_criterion_' + str(kwargs['timestep']).zfill(7) + '.png', np.minimum(screen_buffer.image.get(), 1.0))
+
 
 if __name__ == '__main__':
     airfoil_length = 101
