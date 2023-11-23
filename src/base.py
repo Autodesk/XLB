@@ -351,25 +351,25 @@ class LBMBase(object):
     def _create_boundary_data(self):
         """
         Create boundary data for the Lattice Boltzmann simulation by setting boundary conditions,
-        creating grid connectivity bitmask, and preparing local bitmasks and normal arrays.
+        creating grid mask, and preparing local masks and normal arrays.
         """
         self.BCs = []
         self.set_boundary_conditions()
-        # Accumulate the indices of all BCs to create the grid connectivity bitmask with FALSE along directions that
+        # Accumulate the indices of all BCs to create the grid mask with FALSE along directions that
         # stream into a boundary voxel.
         solid_halo_list = [np.array(bc.indices).T for bc in self.BCs if bc.isSolid]
         solid_halo_voxels = np.unique(np.vstack(solid_halo_list), axis=0) if solid_halo_list else None
 
-        # Create the grid connectivity bitmask on each process
+        # Create the grid mask on each process
         start = time.time()
-        connectivity_bitmask = self.create_grid_connectivity_bitmask(solid_halo_voxels)
-        print("Time to create the grid connectivity bitmask:", time.time() - start)
+        grid_mask = self.create_grid_mask(solid_halo_voxels)
+        print("Time to create the grid mask:", time.time() - start)
 
         start = time.time()
         for bc in self.BCs:
             assert bc.implementationStep in ['PostStreaming', 'PostCollision']
-            bc.create_local_bitmask_and_normal_arrays(connectivity_bitmask)
-        print("Time to create the local bitmasks and normal arrays:", time.time() - start)
+            bc.create_local_mask_and_normal_arrays(grid_mask)
+        print("Time to create the local masks and normal arrays:", time.time() - start)
 
     # This is another non-JITed way of creating the distributed arrays. It is not used at the moment.
     # def distributed_array_init(self, shape, type, init_val=None):
@@ -411,9 +411,9 @@ class LBMBase(object):
         return jax.lax.with_sharding_constraint(x, sharding)
     
     @partial(jit, static_argnums=(0,))
-    def create_grid_connectivity_bitmask(self, solid_halo_voxels):
+    def create_grid_mask(self, solid_halo_voxels):
         """
-        This function creates a bitmask for the background grid that accounts for the location of the boundaries.
+        This function creates a mask for the background grid that accounts for the location of the boundaries.
         
         Parameters
         ----------
@@ -421,32 +421,32 @@ class LBMBase(object):
             
         Returns
         -------
-            A JAX array representing the connectivity bitmask of the grid.
+            A JAX array representing the grid mask of the grid.
         """
         # Halo width (hw_x is different to accommodate the domain sharding per XLA device)
         hw_x = self.nDevices
         hw_y = hw_z = 1
         if self.dim == 2:
-            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.lattice.q), jnp.bool_, init_val=True)
-            connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(None))].set(False)
+            grid_mask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.lattice.q), jnp.bool_, init_val=True)
+            grid_mask = grid_mask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(None))].set(False)
             if solid_halo_voxels is not None:
                 solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
                 solid_halo_voxels = solid_halo_voxels.at[:, 1].add(hw_y)
-                connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)  
+                grid_mask = grid_mask.at[tuple(solid_halo_voxels.T)].set(True)  
 
-            connectivity_bitmask = self.streaming(connectivity_bitmask)
-            return lax.with_sharding_constraint(connectivity_bitmask, self.sharding)
+            grid_mask = self.streaming(grid_mask)
+            return lax.with_sharding_constraint(grid_mask, self.sharding)
 
         elif self.dim == 3:
-            connectivity_bitmask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.nz + 2 * hw_z, self.lattice.q), jnp.bool_, init_val=True)
-            connectivity_bitmask = connectivity_bitmask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(hw_z, -hw_z), slice(None))].set(False)
+            grid_mask = self.distributed_array_init((self.nx + 2 * hw_x, self.ny + 2 * hw_y, self.nz + 2 * hw_z, self.lattice.q), jnp.bool_, init_val=True)
+            grid_mask = grid_mask.at[(slice(hw_x, -hw_x), slice(hw_y, -hw_y), slice(hw_z, -hw_z), slice(None))].set(False)
             if solid_halo_voxels is not None:
                 solid_halo_voxels = solid_halo_voxels.at[:, 0].add(hw_x)
                 solid_halo_voxels = solid_halo_voxels.at[:, 1].add(hw_y)
                 solid_halo_voxels = solid_halo_voxels.at[:, 2].add(hw_z)
-                connectivity_bitmask = connectivity_bitmask.at[tuple(solid_halo_voxels.T)].set(True)
-            connectivity_bitmask = self.streaming(connectivity_bitmask)
-            return lax.with_sharding_constraint(connectivity_bitmask, self.sharding)
+                grid_mask = grid_mask.at[tuple(solid_halo_voxels.T)].set(True)
+            grid_mask = self.streaming(grid_mask)
+            return lax.with_sharding_constraint(grid_mask, self.sharding)
 
     def bounding_box_indices(self):
         """
