@@ -89,7 +89,7 @@ if __name__ == "__main__":
         'print_info_rate': 100,
         'checkpoint_rate': checkpoint_rate,
         'checkpoint_dir': checkpoint_dir,
-        'restore_checkpoint': True,
+        'restore_checkpoint': False,
     }
 
     sim = Cavity(**kwargs)
