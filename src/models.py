@@ -73,7 +73,14 @@ class KBCSim(LBMBase):
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
     def collision_modified(self, f):
         """
-        KBC collision step for lattice.
+        Alternative KBC collision step for lattice.
+        Note: 
+        At low Reynolds number the orignal KBC collision above produces inaccurate results because
+        it does not check for the entropy increase/decrease. The KBC stabalizations should only be 
+        applied in principle to cells whose entropy decrease after a regular BGK collision. This is 
+        the case in most cells at higher Reynolds numbers and hence a check may not be needed. 
+        Overall the following alternative collision is more reliable and may replace the original 
+        implementation. The issue at the moment is that it is about 60-80% slower than the above method.
         """
         f = self.precisionPolicy.cast_to_compute(f)
         tiny = 1e-32

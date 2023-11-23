@@ -1035,15 +1035,12 @@ class InterpolatedBounceBackBouzidi(BounceBackHalfway):
     ----------
     name : str
         The name of the boundary condition. For this class, it is "InterpolatedBounceBackBouzidi".
-    implementationStep : str
-        The step in the lattice Boltzmann method algorithm at which the boundary condition is applied. For this class,
-        it is "PostStreaming".
-    isSolid : bool
-        Whether the boundary condition represents a solid boundary. For this class, it is True.
-    needsExtraConfiguration : bool
-        Whether the boundary condition needs extra configuration before it can be applied. For this class, it is True.
     implicit_distances : array-like
         An array of shape (nx,ny,nz) indicating the signed-distance field from the solid walls
+    weights : array-like
+        An array of shape (number_of_bc_cells, q) initialized as None and constructed using implicit_distances array
+        during runtime. These "weights" are associated with the fractional distance of fluid cell to the boundary 
+        position defined as: weights(dir_i) = |x_fluid - x_boundary(dir_i)| / |x_fluid - x_solid(dir_i)|.
     """
 
     def __init__(self, indices, implicit_distances, grid_info, precision_policy, vel=None):
@@ -1136,15 +1133,6 @@ class InterpolatedBounceBackDifferentiable(InterpolatedBounceBackBouzidi):
     ----------
     name : str
         The name of the boundary condition. For this class, it is "InterpolatedBounceBackDifferentiable".
-    implementationStep : str
-        The step in the lattice Boltzmann method algorithm at which the boundary condition is applied. For this class,
-        it is "PostStreaming".
-    isSolid : bool
-        Whether the boundary condition represents a solid boundary. For this class, it is True.
-    needsExtraConfiguration : bool
-        Whether the boundary condition needs extra configuration before it can be applied. For this class, it is True.
-    implicit_distances : array-like
-        An array of shape (nx,ny,nz) indicating the signed-distance field from the solid walls
     """
 
     def __init__(self, indices, implicit_distances, grid_info, precision_policy, vel=None):
@@ -1178,8 +1166,8 @@ class InterpolatedBounceBackDifferentiable(InterpolatedBounceBackBouzidi):
         f_postcollision_iknown = fin[self.indices][bindex, self.iknown]
         f_postcollision_imissing = fin[self.indices][bindex, self.imissing]
         f_poststreaming_iknown = fout[self.indices][bindex, self.iknown]
-        fmissing = ((1. - self.weights) * f_postcollision_iknown +
-                    self.weights * (f_postcollision_imissing + f_poststreaming_iknown)) / (1.0 + self.weights)
+        fmissing = ((1. - self.weights) * f_poststreaming_iknown +
+                    self.weights * (f_postcollision_imissing + f_postcollision_iknown)) / (1.0 + self.weights)
         fbd = fbd.at[bindex, self.imissing].set(fmissing)
 
         if self.vel is not None:
