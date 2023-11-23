@@ -50,7 +50,7 @@ class TaylorGreenVortex(KBCSim):
         ADE = AdvectionDiffusionBGK(**kwargs)
         ADE.initialize_macroscopic_fields = self.initialize_macroscopic_fields
         print("Initializing the distribution functions using the specified macroscopic fields....")
-        f = ADE.run(int(20000*32/nx))
+        f = ADE.run(int(20000*nx/32))
         return f
 
     def output_data(self, **kwargs):
@@ -83,7 +83,6 @@ if __name__ == "__main__":
         ErrL2ResListRho = []
         result_dict[precision] = dict.fromkeys(['vel_error', 'rho_error'])
         for nx in resList:
-            print("Running at nx = ny = {:07.6f}".format(nx))
             ny = nx
             twopi = 2.0 * np.pi
             coord = np.array([(i, j) for i in range(nx) for j in range(ny)])
