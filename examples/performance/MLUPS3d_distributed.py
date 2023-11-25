@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from jax.config import config
+from jax import config
 
 from src.boundary_conditions import *
 from src.models import BGKSim

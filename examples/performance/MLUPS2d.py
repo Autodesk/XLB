@@ -6,7 +6,7 @@ import os
 import argparse
 import jax.numpy as jnp
 import numpy as np
-from jax.config import config
+from jax import config
 from time import time
 
 from src.utils import *

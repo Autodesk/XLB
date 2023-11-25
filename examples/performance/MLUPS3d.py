@@ -8,7 +8,7 @@ import argparse
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.config import config
+from jax import config
 from time import time
 #config.update('jax_disable_jit', True)
 # Use 8 CPU devices

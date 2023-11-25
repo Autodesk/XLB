@@ -19,7 +19,7 @@ In this example you'll be introduced to the following concepts:
 
 import numpy as np
 from src.utils import *
-from jax.config import config
+from jax import config
 import json, codecs
 
 from src.models import BGKSim, KBCSim

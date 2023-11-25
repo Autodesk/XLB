@@ -16,7 +16,7 @@ In this example you'll be introduced to the following concepts:
 4. Visualization: The simulation outputs data in VTK format for visualization. It also provides images of the velocity field and saves the boundary conditions at each time step. The data can be visualized using software like Paraview.
 
 """
-from jax.config import config
+from jax import config
 import numpy as np
 import jax.numpy as jnp
 import os
