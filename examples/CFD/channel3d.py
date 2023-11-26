@@ -15,7 +15,7 @@ In this example you'll be introduced to the following concepts:
 """
 
 from src.boundary_conditions import *
-from jax.config import config
+from jax import config
 from src.utils import *
 import numpy as np
 from src.lattice import LatticeD3Q27

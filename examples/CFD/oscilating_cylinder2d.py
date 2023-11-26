@@ -22,7 +22,7 @@ In this example you'll be introduced to the following concepts:
 import os
 import jax
 from time import time
-from jax.config import config
+from jax import config
 import numpy as np
 import jax.numpy as jnp
 

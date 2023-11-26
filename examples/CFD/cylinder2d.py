@@ -21,7 +21,7 @@ import os
 import json
 import jax
 from time import time
-from jax.config import config
+from jax import config
 import numpy as np
 import jax.numpy as jnp
 

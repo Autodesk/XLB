@@ -18,7 +18,7 @@ import trimesh
 from time import time
 import numpy as np
 import jax.numpy as jnp
-from jax.config import config
+from jax import config
 
 from src.utils import *
 from src.models import BGKSim, KBCSim

@@ -35,7 +35,7 @@ from src.lattice import LatticeD3Q19, LatticeD3Q27
 from src.boundary_conditions import *
 import numpy as np
 from src.utils import *
-from jax.config import config
+from jax import config
 import os
 #os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax

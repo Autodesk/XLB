@@ -6,7 +6,7 @@ import os
 import jax.numpy as jnp
 import numpy as np
 from src.utils import *
-from jax.config import config
+from jax import config
 
 
 from src.models import BGKSim
