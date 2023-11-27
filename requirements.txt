@@ -1,5 +1,5 @@
-jax==0.4.19
-jaxlib==0.4.19
+jax==0.4.20
+jaxlib==0.4.20
 jmp==0.0.4
 matplotlib==3.8.0
 numpy==1.26.1
@@ -8,3 +8,4 @@ Rtree==1.0.1
 trimesh==4.0.0
 orbax-checkpoint==0.4.1
 termcolor==2.3.0
+PhantomGaze @ git+https://github.com/loliverhennigh/PhantomGaze.git

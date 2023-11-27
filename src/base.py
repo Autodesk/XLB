@@ -897,8 +897,8 @@ class LBMBase(object):
                 rho_prev = downsample_field(rho_prev, self.downsamplingFactor)
                 u_prev = downsample_field(u_prev, self.downsamplingFactor)
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                rho_prev = np.array(process_allgather(rho_prev))
-                u_prev = np.array(process_allgather(u_prev))
+                rho_prev = process_allgather(rho_prev)
+                u_prev = process_allgather(u_prev)
 
 
             # Perform one time-step (collision, streaming, and boundary conditions)
@@ -915,8 +915,8 @@ class LBMBase(object):
                 u = downsample_field(u, self.downsamplingFactor)
                 
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                rho = np.array(process_allgather(rho))
-                u = np.array(process_allgather(u))
+                rho = process_allgather(rho)
+                u = process_allgather(u)
 
                 # Save the data
                 self.handle_io_timestep(timestep, f, fstar, rho, u, rho_prev, u_prev)
