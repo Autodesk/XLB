@@ -5,24 +5,25 @@ Please refer to https://jax.readthedocs.io/en/latest/multi_process.html for more
 """
 
 
-from src.models import BGKSim
-from src.lattice import LatticeD3Q19
+# Standard Libraries
+import argparse
+import os
+import jax
+
 import jax.numpy as jnp
 import numpy as np
+
+from jax import config
+
+from src.boundary_conditions import *
+from src.models import BGKSim
+from src.lattice import LatticeD3Q19
 from src.utils import *
-from jax.config import config
-import os
-from time import time
-import argparse
-import jax
-import portpicker
+
 #config.update('jax_disable_jit', True)
 # Use 8 CPU devices
 #os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 #config.update("jax_enable_x64", True)
-from src.boundary_conditions import *
-
-precision = 'f32/f32'
 
 class Cavity(BGKSim):
 
@@ -44,25 +45,41 @@ class Cavity(BGKSim):
         self.BCs.append(EquilibriumBC(tuple(moving_wall.T), self.gridInfo, self.precisionPolicy, rho_wall, vel_wall))
 
 if __name__ == '__main__':
-
-    # Initialize JAX distributed. The IP, number of processes and process id must be updated.
-    # Currently set on local host for testing purposes. 
-    # Can be tested with 
-    # (export PYTHONPATH=.; CUDA_VISIBLE_DEVICES=0 python3 examples/performance/MLUPS3d_distributed.py 100 100 & CUDA_VISIBLE_DEVICES=1 python3 examples/performance/MLUPS3d_distributed.py 100 100 &)
-    port = portpicker.pick_unused_port()
-    jax.distributed.initialize(f'127.0.0.1:1234', 2, int(os.environ['CUDA_VISIBLE_DEVICES']))
-
-    # Create a 3D lattice with the D3Q19 scheme
-    lattice = LatticeD3Q19(precision)
-
     # Create a parser that will read the command line arguments
     parser = argparse.ArgumentParser("Calculate MLUPS for a 3D cavity flow simulation")
-    parser.add_argument("N", help="The total number of voxels in one direction. The final dimension will be N*NxN", default=100, type=int)
-    parser.add_argument("N_ITERS", help="Number of timesteps", default=10000, type=int)    
+    parser.add_argument("N", help="The total number of voxels in one direction. The final dimension will be N*NxN",
+                        default=100, type=int)
+    parser.add_argument("N_ITERS", help="Number of iterations", default=10000, type=int)
+    parser.add_argument("N_PROCESSES", help="Number of processes. If >1, call jax.distributed.initialize with that number of process. If -1 will call jax.distributed.initialize without any arsgument. So it should pick up the values from SLURM env variable.",
+                        default=1, type=int)
+    parser.add_argument("IP", help="IP of the master node for multi-node. Useless if using SLURM.",
+                        default='127.0.0.1', type=str, nargs='?')
+    parser.add_argument("PROCESS_ID_INCREMENT", help="For multi-node only. Useless if using SLURM.",
+                        default=0, type=int, nargs='?')
 
     args = parser.parse_args()
     n = args.N
     n_iters = args.N_ITERS
+    n_processes = args.N_PROCESSES
+    # Initialize JAX distributed. The IP, number of processes and process id must be set correctly.
+    print("N processes, ", n_processes)
+    print("N iter, ", n_iters)
+    if n_processes > 1:
+        process_id = int(os.environ.get('CUDA_VISIBLE_DEVICES', 0)) + args.PROCESS_ID_INCREMENT
+        print("ip, num_processes, process_id, ", args.IP, n_processes, process_id)
+        jax.distributed.initialize(args.IP, num_processes=n_processes,
+                                   process_id=process_id)
+    elif n_processes == -1:
+        print("Will call jax.distributed.initialize()")
+        jax.distributed.initialize()
+        print("jax.distributed.initialize() ended")
+    else:
+        print("No call to jax.distributed.initialize")
+    print("JAX local devices: ", jax.local_devices())
+
+    precision = 'f32/f32'
+    # Create a 3D lattice with the D3Q19 scheme
+    lattice = LatticeD3Q19(precision)
 
     # Store the Reynolds number in the variable Re
     Re = 100.0
@@ -75,7 +92,6 @@ if __name__ == '__main__':
     visc = u_wall * clength / Re
     # Compute the relaxation parameter from the viscosity
     omega = 1.0 / (3. * visc + 0.5)
-    print('omega = ', omega)
     
     # Create a new instance of the Cavity class
     kwargs = {

@@ -31,11 +31,11 @@ import numpy as np
 # from IPython import display
 import matplotlib.pylab as plt
 from src.models import BGKSim, KBCSim
+from src.lattice import LatticeD3Q19, LatticeD3Q27
 from src.boundary_conditions import *
-from src.lattice import *
 import numpy as np
 from src.utils import *
-from jax.config import config
+from jax import config
 import os
 #os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 import jax
@@ -159,14 +159,12 @@ if __name__ == '__main__':
     airfoil_thickness = 30
     airfoil_angle = 20
     airfoil = makeNacaAirfoil(length=airfoil_length, thickness=airfoil_thickness, angle=airfoil_angle).T
-
     precision = 'f32/f32'
-    lattice = LatticeD3Q27(precision=precision)
+
+    lattice = LatticeD3Q27(precision)
 
     nx = airfoil.shape[0]
     ny = airfoil.shape[1]
-
-    print("airfoil shape: ", airfoil.shape)
 
     ny = 3 * ny
     nx = 5 * nx
@@ -178,7 +176,6 @@ if __name__ == '__main__':
 
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3. * visc + 0.5)
-    print('omega = ', omega)
     
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
@@ -195,5 +192,4 @@ if __name__ == '__main__':
     }
 
     sim = Airfoil(**kwargs)
-    print('Domain size: ', sim.nx, sim.ny, sim.nz)
     sim.run(20000)

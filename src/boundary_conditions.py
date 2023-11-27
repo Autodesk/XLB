@@ -52,15 +52,15 @@ class BoundaryCondition(object):
         self.needsExtraConfiguration = False
         self.implementationStep = "PostStreaming"
 
-    def create_local_bitmask_and_normal_arrays(self, connectivity_bitmask):
+    def create_local_mask_and_normal_arrays(self, grid_mask):
 
         """
-        Creates local bitmask and normal arrays for the boundary condition.
+        Creates local mask and normal arrays for the boundary condition.
 
         Parameters
         ----------
-        connectivity_bitmask : array-like
-            The connectivity bitmask for the lattice.
+        grid_mask : array-like
+            The grid mask for the lattice.
 
         Returns
         -------
@@ -68,54 +68,54 @@ class BoundaryCondition(object):
 
         Notes
         -----
-        This method creates local bitmask and normal arrays for the boundary condition based on the connectivity bitmask.
+        This method creates local mask and normal arrays for the boundary condition based on the grid mask.
         If the boundary condition requires extra configuration, the `configure` method is called.
         """
 
         if self.needsExtraConfiguration:
-            boundaryBitmask = self.get_boundary_bitmask(connectivity_bitmask)
-            self.configure(boundaryBitmask)
+            boundaryMask = self.get_boundary_mask(grid_mask)
+            self.configure(boundaryMask)
             self.needsExtraConfiguration = False
 
-        boundaryBitmask = self.get_boundary_bitmask(connectivity_bitmask)
-        self.normals = self.get_normals(boundaryBitmask)
-        self.imissing, self.iknown = self.get_missing_indices(boundaryBitmask)
-        self.imissingBitmask, self.iknownBitmask, self.imiddleBitmask = self.get_missing_bitmask(boundaryBitmask)
+        boundaryMask = self.get_boundary_mask(grid_mask)
+        self.normals = self.get_normals(boundaryMask)
+        self.imissing, self.iknown = self.get_missing_indices(boundaryMask)
+        self.imissingMask, self.iknownMask, self.imiddleMask = self.get_missing_mask(boundaryMask)
 
         return
 
-    def get_boundary_bitmask(self, connectivity_bitmask):  
+    def get_boundary_mask(self, grid_mask):  
         """
         Add jax.device_count() to the self.indices in x-direction, and 1 to the self.indices other directions
-        This is to make sure the boundary condition is applied to the correct nodes as connectivity_bitmask is
+        This is to make sure the boundary condition is applied to the correct nodes as grid_mask is
         expanded by (jax.device_count(), 1, 1)
 
         Parameters
         ----------
-        connectivity_bitmask : array-like
-            The connectivity bitmask for the lattice.
+        grid_mask : array-like
+            The grid mask for the lattice.
         
         Returns
         -------
-        boundaryBitmask : array-like
+        boundaryMask : array-like
         """   
         shifted_indices = np.array(self.indices)
         shifted_indices[0] += device_count()
         shifted_indices[1:] += 1
         # Convert back to tuple
         shifted_indices = tuple(shifted_indices)
-        boundaryBitmask = np.array(connectivity_bitmask[shifted_indices])
+        boundaryMask = np.array(grid_mask[shifted_indices])
 
-        return boundaryBitmask
+        return boundaryMask
 
-    def configure(self, boundaryBitmask):
+    def configure(self, boundaryMask):
         """
         Configures the boundary condition.
 
         Parameters
         ----------
-        boundaryBitmask : array-like
-            The connectivity bitmask for the boundary voxels.
+        boundaryMask : array-like
+            The grid mask for the boundary voxels.
 
         Returns
         -------
@@ -152,14 +152,14 @@ class BoundaryCondition(object):
         """   
         return fout
 
-    def get_normals(self, boundaryBitmask):
+    def get_normals(self, boundaryMask):
         """
         Calculates the normal vectors at the boundary nodes.
 
         Parameters
         ----------
-        boundaryBitmask : array-like
-            The boundary bitmask for the lattice.
+        boundaryMask : array-like
+            The boundary mask for the lattice.
 
         Returns
         -------
@@ -168,22 +168,22 @@ class BoundaryCondition(object):
 
         Notes
         -----
-        This method calculates the normal vectors by dotting the boundary bitmask with the main lattice directions.
+        This method calculates the normal vectors by dotting the boundary mask with the main lattice directions.
         """
         main_c = self.lattice.c.T[self.lattice.main_indices]
-        m = boundaryBitmask[..., self.lattice.main_indices]
+        m = boundaryMask[..., self.lattice.main_indices]
         normals = -np.dot(m, main_c)
         return normals
 
-    def get_missing_indices(self, boundaryBitmask):
+    def get_missing_indices(self, boundaryMask):
         """
-        Returns two int8 arrays the same shape as boundaryBitmask. The non-zero entries of these arrays indicate missing
+        Returns two int8 arrays the same shape as boundaryMask. The non-zero entries of these arrays indicate missing
         directions that require BCs (imissing) as well as their corresponding opposite directions (iknown).
 
         Parameters
         ----------
-        boundaryBitmask : array-like
-            The boundary bitmask for the lattice.
+        boundaryMask : array-like
+            The boundary mask for the lattice.
 
         Returns
         -------
@@ -192,8 +192,8 @@ class BoundaryCondition(object):
 
         Notes
         -----
-        This method calculates the missing and known indices based on the boundary bitmask. The missing indices are the
-        non-zero entries of the boundary bitmask, and the known indices are their corresponding opposite directions.
+        This method calculates the missing and known indices based on the boundary mask. The missing indices are the
+        non-zero entries of the boundary mask, and the known indices are their corresponding opposite directions.
         """
 
         # Find imissing, iknown 1-to-1 corresponding indices
@@ -201,36 +201,36 @@ class BoundaryCondition(object):
         nbd = len(self.indices[0])
         imissing = np.vstack([np.arange(self.lattice.q, dtype='uint8')] * nbd)
         iknown = np.vstack([self.lattice.opp_indices] * nbd)
-        imissing[~boundaryBitmask] = 0
-        iknown[~boundaryBitmask] = 0
+        imissing[~boundaryMask] = 0
+        iknown[~boundaryMask] = 0
         return imissing, iknown
 
-    def get_missing_bitmask(self, boundaryBitmask):
+    def get_missing_mask(self, boundaryMask):
         """
-        Returns three boolean arrays the same shape as boundaryBitmask.
-        Note: these boundary bitmasks are useful for reduction (eg. summation) operators of selected q-directions.
+        Returns three boolean arrays the same shape as boundaryMask.
+        Note: these boundary masks are useful for reduction (eg. summation) operators of selected q-directions.
 
         Parameters
         ----------
-        boundaryBitmask : array-like
-            The boundary bitmask for the lattice.
+        boundaryMask : array-like
+            The boundary mask for the lattice.
 
         Returns
         -------
         tuple of array-like
-            The missing, known, and middle bitmasks for the boundary condition.
+            The missing, known, and middle masks for the boundary condition.
 
         Notes
         -----
-        This method calculates the missing, known, and middle bitmasks based on the boundary bitmask. The missing bitmask
-        is the boundary bitmask, the known bitmask is the opposite directions of the missing bitmask, and the middle bitmask
+        This method calculates the missing, known, and middle masks based on the boundary mask. The missing mask
+        is the boundary mask, the known mask is the opposite directions of the missing mask, and the middle mask
         is the directions that are neither missing nor known.
         """
-        # Find Bitmasks for imissing, iknown and imiddle
-        imissingBitmask = boundaryBitmask
-        iknownBitmask = imissingBitmask[:, self.lattice.opp_indices]
-        imiddleBitmask = ~(imissingBitmask | iknownBitmask)
-        return imissingBitmask, iknownBitmask, imiddleBitmask
+        # Find masks for imissing, iknown and imiddle
+        imissingMask = boundaryMask
+        iknownMask = imissingMask[:, self.lattice.opp_indices]
+        imiddleMask = ~(imissingMask | iknownMask)
+        return imissingMask, iknownMask, imiddleMask
 
     @partial(jit, static_argnums=(0,))
     def apply(self, fout, fin):
@@ -478,14 +478,14 @@ class BounceBackHalfway(BoundaryCondition):
         self.isSolid = True
         self.vel = vel
 
-    def configure(self, boundaryBitmask):
+    def configure(self, boundaryMask):
         """
         Configures the boundary condition.
 
         Parameters
         ----------
-        boundaryBitmask : array-like
-            The connectivity bitmask for the boundary voxels.
+        boundaryMask : array-like
+            The grid mask for the boundary voxels.
 
         Returns
         -------
@@ -497,14 +497,28 @@ class BounceBackHalfway(BoundaryCondition):
         the boundary nodes to be the indices of fluid nodes adjacent of the solid nodes.
         """
         # Perform index shift for halfway BB.
-        shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
+        hasFluidNeighbour = ~boundaryMask[:, self.lattice.opp_indices]
+        nbd_orig = len(self.indices[0])
         idx = np.array(self.indices).T
         idx_trg = []
         for i in range(self.lattice.q):
-            idx_trg.append(idx[shiftDir[:, i], :] + self.lattice.c[:, i])
+            idx_trg.append(idx[hasFluidNeighbour[:, i], :] + self.lattice.c[:, i])
         indices_new = np.unique(np.vstack(idx_trg), axis=0)
         self.indices = tuple(indices_new.T)
+        nbd_modified = len(self.indices[0])
+        if (nbd_orig != nbd_modified) and self.vel is not None:
+            vel_avg = np.mean(self.vel, axis=0)
+            self.vel = jnp.zeros(indices_new.shape, dtype=self.precisionPolicy.compute_dtype) + vel_avg
+            print("WARNING: assuming a constant averaged velocity vector is imposed at all BC cells!")
+
         return
+
+    @partial(jit, static_argnums=(0,))
+    def impose_boundary_vel(self, fbd, bindex):
+        c = jnp.array(self.lattice.c, dtype=self.precisionPolicy.compute_dtype)
+        cu = 6.0 * self.lattice.w * jnp.dot(self.vel, c)
+        fbd = fbd.at[bindex, self.imissing].add(-cu[bindex, self.iknown])
+        return fbd
 
     @partial(jit, static_argnums=(0,))
     def apply(self, fout, fin):
@@ -526,13 +540,10 @@ class BounceBackHalfway(BoundaryCondition):
         nbd = len(self.indices[0])
         bindex = np.arange(nbd)[:, None]
         fbd = fout[self.indices]
-        if self.vel is not None:
-            c = jnp.array(self.lattice.c, dtype=self.precisionPolicy.compute_dtype)
-            cu = 6.0 * self.lattice.w * jnp.dot(self.vel, c)
-            fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown] - cu[bindex, self.iknown])
-        else:
-            fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown])
 
+        fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown])
+        if self.vel is not None:
+            fbd = self.impose_boundary_vel(fbd, bindex)
         return fbd
     
 class EquilibriumBC(BoundaryCondition):
@@ -674,12 +685,12 @@ class ZouHe(BoundaryCondition):
         self.prescribed = prescribed
         self.needsExtraConfiguration = True
 
-    def configure(self, boundaryBitmask):
+    def configure(self, boundaryMask):
         """
         Correct boundary indices to ensure that only voxelized surfaces with normal vectors along main cartesian axes
         are assigned this type of BC.
         """
-        nv = np.dot(self.lattice.c, ~boundaryBitmask.T)
+        nv = np.dot(self.lattice.c, ~boundaryMask.T)
         corner_voxels = np.count_nonzero(nv, axis=0) > 1
         # removed_voxels = np.array(self.indices)[:, corner_voxels]
         self.indices = tuple(np.array(self.indices)[:, ~corner_voxels])
@@ -691,8 +702,8 @@ class ZouHe(BoundaryCondition):
         """
         Calculate velocity based on the prescribed pressure/density (Zou/He BC)
         """
-        unormal = -1. + 1. / rho * (jnp.sum(fpop[self.indices] * self.imiddleBitmask, axis=1) +
-                               2. * jnp.sum(fpop[self.indices] * self.iknownBitmask, axis=1))
+        unormal = -1. + 1. / rho * (jnp.sum(fpop[self.indices] * self.imiddleMask, axis=1) +
+                               2. * jnp.sum(fpop[self.indices] * self.iknownMask, axis=1))
 
         # Return the above unormal as a normal vector which sets the tangential velocities to zero
         vel = unormal[:, None] * self.normals
@@ -705,8 +716,8 @@ class ZouHe(BoundaryCondition):
         """
         unormal = np.sum(self.normals*vel, axis=1)
 
-        rho = (1.0/(1.0 + unormal))[..., None] * (jnp.sum(fpop[self.indices] * self.imiddleBitmask, axis=1, keepdims=True) +
-                                  2.*jnp.sum(fpop[self.indices] * self.iknownBitmask, axis=1, keepdims=True))
+        rho = (1.0/(1.0 + unormal))[..., None] * (jnp.sum(fpop[self.indices] * self.imiddleMask, axis=1, keepdims=True) +
+                                  2.*jnp.sum(fpop[self.indices] * self.iknownMask, axis=1, keepdims=True))
         return rho
 
     @partial(jit, static_argnums=(0,), inline=True)
@@ -928,20 +939,20 @@ class ExtrapolationOutflow(BoundaryCondition):
         self.needsExtraConfiguration = True
         self.sound_speed = 1./jnp.sqrt(3.)
 
-    def configure(self, boundaryBitmask):
+    def configure(self, boundaryMask):
         """
         Configure the boundary condition by finding neighbouring voxel indices.
 
         Parameters
         ----------
-        boundaryBitmask : np.ndarray
-            The connectivity bitmask for the boundary voxels.
+        boundaryMask : np.ndarray
+            The grid mask for the boundary voxels.
         """        
-        shiftDir = ~boundaryBitmask[:, self.lattice.opp_indices]
+        hasFluidNeighbour = ~boundaryMask[:, self.lattice.opp_indices]
         idx = np.array(self.indices).T
         idx_trg = []
         for i in range(self.lattice.q):
-            idx_trg.append(idx[shiftDir[:, i], :] + self.lattice.c[:, i])
+            idx_trg.append(idx[hasFluidNeighbour[:, i], :] + self.lattice.c[:, i])
         indices_nbr = np.unique(np.vstack(idx_trg), axis=0)
         self.indices_nbr = tuple(indices_nbr.T)
 
@@ -1009,4 +1020,156 @@ class ExtrapolationOutflow(BoundaryCondition):
         bindex = np.arange(nbd)[:, None]
         fbd = fout[self.indices]
         fbd = fbd.at[bindex, self.imissing].set(fin[self.indices][bindex, self.iknown])
+        return fbd
+
+
+class InterpolatedBounceBackBouzidi(BounceBackHalfway):
+    """
+    A local single-node version of the interpolated bounce-back boundary condition due to Bouzidi for a lattice
+    Boltzmann method simulation.
+
+    This class implements a interpolated bounce-back boundary condition. The boundary condition is applied after
+    the streaming step.
+
+    Attributes
+    ----------
+    name : str
+        The name of the boundary condition. For this class, it is "InterpolatedBounceBackBouzidi".
+    implicit_distances : array-like
+        An array of shape (nx,ny,nz) indicating the signed-distance field from the solid walls
+    weights : array-like
+        An array of shape (number_of_bc_cells, q) initialized as None and constructed using implicit_distances array
+        during runtime. These "weights" are associated with the fractional distance of fluid cell to the boundary 
+        position defined as: weights(dir_i) = |x_fluid - x_boundary(dir_i)| / |x_fluid - x_solid(dir_i)|.
+    """
+
+    def __init__(self, indices, implicit_distances, grid_info, precision_policy, vel=None):
+
+        super().__init__(indices, grid_info, precision_policy, vel=vel)
+        self.name = "InterpolatedBounceBackBouzidi"
+        self.implicit_distances = implicit_distances
+        self.weights = None
+
+    def set_proximity_ratio(self):
+        """
+        Creates the interpolation data needed for the boundary condition.
+
+        Returns
+        -------
+        None. The function updates the object's weights attribute in place.
+        """
+        idx = np.array(self.indices).T
+        self.weights = np.full((idx.shape[0], self.lattice.q), 0.5)
+        c = np.array(self.lattice.c)
+        sdf_f = self.implicit_distances[self.indices]
+        for q in range(1, self.lattice.q):
+            solid_indices = idx + c[:, q]
+            solid_indices_tuple = tuple(map(tuple, solid_indices.T))
+            sdf_s = self.implicit_distances[solid_indices_tuple]
+            mask = self.iknownMask[:, q]
+            self.weights[mask, q] = sdf_f[mask] / (sdf_f[mask] - sdf_s[mask])
+        return
+
+    @partial(jit, static_argnums=(0,))
+    def apply(self, fout, fin):
+        """
+        Applies the halfway bounce-back boundary condition.
+
+        Parameters
+        ----------
+        fout : jax.numpy.ndarray
+            The output distribution functions.
+        fin : jax.numpy.ndarray
+            The input distribution functions.
+
+        Returns
+        -------
+        jax.numpy.ndarray
+            The modified output distribution functions after applying the boundary condition.
+        """
+        if self.weights is None:
+            self.set_proximity_ratio()
+        nbd = len(self.indices[0])
+        bindex = np.arange(nbd)[:, None]
+        fbd = fout[self.indices]
+        f_postcollision_iknown = fin[self.indices][bindex, self.iknown]
+        f_postcollision_imissing = fin[self.indices][bindex, self.imissing]
+        f_poststreaming_iknown = fout[self.indices][bindex, self.iknown]
+
+        # if weights<0.5
+        fs_near = 2. * self.weights * f_postcollision_iknown + \
+                  (1.0 - 2.0 * self.weights) * f_poststreaming_iknown
+
+        # if weights>=0.5
+        fs_far = 1.0 / (2. * self.weights) * f_postcollision_iknown + \
+                 (2.0 * self.weights - 1.0) / (2. * self.weights) * f_postcollision_imissing
+
+        # combine near and far contributions
+        fmissing = jnp.where(self.weights < 0.5, fs_near, fs_far)
+        fbd = fbd.at[bindex, self.imissing].set(fmissing)
+
+        if self.vel is not None:
+            fbd = self.impose_boundary_vel(fbd, bindex)
+        return fbd
+
+
+class InterpolatedBounceBackDifferentiable(InterpolatedBounceBackBouzidi):
+    """
+    A differentiable variant of the "InterpolatedBounceBackBouzidi" BC scheme. This BC is now differentiable at
+    self.weight = 0.5 unlike the original Bouzidi scheme which switches between 2 equations at weight=0.5. Refer to
+    [1] (their Appendix E) for more information.
+
+    References
+    ----------
+    [1] Geier, M., Schönherr, M., Pasquali, A., & Krafczyk, M. (2015). The cumulant lattice Boltzmann equation in three
+    dimensions: Theory and validation. Computers & Mathematics with Applications, 70(4), 507–547.
+    doi:10.1016/j.camwa.2015.05.001.
+
+
+    This class implements a interpolated bounce-back boundary condition. The boundary condition is applied after
+    the streaming step.
+
+    Attributes
+    ----------
+    name : str
+        The name of the boundary condition. For this class, it is "InterpolatedBounceBackDifferentiable".
+    """
+
+    def __init__(self, indices, implicit_distances, grid_info, precision_policy, vel=None):
+
+        super().__init__(indices, implicit_distances, grid_info, precision_policy, vel=vel)
+        self.name = "InterpolatedBounceBackDifferentiable"
+
+
+    @partial(jit, static_argnums=(0,))
+    def apply(self, fout, fin):
+        """
+        Applies the halfway bounce-back boundary condition.
+
+        Parameters
+        ----------
+        fout : jax.numpy.ndarray
+            The output distribution functions.
+        fin : jax.numpy.ndarray
+            The input distribution functions.
+
+        Returns
+        -------
+        jax.numpy.ndarray
+            The modified output distribution functions after applying the boundary condition.
+        """
+        if self.weights is None:
+            self.set_proximity_ratio()
+        nbd = len(self.indices[0])
+        bindex = np.arange(nbd)[:, None]
+        fbd = fout[self.indices]
+        f_postcollision_iknown = fin[self.indices][bindex, self.iknown]
+        f_postcollision_imissing = fin[self.indices][bindex, self.imissing]
+        f_poststreaming_iknown = fout[self.indices][bindex, self.iknown]
+        fmissing = ((1. - self.weights) * f_poststreaming_iknown +
+                    self.weights * (f_postcollision_imissing + f_postcollision_iknown)) / (1.0 + self.weights)
+        fbd = fbd.at[bindex, self.imissing].set(fmissing)
+
+        if self.vel is not None:
+            fbd = self.impose_boundary_vel(fbd, bindex)
         return fbd
