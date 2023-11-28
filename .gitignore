@@ -6,6 +6,7 @@
 *vti
 *vtr
 *vtk
+*mp4
 *jpg
 *zraw
 *mhd
@@ -17,6 +18,7 @@
 !car.png
 !logo-transparent.png
 !building.png
+!XLB_diff.png
 # Vagrant
 .vagrant/
 
