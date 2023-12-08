@@ -144,7 +144,7 @@ Please refer to https://github.com/google/jax for the latest installation docume
 
 Install dependencies:
 ```bash
-pip install pyvista numpy matplotlib Rtree trimesh jmp orbax termcolor
+pip install pyvista numpy matplotlib Rtree trimesh jmp orbax-checkpoint termcolor
 ```
 
 Run an example:
