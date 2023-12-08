@@ -144,7 +144,7 @@ Please refer to https://github.com/google/jax for the latest installation docume
 
 Install dependencies:
 ```bash
-pip install jmp pyvista numpy matplotlib Rtree trimesh jmp
+pip install pyvista numpy matplotlib Rtree trimesh jmp orbax-checkpoint termcolor
 ```
 
 Run an example:
@@ -152,5 +152,5 @@ Run an example:
 git clone https://github.com/Autodesk/XLB
 cd XLB
 export PYTHONPATH=.
-python3 examples/cavity2d.py
+python3 examples/CFD/cavity2d.py
 ```
