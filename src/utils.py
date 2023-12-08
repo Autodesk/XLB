@@ -123,7 +123,7 @@ def save_fields_vtk(timestep, fields, output_dir='.', prefix='fields'):
     if value.ndim == 2:
         dimensions = dimensions + (1,)
 
-    grid = pv.UniformGrid(dimensions=dimensions)
+    grid = pv.ImageData(dimensions=dimensions)
 
     # Add the fields to the grid
     for key, value in fields.items():
@@ -157,7 +157,7 @@ def live_volume_randering(timestep, field):
     if field.ndim != 3:
         raise ValueError("The input field must be 3D!")
     dimensions = field.shape
-    grid = pv.UniformGrid(dimensions=dimensions)
+    grid = pv.ImageData(dimensions=dimensions)
 
     # Add the field to the grid
     grid['field'] = field.flatten(order='F')
@@ -207,7 +207,7 @@ def save_BCs_vtk(timestep, BCs, gridInfo,  output_dir='.'):
         gridDimensions = (gridInfo['nx'] + 1, gridInfo['ny'] + 1, gridInfo['nz'] + 1)
         fieldDimensions = (gridInfo['nx'], gridInfo['ny'], gridInfo['nz'])
 
-    grid = pv.UniformGrid(dimensions=gridDimensions)
+    grid = pv.ImageData(dimensions=gridDimensions)
 
     # Dictionary to keep track of encountered BC names
     bcNamesCount = {}
