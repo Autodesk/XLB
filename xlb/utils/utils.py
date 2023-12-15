@@ -15,7 +15,7 @@ import __main__
 
 
 @partial(jit, static_argnums=(1, 2))
-def downsample_field(field, factor, method='bicubic'):
+def downsample_field(field, factor, method="bicubic"):
     """
     Downsample a JAX array by a factor of `factor` along each axis.
 
@@ -38,11 +38,14 @@ def downsample_field(field, factor, method='bicubic'):
     else:
         new_shape = tuple(dim // factor for dim in field.shape[:-1])
         downsampled_components = []
-        for i in range(field.shape[-1]):  # Iterate over the last dimension (vector components)
+        for i in range(
+            field.shape[-1]
+        ):  # Iterate over the last dimension (vector components)
             resized = resize(field[..., i], new_shape, method=method)
             downsampled_components.append(resized)
 
         return jnp.stack(downsampled_components, axis=-1)
+
 
 def save_image(timestep, fld, prefix=None):
     """
@@ -78,16 +81,17 @@ def save_image(timestep, fld, prefix=None):
         fld = np.sqrt(fld[..., 0] ** 2 + fld[..., 1] ** 2)
 
     plt.clf()
-    plt.imsave(fname + '.png', fld.T, cmap=cm.nipy_spectral, origin='lower')
+    plt.imsave(fname + ".png", fld.T, cmap=cm.nipy_spectral, origin="lower")
 
-def save_fields_vtk(timestep, fields, output_dir='.', prefix='fields'):
+
+def save_fields_vtk(timestep, fields, output_dir=".", prefix="fields"):
     """
     Save VTK fields to the specified directory.
 
     Parameters
     ----------
     timestep (int): The timestep number to be associated with the saved fields.
-    fields (Dict[str, np.ndarray]): A dictionary of fields to be saved. Each field must be an array-like object 
+    fields (Dict[str, np.ndarray]): A dictionary of fields to be saved. Each field must be an array-like object
         with dimensions (nx, ny) for 2D fields or (nx, ny, nz) for 3D fields, where:
             - nx : int, number of grid points along the x-axis
             - ny : int, number of grid points along the y-axis
@@ -112,9 +116,11 @@ def save_fields_vtk(timestep, fields, output_dir='.', prefix='fields'):
         if key == list(fields.keys())[0]:
             dimensions = value.shape
         else:
-            assert value.shape == dimensions, "All fields must have the same dimensions!"
+            assert (
+                value.shape == dimensions
+            ), "All fields must have the same dimensions!"
 
-    output_filename = os.path.join(output_dir, prefix +  "_" + f"{timestep:07d}.vtk")
+    output_filename = os.path.join(output_dir, prefix + "_" + f"{timestep:07d}.vtk")
 
     # Add 1 to the dimensions tuple as we store cell values
     dimensions = tuple([dim + 1 for dim in dimensions])
@@ -123,16 +129,17 @@ def save_fields_vtk(timestep, fields, output_dir='.', prefix='fields'):
     if value.ndim == 2:
         dimensions = dimensions + (1,)
 
-    grid = pv.ImageData(dimensions=dimensions)
+    grid = pv.UniformGrid(dimensions=dimensions)
 
     # Add the fields to the grid
     for key, value in fields.items():
-        grid[key] = value.flatten(order='F')
+        grid[key] = value.flatten(order="F")
 
     # Save the grid to a VTK file
     start = time()
     grid.save(output_filename, binary=True)
     print(f"Saved {output_filename} in {time() - start:.6f} seconds.")
+
 
 def live_volume_randering(timestep, field):
     # WORK IN PROGRESS
@@ -157,29 +164,30 @@ def live_volume_randering(timestep, field):
     if field.ndim != 3:
         raise ValueError("The input field must be 3D!")
     dimensions = field.shape
-    grid = pv.ImageData(dimensions=dimensions)
+    grid = pv.UniformGrid(dimensions=dimensions)
 
     # Add the field to the grid
-    grid['field'] = field.flatten(order='F')
+    grid["field"] = field.flatten(order="F")
 
     # Create the rendering scene
     if timestep == 0:
         plt.ion()
         plt.figure(figsize=(10, 10))
-        plt.axis('off')
+        plt.axis("off")
         plt.title("Live rendering of the field")
         pl = pv.Plotter(off_screen=True)
-        pl.add_volume(grid, cmap='nipy_spectral', opacity='sigmoid_10', shade=False)
+        pl.add_volume(grid, cmap="nipy_spectral", opacity="sigmoid_10", shade=False)
         plt.imshow(pl.screenshot())
 
     else:
         pl = pv.Plotter(off_screen=True)
-        pl.add_volume(grid, cmap='nipy_spectral', opacity='sigmoid_10', shade=False)
+        pl.add_volume(grid, cmap="nipy_spectral", opacity="sigmoid_10", shade=False)
         # Update the rendering scene every 0.1 seconds
         plt.imshow(pl.screenshot())
         plt.pause(0.1)
 
-def save_BCs_vtk(timestep, BCs, gridInfo,  output_dir='.'):
+
+def save_BCs_vtk(timestep, BCs, gridInfo, output_dir="."):
     """
     Save boundary conditions as VTK format to the specified directory.
 
@@ -200,14 +208,14 @@ def save_BCs_vtk(timestep, BCs, gridInfo,  output_dir='.'):
     """
 
     # Create a uniform grid
-    if gridInfo['nz'] == 0:
-        gridDimensions = (gridInfo['nx'] + 1, gridInfo['ny'] + 1, 1)
-        fieldDimensions = (gridInfo['nx'], gridInfo['ny'], 1)
+    if gridInfo["nz"] == 0:
+        gridDimensions = (gridInfo["nx"] + 1, gridInfo["ny"] + 1, 1)
+        fieldDimensions = (gridInfo["nx"], gridInfo["ny"], 1)
     else:
-        gridDimensions = (gridInfo['nx'] + 1, gridInfo['ny'] + 1, gridInfo['nz'] + 1)
-        fieldDimensions = (gridInfo['nx'], gridInfo['ny'], gridInfo['nz'])
+        gridDimensions = (gridInfo["nx"] + 1, gridInfo["ny"] + 1, gridInfo["nz"] + 1)
+        fieldDimensions = (gridInfo["nx"], gridInfo["ny"], gridInfo["nz"])
 
-    grid = pv.ImageData(dimensions=gridDimensions)
+    grid = pv.UniformGrid(dimensions=gridDimensions)
 
     # Dictionary to keep track of encountered BC names
     bcNamesCount = {}
@@ -226,16 +234,16 @@ def save_BCs_vtk(timestep, BCs, gridInfo,  output_dir='.'):
             bcIndices = bc.indices
 
         # Convert indices to 1D indices
-        if gridInfo['dim'] == 2:
-            bcIndices = np.ravel_multi_index(bcIndices, fieldDimensions[:-1], order='F')
+        if gridInfo["dim"] == 2:
+            bcIndices = np.ravel_multi_index(bcIndices, fieldDimensions[:-1], order="F")
         else:
-            bcIndices = np.ravel_multi_index(bcIndices, fieldDimensions, order='F')
+            bcIndices = np.ravel_multi_index(bcIndices, fieldDimensions, order="F")
 
-        grid[bcName] = np.zeros(fieldDimensions, dtype=bool).flatten(order='F')
+        grid[bcName] = np.zeros(fieldDimensions, dtype=bool).flatten(order="F")
         grid[bcName][bcIndices] = True
 
     # Save the grid to a VTK file
-    output_filename = os.path.join(output_dir,  "BCs_" + f"{timestep:07d}.vtk")
+    output_filename = os.path.join(output_dir, "BCs_" + f"{timestep:07d}.vtk")
 
     start = time()
     grid.save(output_filename, binary=True)
@@ -267,10 +275,15 @@ def rotate_geometry(indices, origin, axis, angle):
     This function rotates the mesh by applying a rotation matrix to the voxel indices. The rotation matrix is calculated
     using the axis-angle representation of rotations. The origin of the rotation axis is assumed to be at (0, 0, 0).
     """
-    indices_rotated = (jnp.array(indices).T - origin) @ axangle2mat(axis, angle) + origin
-    return tuple(jnp.rint(indices_rotated).astype('int32').T)
+    indices_rotated = (jnp.array(indices).T - origin) @ axangle2mat(
+        axis, angle
+    ) + origin
+    return tuple(jnp.rint(indices_rotated).astype("int32").T)
 
-def voxelize_stl(stl_filename, length_lbm_unit=None, tranformation_matrix=None, pitch=None):
+
+def voxelize_stl(
+    stl_filename, length_lbm_unit=None, tranformation_matrix=None, pitch=None
+):
     """
     Converts an STL file to a voxelized mesh.
 
@@ -309,7 +322,7 @@ def voxelize_stl(stl_filename, length_lbm_unit=None, tranformation_matrix=None, 
 
 
 def axangle2mat(axis, angle, is_normalized=False):
-    ''' Rotation matrix for rotation angle `angle` around `axis`
+    """Rotation matrix for rotation angle `angle` around `axis`
     Parameters
     ----------
     axis : 3 element sequence
@@ -326,7 +339,7 @@ def axangle2mat(axis, angle, is_normalized=False):
     -----
     From : https://github.com/matthew-brett/transforms3d
     Ref : http://en.wikipedia.org/wiki/Rotation_matrix#Axis_and_angle
-    '''
+    """
     x, y, z = axis
     if not is_normalized:
         n = jnp.sqrt(x * x + y * y + z * z)
@@ -345,70 +358,10 @@ def axangle2mat(axis, angle, is_normalized=False):
     xyC = x * yC
     yzC = y * zC
     zxC = z * xC
-    return jnp.array([
-        [x * xC + c, xyC - zs, zxC + ys],
-        [xyC + zs, y * yC + c, yzC - xs],
-        [zxC - ys, yzC + xs, z * zC + c]])
-
-@partial(jit)
-def q_criterion(u):
-    # Compute derivatives
-    u_x = u[..., 0]
-    u_y = u[..., 1]
-    u_z = u[..., 2]
-
-    # Compute derivatives
-    u_x_dx = (u_x[2:, 1:-1, 1:-1] - u_x[:-2, 1:-1, 1:-1]) / 2
-    u_x_dy = (u_x[1:-1, 2:, 1:-1] - u_x[1:-1, :-2, 1:-1]) / 2
-    u_x_dz = (u_x[1:-1, 1:-1, 2:] - u_x[1:-1, 1:-1, :-2]) / 2
-    u_y_dx = (u_y[2:, 1:-1, 1:-1] - u_y[:-2, 1:-1, 1:-1]) / 2
-    u_y_dy = (u_y[1:-1, 2:, 1:-1] - u_y[1:-1, :-2, 1:-1]) / 2
-    u_y_dz = (u_y[1:-1, 1:-1, 2:] - u_y[1:-1, 1:-1, :-2]) / 2
-    u_z_dx = (u_z[2:, 1:-1, 1:-1] - u_z[:-2, 1:-1, 1:-1]) / 2
-    u_z_dy = (u_z[1:-1, 2:, 1:-1] - u_z[1:-1, :-2, 1:-1]) / 2
-    u_z_dz = (u_z[1:-1, 1:-1, 2:] - u_z[1:-1, 1:-1, :-2]) / 2
-
-    # Compute vorticity
-    mu_x = u_z_dy - u_y_dz
-    mu_y = u_x_dz - u_z_dx
-    mu_z = u_y_dx - u_x_dy
-    norm_mu = jnp.sqrt(mu_x ** 2 + mu_y ** 2 + mu_z ** 2)
-
-    # Compute strain rate
-    s_0_0 = u_x_dx
-    s_0_1 = 0.5 * (u_x_dy + u_y_dx)
-    s_0_2 = 0.5 * (u_x_dz + u_z_dx)
-    s_1_0 = s_0_1
-    s_1_1 = u_y_dy
-    s_1_2 = 0.5 * (u_y_dz + u_z_dy)
-    s_2_0 = s_0_2
-    s_2_1 = s_1_2
-    s_2_2 = u_z_dz
-    s_dot_s = (
-        s_0_0 ** 2 + s_0_1 ** 2 + s_0_2 ** 2 +
-        s_1_0 ** 2 + s_1_1 ** 2 + s_1_2 ** 2 +
-        s_2_0 ** 2 + s_2_1 ** 2 + s_2_2 ** 2
+    return jnp.array(
+        [
+            [x * xC + c, xyC - zs, zxC + ys],
+            [xyC + zs, y * yC + c, yzC - xs],
+            [zxC - ys, yzC + xs, z * zC + c],
+        ]
     )
-
-    # Compute omega
-    omega_0_0 = 0.0
-    omega_0_1 = 0.5 * (u_x_dy - u_y_dx)
-    omega_0_2 = 0.5 * (u_x_dz - u_z_dx)
-    omega_1_0 = -omega_0_1
-    omega_1_1 = 0.0
-    omega_1_2 = 0.5 * (u_y_dz - u_z_dy)
-    omega_2_0 = -omega_0_2
-    omega_2_1 = -omega_1_2
-    omega_2_2 = 0.0
-    omega_dot_omega = (
-        omega_0_0 ** 2 + omega_0_1 ** 2 + omega_0_2 ** 2 +
-        omega_1_0 ** 2 + omega_1_1 ** 2 + omega_1_2 ** 2 +
-        omega_2_0 ** 2 + omega_2_1 ** 2 + omega_2_2 ** 2
-    )
-
-    # Compute q-criterion
-    q = 0.5 * (omega_dot_omega - s_dot_s)
-
-    return norm_mu, q
-
-
