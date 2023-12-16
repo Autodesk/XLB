@@ -1,10 +1,10 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub star chart](https://img.shields.io/github/stars/Autodesk/XLB?style=social)](https://star-history.com/#Autodesk/XLB)
 <p align="center">
-  <img src="assets/logo-transparent.png" alt="" width="700">
+  <img src="assets/logo-transparent.png" alt="" width="300">
 </p>
 
-# XLB: Distributed Multi-GPU Lattice Boltzmann Simulation Framework for Differentiable Scientific Machine Learning
+# XLB: A Differentiable Massively Parallel Lattice Boltzmann Library in Python for Physics-Based Machine Learning
 
 XLB is a fully differentiable 2D/3D Lattice Boltzmann Method (LBM) library that leverages hardware acceleration. It's built on top of the [JAX](https://github.com/google/jax) library and is specifically designed to solve fluid dynamics problems in a computationally efficient and differentiable manner. Its unique combination of features positions it as an exceptionally suitable tool for applications in physics-based machine learning.
 
@@ -18,7 +18,7 @@ If you use XLB in your research, please cite the following paper:
 
 ```
 @article{ataei2023xlb,
-      title={{XLB}: Distributed Multi-GPU Lattice Boltzmann Simulation Framework for Differentiable Scientific Machine Learning}, 
+      title={{XLB}: A Differentiable Massively Parallel Lattice Boltzmann Library in Python}, 
       author={Ataei, Mohammadmehdi and Salehipour, Hesam},
       journal={arXiv preprint arXiv:2311.16080},
       year={2023},
@@ -33,7 +33,7 @@ If you use XLB in your research, please cite the following paper:
 - **User-Friendly Interface:** Written entirely in Python, XLB emphasizes a highly accessible interface that allows users to extend the library with ease and quickly set up and run new simulations.
 - **Leverages JAX Array and Shardmap:** The library incorporates the new JAX array unified array type and JAX shardmap, providing users with a numpy-like interface. This allows users to focus solely on the semantics, leaving performance optimizations to the compiler.
 - **Platform Versatility:** The same XLB code can be executed on a variety of platforms including multi-core CPUs, single or multi-GPU systems, TPUs, and it also supports distributed runs on multi-GPU systems or TPU Pod slices.
-- **Visualization:** XLB provides a variety of visualization options including in-situ rendering using [PhantomGaze](https://github.com/loliverhennigh/PhantomGaze).
+- **Visualization:** XLB provides a variety of visualization options including in-situ on GPU rendering using [PhantomGaze](https://github.com/loliverhennigh/PhantomGaze).
 
 ## Showcase
 
