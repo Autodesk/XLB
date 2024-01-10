@@ -2,8 +2,6 @@
 
 from enum import Enum
 
-class ComputeBackend(Enum):
+class ComputeBackends(Enum):
     JAX = 1
-    NUMBA = 2
-    PYTORCH = 3
-    WARP = 4
+    WARP = 2

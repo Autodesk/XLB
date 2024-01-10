@@ -4,7 +4,7 @@ from functools import partial
 from jax import jit
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backend import ComputeBackend
+from xlb.compute_backends import ComputeBackends
 from xlb.operator.stepper.stepper import Stepper
 from xlb.operator.boundary_condition import ImplementationStep
 
@@ -37,8 +37,7 @@ class NSE(Stepper):
             precision_policy,
         )
 
-    #@partial(jit, static_argnums=(0, 5), donate_argnums=(1)) # TODO: This donate args seems to break out of core memory
-    @partial(jit, static_argnums=(0, 5))
+    @partial(jit, static_argnums=(0,))
     def apply_jax(self, f, boundary_id, mask, timestep):
         """
         Perform a single step of the lattice boltzmann method

@@ -3,7 +3,7 @@
 import jax.numpy as jnp
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backend import ComputeBackend
+from xlb.compute_backends import ComputeBackends
 from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition import ImplementationStep
 
@@ -22,7 +22,7 @@ class Stepper(Operator):
         boundary_conditions=[],
         forcing=None,
         precision_policy=None,
-        compute_backend=ComputeBackend.JAX,
+        compute_backend=ComputeBackends.JAX,
     ):
         # Set parameters
         self.collision = collision
