@@ -19,20 +19,19 @@ class Macroscopic(Operator):
     """
 
     def __init__(
-            self,
-            velocity_set: VelocitySet,
-            compute_backend=ComputeBackends.JAX,
-        ):
+        self,
+        velocity_set: VelocitySet,
+        compute_backend=ComputeBackends.JAX,
+    ):
         super().__init__(velocity_set, compute_backend)
 
+    @Operator.register_backend(ComputeBackends.JAX)
     @partial(jit, static_argnums=(0), inline=True)
-    def apply_jax(self, f):
+    def jax_implementation(self, f):
         """
         Apply the macroscopic operator to the lattice distribution function
         """
-
-        rho = jnp.sum(f, axis=-1, keepdims=True)
-        c = jnp.array(self.velocity_set.c, dtype=f.dtype).T
-        u = jnp.dot(f, c) / rho
+        rho = jnp.sum(f, axis=0, keepdims=True)
+        u = jnp.tensordot(self.velocity_set.c, f, axes=(-1, 0)) / rho
 
         return rho, u

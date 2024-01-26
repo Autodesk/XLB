@@ -1,4 +1,4 @@
-from xlb.precision_policy.precision_policy import PrecisionPolicy
+from xlb.precision_policy.base_precision_policy import PrecisionPolicy
 from jax import jit
 from functools import partial
 import jax.numpy as jnp
@@ -18,7 +18,7 @@ class JaxPrecisionPolicy(PrecisionPolicy):
         return array.astype(self.storage_dtype)
 
 
-class Fp32Fp32(JaxPrecisionPolicy):
+class JaxFp32Fp32(JaxPrecisionPolicy):
     """
     Precision policy for lattice Boltzmann method with computation and storage
     precision both set to float32.
@@ -32,7 +32,7 @@ class Fp32Fp32(JaxPrecisionPolicy):
         super().__init__(jnp.float32, jnp.float32)
 
 
-class Fp64Fp64(JaxPrecisionPolicy):
+class JaxFp64Fp64(JaxPrecisionPolicy):
     """
     Precision policy for lattice Boltzmann method with computation and storage
     precision both set to float64.
@@ -42,7 +42,7 @@ class Fp64Fp64(JaxPrecisionPolicy):
         super().__init__(jnp.float64, jnp.float64)
 
 
-class Fp64Fp32(JaxPrecisionPolicy):
+class JaxFp64Fp32(JaxPrecisionPolicy):
     """
     Precision policy for lattice Boltzmann method with computation precision
     set to float64 and storage precision set to float32.
@@ -52,7 +52,7 @@ class Fp64Fp32(JaxPrecisionPolicy):
         super().__init__(jnp.float64, jnp.float32)
 
 
-class Fp64Fp16(JaxPrecisionPolicy):
+class JaxFp64Fp16(JaxPrecisionPolicy):
     """
     Precision policy for lattice Boltzmann method with computation precision
     set to float64 and storage precision set to float16.
@@ -62,7 +62,7 @@ class Fp64Fp16(JaxPrecisionPolicy):
         super().__init__(jnp.float64, jnp.float16)
 
 
-class Fp32Fp16(JaxPrecisionPolicy):
+class JaxFp32Fp16(JaxPrecisionPolicy):
     """
     Precision policy for lattice Boltzmann method with computation precision
     set to float32 and storage precision set to float16.

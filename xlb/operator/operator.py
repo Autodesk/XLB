@@ -1,9 +1,7 @@
 # Base class for all operators, (collision, streaming, equilibrium, etc.)
 
-from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.compute_backends import ComputeBackends
-
-
+from xlb.global_config import GlobalConfig
 class Operator:
     """
     Base class for all operators, collision, streaming, equilibrium, etc.
@@ -14,9 +12,11 @@ class Operator:
     _backends = {}
 
     def __init__(self, velocity_set, compute_backend):
-        self.velocity_set = velocity_set
-        self.compute_backend = compute_backend
-        if compute_backend not in ComputeBackends:
+        # Set the default values from the global config
+        self.velocity_set = velocity_set or GlobalConfig.velocity_set
+        self.compute_backend = compute_backend or GlobalConfig.compute_backend
+
+        if self.compute_backend not in ComputeBackends:
             raise ValueError(f"Compute backend {compute_backend} is not supported")
 
     @classmethod
@@ -34,14 +34,25 @@ class Operator:
 
         return decorator
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, callback=None, **kwargs):
         """
         Calls the operator with the compute backend specified in the constructor.
+        If a callback is provided, it is called either with the result of the operation
+        or with the original arguments and keyword arguments if the backend modifies them by reference.
         """
         key = (self.__class__.__name__, self.compute_backend)
         backend_method = self._backends.get(key)
+
         if backend_method:
-            return backend_method(self, *args, **kwargs)
+            result = backend_method(self, *args, **kwargs)
+
+            # Determine what to pass to the callback based on the backend behavior
+            callback_arg = result if result is not None else (args, kwargs)
+
+            if callback and callable(callback):
+                callback(callback_arg)
+
+            return result
         else:
             raise NotImplementedError(f"Backend {self.compute_backend} not implemented")
 
@@ -63,9 +74,3 @@ class Operator:
 
     def __repr__(self):
         return f"{self.__class__.__name__}()"
-
-    def data_handler(self, *args, **kwargs):
-        """
-        Handles data for the operator.
-        """
-        raise NotImplementedError("Child class must implement data_handler")

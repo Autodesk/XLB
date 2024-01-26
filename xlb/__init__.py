@@ -2,6 +2,11 @@
 from xlb.compute_backends import ComputeBackends
 from xlb.physics_type import PhysicsType
 
+
+# Config
+from .global_config import init
+
+
 # Precision policy
 import xlb.precision_policy
 
@@ -15,4 +20,9 @@ import xlb.operator.stream
 import xlb.operator.boundary_condition
 # import xlb.operator.force
 import xlb.operator.macroscopic
-import xlb.operator.stepper
+
+# Grids
+import xlb.grid
+
+# Solvers
+import xlb.solver

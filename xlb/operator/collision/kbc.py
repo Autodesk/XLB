@@ -22,8 +22,8 @@ class KBC(Collision):
     def __init__(
         self,
         omega,
-        velocity_set: VelocitySet,
-        compute_backend=ComputeBackends.JAX,
+        velocity_set: VelocitySet = None,
+        compute_backend=None,
     ):
         super().__init__(
             omega=omega, velocity_set=velocity_set, compute_backend=compute_backend
@@ -74,6 +74,16 @@ class KBC(Collision):
         fout = f - self.beta * (2.0 * delta_s + gamma[None, ...] * delta_h)
 
         return fout
+
+    @Operator.register_backend(ComputeBackends.WARP)
+    @partial(jit, static_argnums=(0,), donate_argnums=(1, 2, 3))
+    def warp_implementation(
+        self,
+        f: jnp.ndarray,
+        feq: jnp.ndarray,
+        rho: jnp.ndarray,
+    ):
+        raise NotImplementedError("Warp implementation not yet implemented")
 
     @partial(jit, static_argnums=(0,), inline=True)
     def entropic_scalar_product(self, x: jnp.ndarray, y: jnp.ndarray, feq: jnp.ndarray):

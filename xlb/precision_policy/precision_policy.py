@@ -1,22 +1,59 @@
-class PrecisionPolicy(object):
-    """
-    Base class for precision policy in lattice Boltzmann method.
-    Stores dtype information and provides an interface for casting operations.
-    """
-    def __init__(self, compute_dtype, storage_dtype):
-        self.compute_dtype = compute_dtype
-        self.storage_dtype = storage_dtype
+from abc import ABC, abstractmethod
+from xlb.compute_backends import ComputeBackends
+from xlb.global_config import GlobalConfig
 
-    def cast_to_compute(self, array):
-        """
-        Cast the array to the computation precision.
-        To be implemented by subclass.
-        """
-        raise NotImplementedError
+from xlb.precision_policy.jax_precision_policy import (
+    JaxFp32Fp32,
+    JaxFp32Fp16,
+    JaxFp64Fp64,
+    JaxFp64Fp32,
+    JaxFp64Fp16,
+)
 
-    def cast_to_store(self, array):
-        """
-        Cast the array to the storage precision.
-        To be implemented by subclass.
-        """
-        raise NotImplementedError
+
+class Fp64Fp64:
+    def __new__(cls):
+        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+            return JaxFp64Fp64()
+        else:
+            raise ValueError(
+                f"Unsupported compute backend: {GlobalConfig.compute_backend}"
+            )
+        
+class Fp64Fp32:
+    def __new__(cls):
+        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+            return JaxFp64Fp32()
+        else:
+            raise ValueError(
+                f"Unsupported compute backend: {GlobalConfig.compute_backend}"
+            )
+
+
+class Fp32Fp32:
+    def __new__(cls):
+        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+            return JaxFp32Fp32()
+        else:
+            raise ValueError(
+                f"Unsupported compute backend: {GlobalConfig.compute_backend}"
+            )
+
+
+class Fp64Fp16:
+    def __new__(cls):
+        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+            return JaxFp64Fp16()
+        else:
+            raise ValueError(
+                f"Unsupported compute backend: {GlobalConfig.compute_backend}"
+            )
+
+class Fp32Fp16:
+    def __new__(cls):
+        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+            return JaxFp32Fp16()
+        else:
+            raise ValueError(
+                f"Unsupported compute backend: {GlobalConfig.compute_backend}"
+            )

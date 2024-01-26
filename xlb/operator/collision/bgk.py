@@ -15,8 +15,8 @@ class BGK(Collision):
     def __init__(
         self,
         omega: float,
-        velocity_set: VelocitySet,
-        compute_backend=ComputeBackends.JAX,
+        velocity_set: VelocitySet = None,
+        compute_backend=None,
     ):
         super().__init__(
             omega=omega, velocity_set=velocity_set, compute_backend=compute_backend
@@ -24,7 +24,7 @@ class BGK(Collision):
 
     @Operator.register_backend(ComputeBackends.JAX)
     @partial(jit, static_argnums=(0,))
-    def jax_implementation_2(self, f: jnp.ndarray, feq: jnp.ndarray):
+    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
         fneq = f - feq
         fout = f - self.omega * fneq
         return fout

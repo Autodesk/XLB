@@ -1,7 +1,6 @@
 """
 Base class for Collision operators
 """
-from xlb.compute_backends import ComputeBackends
 from xlb.velocity_set import VelocitySet
 from xlb.operator import Operator
 
@@ -23,8 +22,8 @@ class Collision(Operator):
     def __init__(
         self,
         omega: float,
-        velocity_set: VelocitySet,
-        compute_backend=ComputeBackends.JAX,
+        velocity_set: VelocitySet = None,
+        compute_backend=None,
     ):
         super().__init__(velocity_set, compute_backend)
         self.omega = omega
