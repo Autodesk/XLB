@@ -47,7 +47,7 @@ def downsample_field(field, factor, method="bicubic"):
         return jnp.stack(downsampled_components, axis=-1)
 
 
-def save_image(timestep, fld, prefix=None):
+def save_image(fld, timestep, prefix=None):
     """
     Save an image of a field at a given timestep.
 
@@ -78,13 +78,13 @@ def save_image(timestep, fld, prefix=None):
     if len(fld.shape) > 3:
         raise ValueError("The input field should be 2D!")
     elif len(fld.shape) == 3:
-        fld = np.sqrt(fld[..., 0] ** 2 + fld[..., 1] ** 2)
+        fld = np.sqrt(fld[0, ...] ** 2 + fld[0, ...] ** 2)
 
     plt.clf()
     plt.imsave(fname + ".png", fld.T, cmap=cm.nipy_spectral, origin="lower")
 
 
-def save_fields_vtk(timestep, fields, output_dir=".", prefix="fields"):
+def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
     """
     Save VTK fields to the specified directory.
 
@@ -111,7 +111,7 @@ def save_fields_vtk(timestep, fields, output_dir=".", prefix="fields"):
     will be saved as 'fields_0000010.vtk'in the specified directory.
 
     """
-    # Assert that all fields have the same dimensions except for the last dimension assuming fields is a dictionary
+    # Assert that all fields have the same dimensions
     for key, value in fields.items():
         if key == list(fields.keys())[0]:
             dimensions = value.shape
@@ -139,53 +139,6 @@ def save_fields_vtk(timestep, fields, output_dir=".", prefix="fields"):
     start = time()
     grid.save(output_filename, binary=True)
     print(f"Saved {output_filename} in {time() - start:.6f} seconds.")
-
-
-def live_volume_randering(timestep, field):
-    # WORK IN PROGRESS
-    """
-    Live rendering of a 3D volume using pyvista.
-
-    Parameters
-    ----------
-    field (np.ndarray): A 3D array containing the field to be rendered.
-
-    Returns
-    -------
-    None
-
-    Notes
-    -----
-    This function uses pyvista to render a 3D volume. The volume is rendered with a colormap based on the field values.
-    The colormap is updated every 0.1 seconds to reflect changes to the field.
-
-    """
-    # Create a uniform grid (Note that the field must be 3D) otherwise raise error
-    if field.ndim != 3:
-        raise ValueError("The input field must be 3D!")
-    dimensions = field.shape
-    grid = pv.UniformGrid(dimensions=dimensions)
-
-    # Add the field to the grid
-    grid["field"] = field.flatten(order="F")
-
-    # Create the rendering scene
-    if timestep == 0:
-        plt.ion()
-        plt.figure(figsize=(10, 10))
-        plt.axis("off")
-        plt.title("Live rendering of the field")
-        pl = pv.Plotter(off_screen=True)
-        pl.add_volume(grid, cmap="nipy_spectral", opacity="sigmoid_10", shade=False)
-        plt.imshow(pl.screenshot())
-
-    else:
-        pl = pv.Plotter(off_screen=True)
-        pl.add_volume(grid, cmap="nipy_spectral", opacity="sigmoid_10", shade=False)
-        # Update the rendering scene every 0.1 seconds
-        plt.imshow(pl.screenshot())
-        plt.pause(0.1)
-
 
 def save_BCs_vtk(timestep, BCs, gridInfo, output_dir="."):
     """

@@ -1,13 +1,6 @@
 """
 Base class for Collision operators
 """
-
-import jax.numpy as jnp
-from jax import jit
-from functools import partial
-import numba
-
-from xlb.compute_backend import ComputeBackend
 from xlb.velocity_set import VelocitySet
 from xlb.operator import Operator
 
@@ -27,22 +20,10 @@ class Collision(Operator):
     """
 
     def __init__(
-            self,
-            omega: float,
-            velocity_set: VelocitySet,
-            compute_backend=ComputeBackend.JAX,
-        ):
+        self,
+        omega: float,
+        velocity_set: VelocitySet = None,
+        compute_backend=None,
+    ):
         super().__init__(velocity_set, compute_backend)
         self.omega = omega
-
-    def apply_jax(self, f, feq, rho, u):
-        """
-        Jax implementation of collision step.
-        """
-        raise NotImplementedError("Child class must implement apply_jax.")
-
-    def construct_numba(self, velocity_set: VelocitySet, dtype=numba.float32):
-        """
-        Construct numba implementation of collision step.
-        """
-        raise NotImplementedError("Child class must implement construct_numba.")

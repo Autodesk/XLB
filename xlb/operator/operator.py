@@ -1,9 +1,7 @@
 # Base class for all operators, (collision, streaming, equilibrium, etc.)
 
-from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backend import ComputeBackend
-
-
+from xlb.compute_backends import ComputeBackends
+from xlb.global_config import GlobalConfig
 class Operator:
     """
     Base class for all operators, collision, streaming, equilibrium, etc.
@@ -11,62 +9,59 @@ class Operator:
     This class is responsible for handling compute backends.
     """
 
+    _backends = {}
+
     def __init__(self, velocity_set, compute_backend):
-        self.velocity_set = velocity_set
-        self.compute_backend = compute_backend
+        # Set the default values from the global config
+        self.velocity_set = velocity_set or GlobalConfig.velocity_set
+        self.compute_backend = compute_backend or GlobalConfig.compute_backend
 
-        # Check if compute backend is supported
-        # TODO: Fix check for compute backend
-        #if self.compute_backend not in self.supported_compute_backends:
-        #    raise ValueError(
-        #        f"Compute backend {self.compute_backend} not supported by {self.__class__.__name__}"
-        #    )
+        if self.compute_backend not in ComputeBackends:
+            raise ValueError(f"Compute backend {compute_backend} is not supported")
 
-    def __call__(self, *args, **kwargs):
+    @classmethod
+    def register_backend(cls, backend_name):
         """
-        Apply the operator to a input. This method will call the
-        appropriate apply method based on the compute backend.
+        Decorator to register a backend for the operator.
         """
-        if self.compute_backend == ComputeBackend.JAX:
-            return self.apply_jax(*args, **kwargs)
-        elif self.compute_backend == ComputeBackend.NUMBA:
-            return self.apply_numba(*args, **kwargs)
 
-    def apply_jax(self, *args, **kwargs):
-        """
-        Implement the operator using JAX.
-        If using the JAX backend, this method will then become
-        the self.__call__ method.
-        """
-        raise NotImplementedError("Child class must implement apply_jax")
+        def decorator(func):
+            # Use the combination of operator name and backend name as the key
+            subclass_name = func.__qualname__.split(".")[0]
+            key = (subclass_name, backend_name)
+            cls._backends[key] = func
+            return func
 
-    def apply_numba(self, *args, **kwargs):
-        """
-        Implement the operator using Numba.
-        If using the Numba backend, this method will then become
-        the self.__call__ method.
-        """
-        raise NotImplementedError("Child class must implement apply_numba")
+        return decorator
 
-    def construct_numba(self):
+    def __call__(self, *args, callback=None, **kwargs):
         """
-        Constructs numba kernel for the operator
+        Calls the operator with the compute backend specified in the constructor.
+        If a callback is provided, it is called either with the result of the operation
+        or with the original arguments and keyword arguments if the backend modifies them by reference.
         """
-        raise NotImplementedError("Child class must implement apply_numba")
+        key = (self.__class__.__name__, self.compute_backend)
+        backend_method = self._backends.get(key)
+
+        if backend_method:
+            result = backend_method(self, *args, **kwargs)
+
+            # Determine what to pass to the callback based on the backend behavior
+            callback_arg = result if result is not None else (args, kwargs)
+
+            if callback and callable(callback):
+                callback(callback_arg)
+
+            return result
+        else:
+            raise NotImplementedError(f"Backend {self.compute_backend} not implemented")
 
     @property
     def supported_compute_backend(self):
         """
         Returns the supported compute backend for the operator
         """
-        supported_backend = []
-        if self._is_method_overridden("apply_jax"):
-            supported_backend.append(ComputeBackend.JAX)
-        elif self._is_method_overridden("apply_numba"):
-            supported_backend.append(ComputeBackend.NUMBA)
-        else:
-            raise NotImplementedError("No supported compute backend implemented")
-        return supported_backend
+        return list(self._backends.keys())
 
     def _is_method_overridden(self, method_name):
         """

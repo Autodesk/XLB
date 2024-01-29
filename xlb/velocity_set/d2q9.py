@@ -10,7 +10,7 @@ class D2Q9(VelocitySet):
     Velocity Set for 2D D2Q9 lattice.
 
     D2Q9 stands for two-dimensional nine-velocity model. It is a common model used in the
-    Lat tice Boltzmann Method for simulating fluid flows in two dimensions.
+    Lattice Boltzmann Method for simulating fluid flows in two dimensions.
     """
 
     def __init__(self):

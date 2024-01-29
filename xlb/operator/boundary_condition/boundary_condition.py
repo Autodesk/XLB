@@ -10,7 +10,7 @@ from enum import Enum
 
 from xlb.operator.operator import Operator
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backend import ComputeBackend
+from xlb.compute_backends import ComputeBackends
 
 # Enum for implementation step
 class ImplementationStep(Enum):
@@ -27,7 +27,7 @@ class BoundaryCondition(Operator):
             set_boundary,
             implementation_step: ImplementationStep,
             velocity_set: VelocitySet,
-            compute_backend: ComputeBackend.JAX,
+            compute_backend: ComputeBackends.JAX,
         ):
         super().__init__(velocity_set, compute_backend)
 
@@ -35,7 +35,7 @@ class BoundaryCondition(Operator):
         self.implementation_step = implementation_step
 
         # Set boundary function
-        if compute_backend == ComputeBackend.JAX:
+        if compute_backend == ComputeBackends.JAX:
             self.set_boundary = set_boundary
         else:
             raise NotImplementedError

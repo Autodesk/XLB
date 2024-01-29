@@ -1,2 +1,1 @@
-from xlb.precision_policy.precision_policy import PrecisionPolicy
-from xlb.precision_policy.fp32fp32 import Fp32Fp32
+from xlb.precision_policy.precision_policy import Fp64Fp64, Fp64Fp32, Fp32Fp32, Fp64Fp16, Fp32Fp16
