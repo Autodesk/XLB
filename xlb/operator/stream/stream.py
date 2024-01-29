@@ -21,7 +21,7 @@ class Stream(Operator):
         super().__init__(velocity_set, compute_backend)
 
     @Operator.register_backend(ComputeBackends.JAX)
-    # @partial(jit, static_argnums=(0))
+    @partial(jit, static_argnums=(0))
     def jax_implementation(self, f):
         """
         JAX implementation of the streaming step.
@@ -38,7 +38,6 @@ class Stream(Operator):
             mesh=self.grid.global_mesh,
             in_specs=in_specs,
             out_specs=out_specs,
-            check_rep=False,
         )(f)
 
     def _streaming_jax_p(self, f):

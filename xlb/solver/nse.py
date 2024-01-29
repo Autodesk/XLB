@@ -18,6 +18,7 @@ class IncompressibleNavierStokes(Solver):
     def __init__(
         self,
         grid,
+        omega,
         velocity_set: VelocitySet = None,
         compute_backend=None,
         precision_policy=None,
@@ -25,6 +26,7 @@ class IncompressibleNavierStokes(Solver):
         collision_kernel="BGK",
     ):
         self.grid = grid
+        self.omega = omega
         self.collision_kernel = collision_kernel
         super().__init__(velocity_set=velocity_set, compute_backend=compute_backend, precision_policy=precision_policy, boundary_conditions=boundary_conditions)
         self.create_operators()
@@ -39,13 +41,13 @@ class IncompressibleNavierStokes(Solver):
         )
         self.collision = (
             KBC(
-                omega=1.0,
+                omega=self.omega,
                 velocity_set=self.velocity_set,
                 compute_backend=self.compute_backend,
             )
             if self.collision_kernel == "KBC"
             else BGK(
-                omega=1.0,
+                omega=self.omega,
                 velocity_set=self.velocity_set,
                 compute_backend=self.compute_backend,
             )

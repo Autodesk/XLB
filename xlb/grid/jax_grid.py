@@ -23,7 +23,7 @@ class JaxGrid(Grid):
         self.global_mesh = (
             Mesh(device_mesh, axis_names=("cardinality", "x", "y"))
             if self.dim == 2
-            else Mesh(self.devices, axis_names=("cardinality", "x", "y", "z"))
+            else Mesh(device_mesh, axis_names=("cardinality", "x", "y", "z"))
         )
         self.sharding = (
             NamedSharding(self.global_mesh, P("cardinality", "x", "y"))

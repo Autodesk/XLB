@@ -4,7 +4,7 @@ from xlb.physics_type import PhysicsType
 
 
 # Config
-from .global_config import init
+from .global_config import init, current_backend
 
 
 # Precision policy
@@ -26,3 +26,6 @@ import xlb.grid
 
 # Solvers
 import xlb.solver
+
+# Utils
+import xlb.utils
