@@ -50,8 +50,9 @@ class Cylinder(BGKSim):
 
         # Outflow BC
         outlet = self.boundingBoxIndices['right']
-        rho_outlet = np.ones(outlet.shape[0], dtype=self.precisionPolicy.compute_dtype)
+        rho_outlet = np.ones((outlet.shape[0], 1), dtype=self.precisionPolicy.compute_dtype)
         self.BCs.append(ExtrapolationOutflow(tuple(outlet.T), self.gridInfo, self.precisionPolicy))
+        # self.BCs.append(ZouHe(tuple(outlet.T), self.gridInfo, self.precisionPolicy, 'pressure', rho_outlet))
 
         # Inlet BC
         inlet = self.boundingBoxIndices['left']

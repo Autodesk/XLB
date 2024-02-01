@@ -702,11 +702,11 @@ class ZouHe(BoundaryCondition):
         """
         Calculate velocity based on the prescribed pressure/density (Zou/He BC)
         """
-        unormal = -1. + 1. / rho * (jnp.sum(fpop[self.indices] * self.imiddleMask, axis=1) +
-                               2. * jnp.sum(fpop[self.indices] * self.iknownMask, axis=1))
+        unormal = -1. + 1. / rho * (jnp.sum(fpop[self.indices] * self.imiddleMask, axis=1, keepdims=True) +
+                               2. * jnp.sum(fpop[self.indices] * self.iknownMask, axis=1, keepdims=True))
 
         # Return the above unormal as a normal vector which sets the tangential velocities to zero
-        vel = unormal[:, None] * self.normals
+        vel = unormal * self.normals
         return vel
 
     @partial(jit, static_argnums=(0,), inline=True)
