@@ -23,7 +23,7 @@ class BGK(Collision):
         )
 
     @Operator.register_backend(ComputeBackends.JAX)
-    @partial(jit, static_argnums=(0,))
+    @partial(jit, static_argnums=(0,), inline=True)
     def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
         fneq = f - feq
         fout = f - self.omega * fneq

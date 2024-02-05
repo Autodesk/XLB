@@ -35,8 +35,6 @@ f = grid.create_field(cardinality=19, callback=EquilibriumInitializer(grid))
 solver = IncompressibleNavierStokes(grid, omega=1.0)
 
 # Ahead-of-Time Compilation to remove JIT overhead
-
-
 if xlb.current_backend() == ComputeBackends.JAX:
     lowered = jax.jit(solver.step).lower(f, timestep=0)
     solver_step_compiled = lowered.compile()
