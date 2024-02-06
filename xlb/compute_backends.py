@@ -4,4 +4,5 @@ from enum import Enum
 
 class ComputeBackends(Enum):
     JAX = 1
-    WARP = 2
+    PALLAS = 2
+    WARP = 3

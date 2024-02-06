@@ -5,8 +5,6 @@ import numpy as np
 from functools import partial
 import jax.numpy as jnp
 from jax import jit, vmap
-import numba
-from numba import cuda, float32, int32
 
 
 class VelocitySet(object):

@@ -18,7 +18,6 @@ import xlb.operator.equilibrium
 import xlb.operator.collision
 import xlb.operator.stream
 import xlb.operator.boundary_condition
-# import xlb.operator.force
 import xlb.operator.macroscopic
 
 # Grids

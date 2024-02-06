@@ -23,12 +23,12 @@ class Grid(ABC):
         compute_backend = compute_backend or GlobalConfig.compute_backend
         velocity_set = velocity_set or GlobalConfig.velocity_set
 
-        if compute_backend == ComputeBackends.JAX:
+        if compute_backend == ComputeBackends.JAX or compute_backend == ComputeBackends.PALLAS:
             from xlb.grid.jax_grid import JaxGrid  # Avoids circular import
 
             return JaxGrid(grid_shape, velocity_set, compute_backend)
         raise ValueError(f"Compute backend {compute_backend} is not supported")
 
     @abstractmethod
-    def global_to_local_shape(self, shape):
+    def field_global_to_local_shape(self, shape):
         pass

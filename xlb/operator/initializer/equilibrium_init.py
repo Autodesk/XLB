@@ -19,11 +19,15 @@ class EquilibriumInitializer(Operator):
         local_shape = (-1,) + (1,) * (len(grid.pop_shape) - 1)
         
         self.init_values = np.zeros(
-            grid.global_to_local_shape(grid.pop_shape)
+            grid.field_global_to_local_shape(grid.pop_shape)
         ) + velocity_set.w.reshape(local_shape)
 
         super().__init__(velocity_set, compute_backend)
 
     @Operator.register_backend(ComputeBackends.JAX)
+    def jax_implementation(self, index):
+        return self.init_values
+
+    @Operator.register_backend(ComputeBackends.PALLAS)
     def jax_implementation(self, index):
         return self.init_values
