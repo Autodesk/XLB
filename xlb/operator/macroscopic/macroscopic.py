@@ -1,7 +1,7 @@
 # Base class for all equilibriums
 from xlb.global_config import GlobalConfig
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
 
@@ -29,7 +29,7 @@ class Macroscopic(Operator):
 
         super().__init__(velocity_set, compute_backend)
 
-    @Operator.register_backend(ComputeBackends.JAX)
+    @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0), inline=True)
     def jax_implementation(self, f):
         """

@@ -4,7 +4,7 @@ from functools import partial
 from jax import jit
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.boundary_condition import ImplementationStep
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.collision import BGK, KBC
@@ -56,7 +56,7 @@ class IncompressibleNavierStokes(Solver):
             velocity_set=self.velocity_set, compute_backend=self.compute_backend
         )
 
-    @Operator.register_backend(ComputeBackends.JAX)
+    @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
     def step(self, f, timestep):
         """

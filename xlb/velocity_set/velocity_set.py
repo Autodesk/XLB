@@ -5,8 +5,8 @@ import numpy as np
 from functools import partial
 import jax.numpy as jnp
 from jax import jit, vmap
-import numba
-from numba import cuda, float32, int32
+
+import warp as wp
 
 
 class VelocitySet(object):
@@ -44,58 +44,14 @@ class VelocitySet(object):
         self.right_indices = self._construct_right_indices()
         self.left_indices = self._construct_left_indices()
 
-    @partial(jit, static_argnums=(0,))
-    def momentum_flux_jax(self, fneq):
-        """
-        This function computes the momentum flux, which is the product of the non-equilibrium
-        distribution functions (fneq) and the lattice moments (cc).
+    def warp_lattice_vec(self, dtype):
+        return wp.vec(len(self.c), dtype=dtype)
 
-        The momentum flux is used in the computation of the stress tensor in the Lattice Boltzmann
-        Method (LBM).
+    def warp_u_vec(self, dtype):
+        return wp.vec(self.d, dtype=dtype)
 
-        Parameters
-        ----------
-        fneq: jax.numpy.ndarray
-            The non-equilibrium distribution functions.
-
-        Returns
-        -------
-        jax.numpy.ndarray
-            The computed momentum flux.
-        """
-
-        return jnp.dot(fneq, self.cc)
-
-    def momentum_flux_numba(self):
-        """
-        This function computes the momentum flux, which is the product of the non-equilibrium
-        """
-        raise NotImplementedError
-
-    @partial(jit, static_argnums=(0,))
-    def decompose_shear_jax(self, fneq):
-        """
-        Decompose fneq into shear components for D3Q27 lattice.
-
-        TODO: add generali
-
-        Parameters
-        ----------
-        fneq : jax.numpy.ndarray
-            Non-equilibrium distribution function.
-
-        Returns
-        -------
-        jax.numpy.ndarray
-            Shear components of fneq.
-        """
-        raise NotImplementedError
-
-    def decompose_shear_numba(self):
-        """
-        Decompose fneq into shear components for D3Q27 lattice.
-        """
-        raise NotImplementedError
+    def warp_stream_mat(self, dtype):
+        return wp.mat((self.q, self.d), dtype=dtype)
 
     def _construct_lattice_moment(self):
         """

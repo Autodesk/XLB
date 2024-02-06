@@ -1,14 +1,10 @@
 # Enum classes
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
+from xlb.precision_policy import PrecisionPolicy
 from xlb.physics_type import PhysicsType
-
 
 # Config
 from .global_config import init, current_backend
-
-
-# Precision policy
-import xlb.precision_policy
 
 # Velocity Set
 import xlb.velocity_set

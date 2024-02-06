@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.global_config import GlobalConfig
 from xlb.velocity_set import VelocitySet
 
@@ -23,7 +23,7 @@ class Grid(ABC):
         compute_backend = compute_backend or GlobalConfig.compute_backend
         velocity_set = velocity_set or GlobalConfig.velocity_set
 
-        if compute_backend == ComputeBackends.JAX:
+        if compute_backend == ComputeBackend.JAX:
             from xlb.grid.jax_grid import JaxGrid  # Avoids circular import
 
             return JaxGrid(grid_shape, velocity_set, compute_backend)

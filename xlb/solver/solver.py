@@ -1,6 +1,6 @@
 # Base class for all stepper operators
 
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.boundary_condition import ImplementationStep
 from xlb.global_config import GlobalConfig
 from xlb.operator import Operator

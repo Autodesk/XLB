@@ -1070,6 +1070,8 @@ if __name__ == "__main__":
     # Compute MLUPS
     mlups = (nr_steps * n * n * n) / (t1 - t0) / 1e6
     backend.append("Warp")
+    print(mlups)
+    exit()
     mlups.append(mlups)
 
     # Plot results

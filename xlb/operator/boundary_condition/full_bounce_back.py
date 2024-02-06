@@ -9,7 +9,7 @@ from functools import partial
 import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.boundary_condition.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
@@ -24,7 +24,7 @@ class FullBounceBack(BoundaryCondition):
             self,
             set_boundary,
             velocity_set: VelocitySet,
-            compute_backend: ComputeBackends = ComputeBackends.JAX,
+            compute_backend: ComputeBackend = ComputeBackend.JAX,
         ):
         super().__init__(
             set_boundary=set_boundary,
@@ -38,7 +38,7 @@ class FullBounceBack(BoundaryCondition):
             cls,
             indices,
             velocity_set: VelocitySet,
-            compute_backend: ComputeBackends = ComputeBackends.JAX,
+            compute_backend: ComputeBackend = ComputeBackend.JAX,
         ):
         """
         Creates a boundary condition from a list of indices.

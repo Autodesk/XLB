@@ -8,7 +8,7 @@ from functools import partial
 from numba import cuda, float32
 from xlb.operator import Operator
 from xlb.velocity_set import VelocitySet, D2Q9, D3Q27
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.collision.collision import Collision
 
 
@@ -32,7 +32,7 @@ class KBC(Collision):
         self.beta = self.omega * 0.5
         self.inv_beta = 1.0 / self.beta
 
-    @Operator.register_backend(ComputeBackends.JAX)
+    @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,), donate_argnums=(1, 2, 3))
     def jax_implementation(
         self,
@@ -75,7 +75,7 @@ class KBC(Collision):
 
         return fout
 
-    @Operator.register_backend(ComputeBackends.WARP)
+    @Operator.register_backend(ComputeBackend.WARP)
     @partial(jit, static_argnums=(0,), donate_argnums=(1, 2, 3))
     def warp_implementation(
         self,

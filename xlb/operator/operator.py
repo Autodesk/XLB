@@ -1,7 +1,10 @@
 # Base class for all operators, (collision, streaming, equilibrium, etc.)
+import warp as wp
 
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
+from xlb.precision_policy import PrecisionPolicy, Precision
 from xlb.global_config import GlobalConfig
+
 class Operator:
     """
     Base class for all operators, collision, streaming, equilibrium, etc.
@@ -11,12 +14,13 @@ class Operator:
 
     _backends = {}
 
-    def __init__(self, velocity_set, compute_backend):
+    def __init__(self, velocity_set, precision_policy, compute_backend):
         # Set the default values from the global config
         self.velocity_set = velocity_set or GlobalConfig.velocity_set
+        self.precision_policy = precision_policy or GlobalConfig.precision_policy
         self.compute_backend = compute_backend or GlobalConfig.compute_backend
 
-        if self.compute_backend not in ComputeBackends:
+        if self.compute_backend not in ComputeBackend:
             raise ValueError(f"Compute backend {compute_backend} is not supported")
 
     @classmethod
@@ -74,3 +78,73 @@ class Operator:
 
     def __repr__(self):
         return f"{self.__class__.__name__}()"
+
+    @property
+    def backend(self):
+        """
+        Returns the compute backend object for the operator (e.g. jax, warp)
+        This should be used with caution as all backends may not have the same API.
+        """
+        if self.compute_backend == ComputeBackend.JAX:
+            import jax as backend
+        elif self.compute_backend == ComputeBackend.WARP:
+            import warp as backend
+        return backend
+
+    @property
+    def compute_dtype(self):
+        """
+        Returns the compute dtype
+        """
+        if self.precision_policy.compute_precision == Precision.FP64:
+            return self.backend.float64
+        elif self.precision_policy.compute_precision == Precision.FP32:
+            return self.backend.float32
+        elif self.precision_policy.compute_precision == Precision.FP16:
+            return self.backend.float16
+
+    @property
+    def store_dtype(self):
+        """
+        Returns the store dtype
+        """
+        if self.precision_policy.store_precision == Precision.FP64:
+            return self.backend.float64
+        elif self.precision_policy.store_precision == Precision.FP32:
+            return self.backend.float32
+        elif self.precision_policy.store_precision == Precision.FP16:
+            return self.backend.float16
+
+    ### WARP specific types ###
+    # These are used to define the types for the warp backend
+    # TODO: There might be a better place to put these
+    @property
+    def _warp_u_vec(self):
+        """
+        Returns the warp type for velocity
+        """
+        return wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+
+    @property
+    def _warp_lattice_vec(self):
+        """
+        Returns the warp type for the lattice
+        """
+        return wp.vec(len(self.velocity_set.w), dtype=self.compute_dtype)
+
+    @property
+    def _warp_stream_mat(self):
+        """
+        Returns the warp type for the streaming matrix (c)
+        """
+        return wp.mat((self.velocity_set.d, self.velocity_set.q), dtype=self.compute_dtype)
+
+    @property
+    def _warp_array_type(self):
+        """
+        Returns the warp type for arrays
+        """
+        if self.velocity_set.d == 2:
+            return wp.array3d(dtype=self.store_dtype)
+        elif self.velocity_set.d == 3:
+            return wp.array4d(dtype=self.store_dtype)

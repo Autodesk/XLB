@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import jit, vmap, lax
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from jax.experimental.shard_map import shard_map
 from jax.sharding import PartitionSpec as P
@@ -20,7 +20,7 @@ class Stream(Operator):
         self.grid = grid
         super().__init__(velocity_set, compute_backend)
 
-    @Operator.register_backend(ComputeBackends.JAX)
+    @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, f):
         """

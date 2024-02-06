@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jax import jit
 from xlb.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.collision.collision import Collision
 from xlb.operator import Operator
 from functools import partial
@@ -22,14 +22,14 @@ class BGK(Collision):
             omega=omega, velocity_set=velocity_set, compute_backend=compute_backend
         )
 
-    @Operator.register_backend(ComputeBackends.JAX)
+    @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
     def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
         fneq = f - feq
         fout = f - self.omega * fneq
         return fout
 
-    @Operator.register_backend(ComputeBackends.WARP)
+    @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, *args, **kwargs):
         # Implementation for the Warp backend
         raise NotImplementedError
