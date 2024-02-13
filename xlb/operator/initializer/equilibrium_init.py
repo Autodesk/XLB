@@ -17,7 +17,7 @@ class EquilibriumInitializer(Operator):
         velocity_set = velocity_set or GlobalConfig.velocity_set
         compute_backend = compute_backend or GlobalConfig.compute_backend
         local_shape = (-1,) + (1,) * (len(grid.pop_shape) - 1)
-        
+
         self.init_values = np.zeros(
             grid.global_to_local_shape(grid.pop_shape)
         ) + velocity_set.w.reshape(local_shape)

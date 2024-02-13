@@ -9,6 +9,7 @@ from xlb.operator.equilibrium.equilibrium import Equilibrium
 from xlb.operator import Operator
 from xlb.global_config import GlobalConfig
 
+
 class QuadraticEquilibrium(Equilibrium):
     """
     Quadratic equilibrium of Boltzmann equation using hermite polynomials.
@@ -16,19 +17,6 @@ class QuadraticEquilibrium(Equilibrium):
 
     TODO: move this to a separate file and lower and higher order equilibriums
     """
-
-    def __init__(
-        self,
-        velocity_set: VelocitySet = None,
-        precision_policy=None,
-        compute_backend=None,
-    ):
-        super().__init__(velocity_set, precision_policy, compute_backend)
-
-        # Construct the warp implementation
-        if self.compute_backend == ComputeBackend.WARP:
-            self._warp_functional = self._construct_warp_functional()
-            self._warp_kernel = self._construct_warp_kernel()
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0), donate_argnums=(1, 2))
@@ -39,22 +27,26 @@ class QuadraticEquilibrium(Equilibrium):
         feq = rho * w * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
         return feq
 
-    def _construct_warp_functional(self):
+    def _construct_warp(self):
         # Make constants for warp
         _c = wp.constant(self._warp_stream_mat(self.velocity_set.c))
         _q = wp.constant(self.velocity_set.q)
         _w = wp.constant(self._warp_lattice_vec(self.velocity_set.w))
+        _d = wp.constant(self.velocity_set.d)
 
+        # Construct the equilibrium functional
         @wp.func
-        def equilibrium(rho: self.compute_dtype, u: self._warp_u_vec) -> self._warp_lattice_vec:
-            feq = self._warp_lattice_vec() # empty lattice vector
-            for i in range(_q):
+        def functional(
+            rho: self.compute_dtype, u: self._warp_u_vec
+        ) -> self._warp_lattice_vec:
+            feq = self._warp_lattice_vec()  # empty lattice vector
+            for l in range(_q):
                 # Compute cu
                 cu = self.compute_dtype(0.0)
-                for d in range(_q):
-                    if _c[i, d] == 1:
+                for d in range(_d):
+                    if _c[l, d] == 1:
                         cu += u[d]
-                    elif _c[i, d] == -1:
+                    elif _c[l, d] == -1:
                         cu -= u[d]
                 cu *= self.compute_dtype(3.0)
 
@@ -62,22 +54,16 @@ class QuadraticEquilibrium(Equilibrium):
                 usqr = 1.5 * wp.dot(u, u)
 
                 # Compute feq
-                feq[i] = rho * _w[i] * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
+                feq[l] = rho * _w[l] * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
 
             return feq
 
-        return equilibrium
-
-    def _construct_warp_kernel(self):
-        # Make constants for warp
-        _d = wp.constant(self.velocity_set.d)
-        _q = wp.constant(self.velocity_set.q)
-
+        # Construct the warp kernel
         @wp.kernel
-        def warp_kernel(
-                rho: self._warp_array_type,
-                u: self._warp_array_type,
-                f: self._warp_array_type
+        def kernel(
+            rho: self._warp_array_type,
+            u: self._warp_array_type,
+            f: self._warp_array_type,
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -87,25 +73,24 @@ class QuadraticEquilibrium(Equilibrium):
             for d in range(_d):
                 _u[i] = u[d, i, j, k]
             _rho = rho[0, i, j, k]
-            feq = self._warp_functional(_rho, _u)
+            feq = functional(_rho, _u)
 
             # Set the output
             for l in range(_q):
                 f[l, i, j, k] = feq[l]
 
-        return warp_kernel
-
+        return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, rho, u, f):
         # Launch the warp kernel
         wp.launch(
-            self._warp_kernel,
+            self._kernel,
             inputs=[
                 rho,
                 u,
                 f,
             ],
-            dim=rho.shape,
+            dim=rho.shape[1:],
         )
         return f

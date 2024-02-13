@@ -11,17 +11,18 @@ from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,
 )
 
+
 class DoNothing(BoundaryCondition):
     """
     A boundary condition that skips the streaming step.
     """
 
     def __init__(
-            self,
-            set_boundary,
-            velocity_set: VelocitySet,
-            compute_backend: ComputeBackend = ComputeBackend.JAX,
-        ):
+        self,
+        set_boundary,
+        velocity_set: VelocitySet,
+        compute_backend: ComputeBackend = ComputeBackend.JAX,
+    ):
         super().__init__(
             set_boundary=set_boundary,
             implementation_step=ImplementationStep.STREAMING,
@@ -31,21 +32,20 @@ class DoNothing(BoundaryCondition):
 
     @classmethod
     def from_indices(
-            cls,
-            indices,
-            velocity_set: VelocitySet,
-            compute_backend: ComputeBackend = ComputeBackend.JAX,
-        ):
+        cls,
+        indices,
+        velocity_set: VelocitySet,
+        compute_backend: ComputeBackend = ComputeBackend.JAX,
+    ):
         """
         Creates a boundary condition from a list of indices.
         """
-       
+
         return cls(
             set_boundary=cls._set_boundary_from_indices(indices),
             velocity_set=velocity_set,
             compute_backend=compute_backend,
         )
-
 
     @partial(jit, static_argnums=(0), donate_argnums=(1, 2, 3, 4))
     def apply_jax(self, f_pre, f_post, boundary, mask):

@@ -5,6 +5,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy, Precision
 from xlb.global_config import GlobalConfig
 
+
 class Operator:
     """
     Base class for all operators, collision, streaming, equilibrium, etc.
@@ -20,8 +21,13 @@ class Operator:
         self.precision_policy = precision_policy or GlobalConfig.precision_policy
         self.compute_backend = compute_backend or GlobalConfig.compute_backend
 
+        # Check if the compute backend is supported
         if self.compute_backend not in ComputeBackend:
             raise ValueError(f"Compute backend {compute_backend} is not supported")
+
+        # Construct the kernel based backend functions TODO: Maybe move this to the register or something
+        if self.compute_backend == ComputeBackend.WARP:
+            self._functional, self._kernel = self._construct_warp()
 
     @classmethod
     def register_backend(cls, backend_name):
@@ -130,14 +136,30 @@ class Operator:
         """
         Returns the warp type for the lattice
         """
-        return wp.vec(len(self.velocity_set.w), dtype=self.compute_dtype)
+        return wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+
+    @property
+    def _warp_int_lattice_vec(self):
+        """
+        Returns the warp type for the streaming matrix (c)
+        """
+        return wp.vec(self.velocity_set.q, dtype=wp.int32)
+
+    @property
+    def _warp_bool_lattice_vec(self):
+        """
+        Returns the warp type for the streaming matrix (c)
+        """
+        return wp.vec(self.velocity_set.q, dtype=wp.bool)
 
     @property
     def _warp_stream_mat(self):
         """
         Returns the warp type for the streaming matrix (c)
         """
-        return wp.mat((self.velocity_set.d, self.velocity_set.q), dtype=self.compute_dtype)
+        return wp.mat(
+            (self.velocity_set.d, self.velocity_set.q), dtype=self.compute_dtype
+        )
 
     @property
     def _warp_array_type(self):
@@ -148,3 +170,31 @@ class Operator:
             return wp.array3d(dtype=self.store_dtype)
         elif self.velocity_set.d == 3:
             return wp.array4d(dtype=self.store_dtype)
+
+    @property
+    def _warp_uint8_array_type(self):
+        """
+        Returns the warp type for arrays
+        """
+        if self.velocity_set.d == 2:
+            return wp.array3d(dtype=wp.bool)
+        elif self.velocity_set.d == 3:
+            return wp.array4d(dtype=wp.bool)
+
+    @property
+    def _warp_bool_array_type(self):
+        """
+        Returns the warp type for arrays
+        """
+        if self.velocity_set.d == 2:
+            return wp.array3d(dtype=wp.bool)
+        elif self.velocity_set.d == 3:
+            return wp.array4d(dtype=wp.bool)
+
+    def _construct_warp(self):
+        """
+        Construct the warp functional and kernel of the operator
+        TODO: Maybe a better way to do this?
+        Maybe add this to the backend decorator?
+        """
+        raise NotImplementedError("Children must implement this method")

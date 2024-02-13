@@ -12,17 +12,18 @@ from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,
 )
 
+
 class HalfwayBounceBack(BoundaryCondition):
     """
     Halfway Bounce-back boundary condition for a lattice Boltzmann method simulation.
     """
 
     def __init__(
-            self,
-            set_boundary,
-            velocity_set: VelocitySet,
-            compute_backend: ComputeBackend = ComputeBackend.JAX,
-        ):
+        self,
+        set_boundary,
+        velocity_set: VelocitySet,
+        compute_backend: ComputeBackend = ComputeBackend.JAX,
+    ):
         super().__init__(
             set_boundary=set_boundary,
             implementation_step=ImplementationStep.STREAMING,
@@ -32,15 +33,15 @@ class HalfwayBounceBack(BoundaryCondition):
 
     @classmethod
     def from_indices(
-            cls,
-            indices,
-            velocity_set: VelocitySet,
-            compute_backend: ComputeBackend = ComputeBackend.JAX,
-        ):
+        cls,
+        indices,
+        velocity_set: VelocitySet,
+        compute_backend: ComputeBackend = ComputeBackend.JAX,
+    ):
         """
         Creates a boundary condition from a list of indices.
         """
-       
+
         # Make stream operator to get edge points
         stream = Stream(velocity_set=velocity_set)
 
@@ -62,24 +63,42 @@ class HalfwayBounceBack(BoundaryCondition):
             """
 
             # Get local indices from the meshgrid and the indices
-            local_indices = ijk[tuple(s[:, 0] for s in jnp.split(indices, velocity_set.d, axis=1))]
+            local_indices = ijk[
+                tuple(s[:, 0] for s in jnp.split(indices, velocity_set.d, axis=1))
+            ]
 
             # Make mask then stream to get the edge points
             pre_stream_mask = jnp.zeros_like(mask)
-            pre_stream_mask = pre_stream_mask.at[tuple([s[:, 0] for s in jnp.split(local_indices, velocity_set.d, axis=1)])].set(True)
+            pre_stream_mask = pre_stream_mask.at[
+                tuple(
+                    [s[:, 0] for s in jnp.split(local_indices, velocity_set.d, axis=1)]
+                )
+            ].set(True)
             post_stream_mask = stream(pre_stream_mask)
 
             # Set false for points inside the boundary
-            post_stream_mask = post_stream_mask.at[post_stream_mask[..., 0] == True].set(False)
+            post_stream_mask = post_stream_mask.at[
+                post_stream_mask[..., 0] == True
+            ].set(False)
 
             # Get indices on edges
             edge_indices = jnp.argwhere(post_stream_mask)
 
             # Set the boundary id
-            boundary_id = boundary_id.at[tuple([s[:, 0] for s in jnp.split(local_indices, velocity_set.d, axis=1)])].set(id_number)
+            boundary_id = boundary_id.at[
+                tuple(
+                    [s[:, 0] for s in jnp.split(local_indices, velocity_set.d, axis=1)]
+                )
+            ].set(id_number)
 
             # Set the mask
-            mask = mask.at[edge_indices[:, 0], edge_indices[:, 1], edge_indices[:, 2], :].set(post_stream_mask[edge_indices[:, 0], edge_indices[:, 1], edge_indices[:, 2], :])
+            mask = mask.at[
+                edge_indices[:, 0], edge_indices[:, 1], edge_indices[:, 2], :
+            ].set(
+                post_stream_mask[
+                    edge_indices[:, 0], edge_indices[:, 1], edge_indices[:, 2], :
+                ]
+            )
 
             return boundary_id, mask
 
@@ -89,9 +108,10 @@ class HalfwayBounceBack(BoundaryCondition):
             compute_backend=compute_backend,
         )
 
-
     @partial(jit, static_argnums=(0), donate_argnums=(1, 2, 3, 4))
     def apply_jax(self, f_pre, f_post, boundary, mask):
         flip_mask = boundary[..., jnp.newaxis] & mask
-        flipped_f = lax.select(flip_mask, f_pre[..., self.velocity_set.opp_indices], f_post)
+        flipped_f = lax.select(
+            flip_mask, f_pre[..., self.velocity_set.opp_indices], f_post
+        )
         return flipped_f

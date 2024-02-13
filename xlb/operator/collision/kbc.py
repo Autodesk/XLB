@@ -23,10 +23,14 @@ class KBC(Collision):
         self,
         omega,
         velocity_set: VelocitySet = None,
+        precision_policy=None,
         compute_backend=None,
     ):
         super().__init__(
-            omega=omega, velocity_set=velocity_set, compute_backend=compute_backend
+            omega=omega,
+            velocity_set=velocity_set,
+            precision_policy=precision_policy,
+            compute_backend=compute_backend,
         )
         self.epsilon = 1e-32
         self.beta = self.omega * 0.5
@@ -53,7 +57,6 @@ class KBC(Collision):
             Density.
         """
         fneq = f - feq
-        print(self.velocity_set)
         if isinstance(self.velocity_set, D2Q9):
             shear = self.decompose_shear_d2q9_jax(fneq)
             delta_s = shear * rho / 4.0  # TODO: Check this

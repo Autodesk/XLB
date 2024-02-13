@@ -12,7 +12,7 @@ class Equilibrium(Operator):
     def __init__(
         self,
         velocity_set: VelocitySet = None,
-        presision_policy=None,
+        precision_policy=None,
         compute_backend=None,
     ):
-        super().__init__(velocity_set, presision_policy, compute_backend)
+        super().__init__(velocity_set, precision_policy, compute_backend)

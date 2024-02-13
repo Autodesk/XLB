@@ -22,6 +22,10 @@ if __name__ == "__main__":
             velocity_set=velocity_set,
             precision_policy=precision_policy,
             compute_backend=compute_backend)
+    macroscopic = xlb.operator.macroscopic.Macroscopic(
+            velocity_set=velocity_set,
+            precision_policy=precision_policy,
+            compute_backend=compute_backend)
 
     # Make warp arrays
     nr = 128
@@ -31,3 +35,4 @@ if __name__ == "__main__":
 
     # Run simulation
     equilibrium(rho, u, f)
+    macroscopic(f, rho, u)
