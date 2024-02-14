@@ -18,6 +18,12 @@ class BGK(Collision):
         fneq = f - feq
         fout = f - self.omega * fneq
         return fout
+    
+    @Operator.register_backend(ComputeBackends.PALLAS)
+    def pallas_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
+        fneq = f - feq
+        fout = f - self.omega * fneq
+        return fout
 
     def _construct_warp(self):
         # Make constants for warp

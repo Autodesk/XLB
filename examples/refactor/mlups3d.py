@@ -23,28 +23,31 @@ num_steps = args.num_steps
 
 xlb.init(
     precision_policy=Fp32Fp32,
-    compute_backend=ComputeBackends.JAX,
+    compute_backend=ComputeBackends.PALLAS,
     velocity_set=xlb.velocity_set.D3Q19,
 )
 
 grid_shape = (cube_edge, cube_edge, cube_edge)
 grid = Grid.create(grid_shape)
 
-f = grid.create_field(cardinality=19, callback=EquilibriumInitializer(grid))
+f = grid.create_field(cardinality=19)
+
+print("f shape", f.shape)
 
 solver = IncompressibleNavierStokes(grid, omega=1.0)
 
 # Ahead-of-Time Compilation to remove JIT overhead
+# if xlb.current_backend() == ComputeBackends.JAX or xlb.current_backend() == ComputeBackends.PALLAS:
+#     lowered = jax.jit(solver.step).lower(f, timestep=0)
+#     solver_step_compiled = lowered.compile()
 
-
-if xlb.current_backend() == ComputeBackends.JAX:
-    lowered = jax.jit(solver.step).lower(f, timestep=0)
-    solver_step_compiled = lowered.compile()
+# Ahead-of-Time Compilation to remove JIT overhead
+f = solver.step(f, timestep=0)
 
 start_time = time.time()
 
 for step in range(num_steps):
-    f = solver_step_compiled(f, timestep=step)
+    f = solver.step(f, timestep=step)
 
 end_time = time.time()
 total_lattice_updates = cube_edge**3 * num_steps

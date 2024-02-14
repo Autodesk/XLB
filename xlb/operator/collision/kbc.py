@@ -5,7 +5,6 @@ KBC collision operator for LBM.
 import jax.numpy as jnp
 from jax import jit
 from functools import partial
-from numba import cuda, float32
 from xlb.operator import Operator
 from xlb.velocity_set import VelocitySet, D2Q9, D3Q27
 from xlb.compute_backend import ComputeBackend
@@ -21,16 +20,19 @@ class KBC(Collision):
 
     def __init__(
         self,
-        omega,
         velocity_set: VelocitySet = None,
         precision_policy=None,
         compute_backend=None,
     ):
         super().__init__(
+<<<<<<< HEAD
             omega=omega,
             velocity_set=velocity_set,
             precision_policy=precision_policy,
             compute_backend=compute_backend,
+=======
+            velocity_set=velocity_set, compute_backend=compute_backend
+>>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
         )
         self.epsilon = 1e-32
         self.beta = self.omega * 0.5

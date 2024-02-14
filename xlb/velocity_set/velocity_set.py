@@ -5,8 +5,11 @@ import numpy as np
 from functools import partial
 import jax.numpy as jnp
 from jax import jit, vmap
+<<<<<<< HEAD
 
 import warp as wp
+=======
+>>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
 
 
 class VelocitySet(object):

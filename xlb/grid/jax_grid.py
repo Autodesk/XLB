@@ -30,8 +30,11 @@ class JaxGrid(Grid):
             if self.dim == 2
             else NamedSharding(self.global_mesh, P("cardinality", "x", "y", "z"))
         )
+        self.grid_shape_per_gpu = (
+            self.grid_shape[0] // self.nDevices,
+        ) + self.grid_shape[1:]
 
-    def global_to_local_shape(self, shape):
+    def field_global_to_local_shape(self, shape):
         if len(shape) < 2:
             raise ValueError("Shape must have at least two dimensions")
 
@@ -41,6 +44,7 @@ class JaxGrid(Grid):
 
     def create_field(self, cardinality, callback=None):
         if callback is None:
-            callback = ConstInitializer(self, cardinality, const_value=0.0)
+            f = ConstInitializer(self, cardinality=cardinality)(0.0)
+            return f
         shape = (cardinality,) + (self.grid_shape)
         return jax.make_array_from_callback(shape, self.sharding, callback)

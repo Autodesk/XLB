@@ -108,6 +108,13 @@ class Car(KBCSim):
         fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
 
+class VehicleRecipe(Recipe):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def set_boundary_conditions(self):
+
 if __name__ == '__main__':
     precision = 'f32/f32'
     lattice = LatticeD3Q27(precision)

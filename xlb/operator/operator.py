@@ -102,23 +102,26 @@ class Operator:
         """
         Returns the compute dtype
         """
-        if self.precision_policy.compute_precision == Precision.FP64:
-            return self.backend.float64
-        elif self.precision_policy.compute_precision == Precision.FP32:
-            return self.backend.float32
-        elif self.precision_policy.compute_precision == Precision.FP16:
-            return self.backend.float16
+        return self._precision_to_dtype(self.precision_policy.compute_precision)
 
     @property
     def store_dtype(self):
         """
         Returns the store dtype
         """
-        if self.precision_policy.store_precision == Precision.FP64:
+        return self._precision_to_dtype(self.precision_policy.store_precision)
+
+    @staticmethod
+    def _precision_to_dtype(precision):
+        """
+        Convert the precision to the corresponding dtype
+        TODO: Maybe move this
+        """
+        if precision == Precision.FP64:
             return self.backend.float64
-        elif self.precision_policy.store_precision == Precision.FP32:
+        elif precision == Precision.FP32:
             return self.backend.float32
-        elif self.precision_policy.store_precision == Precision.FP16:
+        elif precision == Precision.FP16:
             return self.backend.float16
 
     ### WARP specific types ###

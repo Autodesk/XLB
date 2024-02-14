@@ -46,6 +46,7 @@ class Macroscopic(Operator):
 
         return rho, u
 
+<<<<<<< HEAD
     def _construct_warp(self):
         # Make constants for warp
         _c = wp.constant(self._warp_stream_mat(self.velocity_set.c))
@@ -106,3 +107,31 @@ class Macroscopic(Operator):
             dim=rho.shape[1:],
         )
         return rho, u
+=======
+    @Operator.register_backend(ComputeBackends.PALLAS)
+    def pallas_implementation(self, f):
+        # TODO: Maybe this can be done with jnp.sum
+        rho = jnp.sum(f, axis=0, keepdims=True)
+        
+        u = jnp.zeros((3, *rho.shape[1:]))
+        u.at[0].set(
+            -f[9]
+            - f[10]
+            - f[11]
+            - f[12]
+            - f[13]
+            + f[14]
+            + f[15]
+            + f[16]
+            + f[17]
+            + f[18]
+        ) / rho
+        u.at[1].set(
+            -f[3] - f[4] - f[5] + f[6] + f[7] + f[8] - f[12] + f[13] - f[17] + f[18]
+        ) / rho
+        u.at[2].set(
+            -f[1] + f[2] - f[4] + f[5] - f[7] + f[8] - f[10] + f[11] - f[15] + f[16]
+        ) / rho
+
+        return rho, jnp.array(u)
+>>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
