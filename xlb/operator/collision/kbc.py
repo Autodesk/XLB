@@ -20,19 +20,16 @@ class KBC(Collision):
 
     def __init__(
         self,
+        omega: float,
         velocity_set: VelocitySet = None,
         precision_policy=None,
         compute_backend=None,
     ):
         super().__init__(
-<<<<<<< HEAD
             omega=omega,
             velocity_set=velocity_set,
             precision_policy=precision_policy,
             compute_backend=compute_backend,
-=======
-            velocity_set=velocity_set, compute_backend=compute_backend
->>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
         )
         self.epsilon = 1e-32
         self.beta = self.omega * 0.5
@@ -45,6 +42,7 @@ class KBC(Collision):
         f: jnp.ndarray,
         feq: jnp.ndarray,
         rho: jnp.ndarray,
+        u: jnp.ndarray,
     ):
         """
         KBC collision step for lattice.
@@ -57,6 +55,8 @@ class KBC(Collision):
             Equilibrium distribution function.
         rho : jax.numpy.array
             Density.
+        u : jax.numpy.array
+            Velocity.
         """
         fneq = f - feq
         if isinstance(self.velocity_set, D2Q9):

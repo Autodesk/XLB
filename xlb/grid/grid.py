@@ -5,34 +5,29 @@ from xlb.velocity_set import VelocitySet
 
 
 class Grid(ABC):
-    def __init__(self, grid_shape, velocity_set, compute_backend):
-        self.velocity_set: VelocitySet = velocity_set
-        self.compute_backend = compute_backend
-        self.grid_shape = grid_shape
-        self.pop_shape = (self.velocity_set.q, *grid_shape)
-        self.u_shape = (self.velocity_set.d, *grid_shape)
-        self.rho_shape = (1, *grid_shape)
+
+    def __init__(self, shape, velocity_set, precision_policy, grid_backend):
+        # Set parameters
+        self.shape = shape
+        self.velocity_set = velocity_set
+        self.precision_policy = precision_policy
+        self.grid_backend = grid_backend
         self.dim = self.velocity_set.d
 
-    @abstractmethod
-    def create_field(self, cardinality, callback=None):
-        pass
+        # Create field dict
+        self.fields = {}
 
-    @staticmethod
-    def create(grid_shape, velocity_set=None, compute_backend=None):
-        compute_backend = compute_backend or GlobalConfig.compute_backend
-        velocity_set = velocity_set or GlobalConfig.velocity_set
-
-<<<<<<< HEAD
-        if compute_backend == ComputeBackend.JAX:
-=======
-        if compute_backend == ComputeBackends.JAX or compute_backend == ComputeBackends.PALLAS:
->>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
-            from xlb.grid.jax_grid import JaxGrid  # Avoids circular import
-
-            return JaxGrid(grid_shape, velocity_set, compute_backend)
-        raise ValueError(f"Compute backend {compute_backend} is not supported")
+    def parallelize_operator(self, operator):
+        raise NotImplementedError("Parallelization not implemented, child class must implement")
 
     @abstractmethod
-    def field_global_to_local_shape(self, shape):
+    def create_field(
+        self, name: str, cardinality: int, precision: Precision, callback=None
+    ):
         pass
+
+    def get_field(self, name: str):
+        return self.fields[name]
+
+    def swap_fields(self, field1, field2):
+        self.fields[field1], self.fields[field2] = self.fields[field2], self.fields[field1]

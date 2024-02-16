@@ -140,6 +140,7 @@ def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
     grid.save(output_filename, binary=True)
     print(f"Saved {output_filename} in {time() - start:.6f} seconds.")
 
+
 def save_BCs_vtk(timestep, BCs, gridInfo, output_dir="."):
     """
     Save boundary conditions as VTK format to the specified directory.

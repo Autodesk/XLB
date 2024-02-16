@@ -14,13 +14,17 @@ class BGK(Collision):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
-    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
+    def jax_implementation(
+        self, f: jnp.ndarray, feq: jnp.ndarray, rho: jnp.ndarray, u: jnp.ndarray
+    ):
         fneq = f - feq
         fout = f - self.omega * fneq
         return fout
-    
+
     @Operator.register_backend(ComputeBackends.PALLAS)
-    def pallas_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
+    def pallas_implementation(
+        self, f: jnp.ndarray, feq: jnp.ndarray, rho: jnp.ndarray, u: jnp.ndarray
+    ):
         fneq = f - feq
         fout = f - self.omega * fneq
         return fout
@@ -35,7 +39,10 @@ class BGK(Collision):
         # Construct the functional
         @wp.func
         def functional(
-            f: self._warp_lattice_vec, feq: self._warp_lattice_vec
+            f: self._warp_lattice_vec,
+            feq: self._warp_lattice_vec,
+            rho: self.compute_dtype,
+            u: self._warp_u_vec,
         ) -> self._warp_lattice_vec:
             fneq = f - feq
             fout = f - self.omega * fneq
@@ -46,6 +53,8 @@ class BGK(Collision):
         def kernel(
             f: self._warp_array_type,
             feq: self._warp_array_type,
+            rho: self._warp_array_type,
+            u: self._warp_array_type,
             fout: self._warp_array_type,
         ):
             # Get the global index
@@ -66,13 +75,15 @@ class BGK(Collision):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq, fout):
+    def warp_implementation(self, f, feq, rho, u, fout):
         # Launch the warp kernel
         wp.launch(
             self._kernel,
             inputs=[
                 f,
                 feq,
+                rho,
+                u,
                 fout,
             ],
             dim=f.shape[1:],

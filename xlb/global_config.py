@@ -9,5 +9,6 @@ def init(velocity_set, compute_backend, precision_policy):
     GlobalConfig.compute_backend = compute_backend
     GlobalConfig.precision_policy = precision_policy
 
+
 def current_backend():
     return GlobalConfig.compute_backend

@@ -3,7 +3,7 @@
 from enum import Enum, auto
 
 
-class ComputeBackend(Enum):
+class GridBackend(Enum):
     JAX = auto()
-    PALLAS = auto()
     WARP = auto()
+    OOC = auto()

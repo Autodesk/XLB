@@ -2,10 +2,12 @@
 
 from enum import Enum, auto
 
+
 class Precision(Enum):
     FP64 = auto()
     FP32 = auto()
     FP16 = auto()
+
 
 class PrecisionPolicy(Enum):
     FP64FP64 = auto()

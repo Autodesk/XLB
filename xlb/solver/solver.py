@@ -13,25 +13,29 @@ class Solver(Operator):
 
     def __init__(
         self,
-        velocity_set=None,
-        compute_backend=None,
-        precision_policy=None,
+        shape: tuple[int, int, int],
         boundary_conditions=[],
+        velocity_set=None,
+        precision_policy=None,
+        compute_backend=None,
+        grid_backend=None,
+        grid_configs={},
     ):
+
         # Set parameters
+        self.shape = shape
         self.velocity_set = velocity_set or GlobalConfig.velocity_set
-        self.compute_backend = compute_backend or GlobalConfig.compute_backend
         self.precision_policy = precision_policy or GlobalConfig.precision_policy
+        self.compute_backend = compute_backend or GlobalConfig.compute_backend
+        self.grid_backend = grid_backend or GlobalConfig.grid_backend
         self.boundary_conditions = boundary_conditions
 
-        # Get collision and stream boundary conditions
-        self.collision_boundary_conditions = {}
-        self.stream_boundary_conditions = {}
-        for id_number, bc in enumerate(self.boundary_conditions):
-            bc_id = id_number + 1
-            if bc.implementation_step == ImplementationStep.COLLISION:
-                self.collision_boundary_conditions[bc_id] = bc
-            elif bc.implementation_step == ImplementationStep.STREAMING:
-                self.stream_boundary_conditions[bc_id] = bc
-            else:
-                raise ValueError("Boundary condition step not recognized")
+        # Make grid
+        if self.grid_backend is GridBackend.JAX:
+            self.grid = JaxGrid(**grid_configs)
+        elif self.grid_backend is GridBackend.WARP:
+            self.grid = WarpGrid(**grid_configs)
+        elif self.grid_backend is GridBackend.OOC
+            self.grid = OOCGrid(**grid_configs)
+        else:
+            raise ValueError(f"Grid backend {self.grid_backend} not recognized")

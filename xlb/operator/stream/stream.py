@@ -3,34 +3,25 @@
 from functools import partial
 import jax.numpy as jnp
 from jax import jit, vmap
+
 from xlb.velocity_set.velocity_set import VelocitySet
-<<<<<<< HEAD
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from jax.experimental.shard_map import shard_map
-from jax.sharding import PartitionSpec as P
 
-=======
-from xlb.compute_backends import ComputeBackends
-from xlb.operator import Operator
-from xlb.operator import ParallelOperator
->>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
 
 class Stream(Operator):
     """
     Base class for all streaming operators.
     """
 
-<<<<<<< HEAD
     @Operator.register_backend(ComputeBackend.JAX)
-=======
     def __init__(self, grid, velocity_set: VelocitySet = None, compute_backend=None):
         self.grid = grid
-        self.parallel_operator = ParallelOperator(grid, self._streaming_jax_p, velocity_set)
+        self.parallel_operator = ParallelOperator(
+            grid, self._streaming_jax_p, velocity_set
+        )
         super().__init__(velocity_set, compute_backend)
 
-    @Operator.register_backend(ComputeBackends.JAX)
->>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, f):
         """
@@ -41,10 +32,6 @@ class Stream(Operator):
         f: jax.numpy.ndarray
             The distribution function.
         """
-<<<<<<< HEAD
-=======
-        return self.parallel_operator(f)
->>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4
 
         def _streaming_jax_i(f, c):
             """
@@ -68,7 +55,6 @@ class Stream(Operator):
         return vmap(_streaming_jax_i, in_axes=(0, 0), out_axes=0)(
             f, jnp.array(self.velocity_set.c).T
         )
-<<<<<<< HEAD
 
     def _construct_warp(self):
         # Make constants for warp
@@ -140,5 +126,3 @@ class Stream(Operator):
             dim=f_0.shape[1:],
         )
         return f_1
-=======
->>>>>>> a48510cefc7af0cb965b67c86854a609b7d8d1d4

@@ -16,156 +16,133 @@ from xlb.operator import Operator
 from jax.experimental import pallas as pl
 
 
-class IncompressibleNavierStokes(Solver):
+class IncompressibleNavierStokesSolver(Solver):
+
+    _equilibrium_registry = {
+        "Quadratic": QuadraticEquilibrium,
+        "Linear": LinearEquilibrium,
+    }
+    _collision_registry = {
+        "BGK": BGK,
+        "KBC": KBC,
+    }
+
     def __init__(
         self,
-        grid,
-        omega,
-        velocity_set: VelocitySet = None,
-        compute_backend=None,
-        precision_policy=None,
+        omega: float,
+        shape: tuple[int, int, int],
+        collision="BGK",
+        equilibrium="Quadratic",
         boundary_conditions=[],
-        collision_kernel="BGK",
+        initializer=None,
+        forcing=None,
+        velocity_set: VelocitySet = None,
+        precision_policy=None,
+        compute_backend=None,
+        grid_backend=None,
+        grid_configs={},
     ):
-        self.grid = grid
-        self.omega = omega
-        self.collision_kernel = collision_kernel
         super().__init__(
+            shape=shape,
+            boundary_conditions=boundary_conditions,
             velocity_set=velocity_set,
             compute_backend=compute_backend,
             precision_policy=precision_policy,
-            boundary_conditions=boundary_conditions,
+            grid_backend=grid_backend,
+            grid_configs=grid_configs,
         )
-        self.create_operators()
 
-    # Operators
-    def create_operators(self):
-        self.macroscopic = Macroscopic(
-            velocity_set=self.velocity_set, compute_backend=self.compute_backend
-        )
-        self.equilibrium = QuadraticEquilibrium(
-            velocity_set=self.velocity_set, compute_backend=self.compute_backend
-        )
-        self.collision = (
-            KBC(
-                omega=self.omega,
-                velocity_set=self.velocity_set,
-                compute_backend=self.compute_backend,
-            )
-            if self.collision_kernel == "KBC"
-            else BGK(
-                omega=self.omega,
-                velocity_set=self.velocity_set,
-                compute_backend=self.compute_backend,
-            )
-        )
-        self.stream = Stream(
-            self.grid,
+        # Set omega
+        self.omega = omega
+
+        # Add fields to grid
+        self.grid.create_field("rho", 1, self.precision_policy.store_precision)
+        self.grid.create_field("u", 3, self.precision_policy.store_precision)
+        self.grid.create_field("f0", self.velocity_set.q, self.precision_policy.store_precision)
+        self.grid.create_field("f1", self.velocity_set.q, self.precision_policy.store_precision)
+
+        # Create operators
+        self.collision = self._get_collision(collision)(
+            omega=self.omega,
             velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
             compute_backend=self.compute_backend,
         )
+        self.stream = Stream(
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=self.compute_backend,
+        )
+        self.equilibrium = self._get_equilibrium(equilibrium)(
+            velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend
+        )
+        self.macroscopic = Macroscopic(
+            velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend
+        )
+        if initializer is None:
+            self.initializer = EquilibriumInitializer(
+                rho=1.0, u=(0.0, 0.0, 0.0),
+                velocity_set=self.velocity_set,
+                precision_policy=self.precision_policy,
+                compute_backend=self.compute_backend,
+            )
+        if forcing is not None:
+            raise NotImplementedError("Forcing not yet implemented")
 
-    @Operator.register_backend(ComputeBackend.JAX)
-    @partial(jit, static_argnums=(0,))
-    def step(self, f, timestep):
-        """
-        Perform a single step of the lattice boltzmann method
-        """
-
-        # Cast to compute precision
-        f = self.precision_policy.cast_to_compute(f)
-
-        # Compute the macroscopic variables
-        rho, u = self.macroscopic(f)
-
-        # Compute equilibrium
-        feq = self.equilibrium(rho, u)
-
-        # Apply collision
-        f_post_collision = self.collision(
-            f,
-            feq,
+        # Create stepper operator
+        self.stepper = IncompressibleNavierStokesStepper(
+            collision=self.collision,
+            stream=self.stream,
+            equilibrium=self.equilibrium,
+            macroscopic=self.macroscopic,
+            boundary_conditions=self.boundary_conditions,
+            forcing=None,
         )
 
-        # # Apply collision type boundary conditions
-        # for id_number, bc in self.collision_boundary_conditions.items():
-        #     f_post_collision = bc(
-        #         f_pre_collision,
-        #         f_post_collision,
-        #         boundary_id == id_number,
-        #         mask,
-        #     )
-        f_pre_streaming = f_post_collision
+        # Add parrallelization
+        self.stepper = self.grid.parallelize_operator(self.stepper)
 
-        ## Apply forcing
-        # if self.forcing_op is not None:
-        #    f = self.forcing_op.apply_jax(f, timestep)
+        # Initialize
+        self.initialize()
 
-        # Apply streaming
-        f_post_streaming = self.stream(f_pre_streaming)
+    def initialize(self):
+        self.initializer(f=self.grid.get_field("f0"))
 
-        # Apply boundary conditions
-        # for id_number, bc in self.stream_boundary_conditions.items():
-        #     f_post_streaming = bc(
-        #         f_pre_streaming,
-        #         f_post_streaming,
-        #         boundary_id == id_number,
-        #         mask,
-        #     )
+    def monitor(self):
+        pass
 
-        # Copy back to store precision
-        f = self.precision_policy.cast_to_store(f_post_streaming)
+    def run(self, steps: int, monitor_frequency: int = 1, compute_mlups: bool = False):
 
-        return f
+        # Run steps
+        for _ in range(steps):
+            # Run step
+            self.stepper(
+                f0=self.grid.get_field("f0"),
+                f1=self.grid.get_field("f1")
+            )
+            self.grid.swap_fields("f0", "f1")
 
-    @Operator.register_backend(ComputeBackends.PALLAS)
-    @partial(jit, static_argnums=(0,))
-    def step(self, fin, timestep):
-        from xlb.operator.parallel_operator import ParallelOperator
+    def checkpoint(self):
+        raise NotImplementedError("Checkpointing not yet implemented")
 
-        def _pallas_collide(fin, fout):
-            idx = pl.program_id(0)
+    def _get_collision(self, collision: str):
+        if isinstance(collision, str):
+            try:
+                return self._collision_registry[collision]
+            except KeyError:
+                raise ValueError(f"Collision {collision} not recognized for incompressible Navier-Stokes solver")
+        elif issubclass(collision, Operator):
+            return collision
+        else:
+            raise ValueError(f"Collision {collision} not recognized for incompressible Navier-Stokes solver")
 
-            f = (pl.load(fin, (slice(None), idx, slice(None), slice(None))))
-
-            print("f shape", f.shape)
-
-            rho, u = self.macroscopic(f)
-
-            print("rho shape", rho.shape)
-            print("u shape", u.shape)
-
-            feq = self.equilibrium(rho, u)
-
-            print("feq shape", feq.shape)
-
-            for i in range(self.velocity_set.q):
-                print("f shape", f[i].shape)
-                f_post_collision = self.collision(f[i], feq[i])
-                print("f_post_collision shape", f_post_collision.shape)
-                pl.store(fout, (i, idx, slice(None), slice(None)), f_post_collision)
-            # f_post_collision = self.collision(f, feq)
-            # pl.store(fout, (i, idx, slice(None), slice(None)), f_post_collision)
-
-        @jit
-        def _pallas_collide_kernel(fin):
-            return pl.pallas_call(
-                partial(_pallas_collide),
-                out_shape=jax.ShapeDtypeStruct(
-                    ((self.velocity_set.q,) + (self.grid.grid_shape_per_gpu)), fin.dtype
-                ),
-                # grid=1,
-                grid=(self.grid.grid_shape_per_gpu[0], 1, 1),
-            )(fin)
-
-        def _pallas_collide_and_stream(f):
-            f = _pallas_collide_kernel(f)
-            # f = self.stream._streaming_jax_p(f)
-
-            return f
-
-        fout = ParallelOperator(
-            self.grid, _pallas_collide_and_stream, self.velocity_set
-        )(fin)
-
-        return fout
+    def _get_equilibrium(self, equilibrium: str):
+        if isinstance(equilibrium, str):
+            try:
+                return self._equilibrium_registry[equilibrium]
+            except KeyError:
+                raise ValueError(f"Equilibrium {equilibrium} not recognized for incompressible Navier-Stokes solver")
+        elif issubclass(equilibrium, Operator):
+            return equilibrium
+        else:
+            raise ValueError(f"Equilibrium {equilibrium} not recognized for incompressible Navier-Stokes solver")

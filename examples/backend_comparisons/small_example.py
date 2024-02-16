@@ -79,6 +79,25 @@ def make_warp_kernel(
         u /= p
         return u, p
 
+    # bc function
+    @wp.func
+    def bc_0(pre_f: lattice_vec, post_f: lattice_vec):
+        return pre_f
+    @wp.func
+    def bc_1(pre_f: lattice_vec, post_f: lattice_vec):
+        return post_f
+    tup_bc = tuple([bc_0, bc_1])
+    single_bc = bc_0
+    for bc in tup_bc:
+        def make_bc(bc, prev_bc):
+            @wp.func
+            def _bc(pre_f: lattice_vec, post_f: lattice_vec):
+                pre_f = prev_bc(pre_f, post_f)
+                post_f = single_bc(pre_f, post_f)
+                return bc(pre_f, post_f)
+            return _bc
+        single_bc = make_bc(bc, single_bc)
+
     # Make function for getting stream index
     @wp.func
     def get_streamed_index(
@@ -135,6 +154,14 @@ def make_warp_kernel(
 
         # Compute equilibrium
         feq = compute_feq(p, uxu, exu)
+
+        # Set bc
+        if x == 0:
+            #tup_bc[0](feq, f)
+            bc_0(feq, f)
+        if x == width - 1:
+            bc_1(feq, f)
+            #tup_bc[1](feq, f)
 
         # Set value
         new_f = f - (f - feq) / tau

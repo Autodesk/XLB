@@ -8,11 +8,11 @@ import jax
 
 
 class JaxGrid(Grid):
-    def __init__(self, grid_shape, velocity_set, compute_backend):
-        super().__init__(grid_shape, velocity_set, compute_backend)
-        self.initialize_jax_backend()
+    def __init__(self, grid_shape, velocity_set, precision_policy, grid_backend):
+        super().__init__(grid_shape, velocity_set, precision_policy, grid_backend)
+        self._initialize_jax_backend()
 
-    def initialize_jax_backend(self):
+    def _initialize_jax_backend(self):
         self.nDevices = jax.device_count()
         self.backend = jax.default_backend()
         device_mesh = (
@@ -34,17 +34,17 @@ class JaxGrid(Grid):
             self.grid_shape[0] // self.nDevices,
         ) + self.grid_shape[1:]
 
-    def field_global_to_local_shape(self, shape):
-        if len(shape) < 2:
-            raise ValueError("Shape must have at least two dimensions")
+    def create_field(self, name: str, cardinality: int, callback=None):
+        # Get shape of the field
+        shape = (cardinality,) + (self.shape)
 
-        new_second_index = shape[1] // self.nDevices
-
-        return shape[:1] + (new_second_index,) + shape[2:]
-
-    def create_field(self, cardinality, callback=None):
+        # Create field
         if callback is None:
-            f = ConstInitializer(self, cardinality=cardinality)(0.0)
-            return f
-        shape = (cardinality,) + (self.grid_shape)
-        return jax.make_array_from_callback(shape, self.sharding, callback)
+            f = jax.numpy.full(shape, 0.0, dtype=self.precision_policy)
+            if self.sharding is not None:
+                f = jax.make_sharded_array(self.sharding, f)
+        else:
+            f = jax.make_array_from_callback(shape, self.sharding, callback)
+
+        # Add field to the field dictionary
+        self.fields[name] = f
