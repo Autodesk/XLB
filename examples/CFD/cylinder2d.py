@@ -16,6 +16,8 @@ In this example you'll be introduced to the following concepts:
 
 5. Visualization: The simulation outputs data in VTK format for visualization. It also generates images of the velocity field. The data can be visualized using software like ParaView.
 
+# To run type:
+nohup python3 examples/CFD/cylinder2d.py > logfile.log &
 """
 import os
 import json
@@ -79,7 +81,7 @@ class Cylinder(BGKSim):
         if timestep == 0:
             self.CL_max = 0.0
             self.CD_max = 0.0
-        if timestep > 0.8 * t_max:
+        if timestep > 0.5 * niter_max:
             # compute lift and drag over the cyliner
             cylinder = self.BCs[0]
             boundary_force = cylinder.momentum_exchange_force(kwargs['f_poststreaming'], kwargs['f_postcollision'])
@@ -95,7 +97,7 @@ class Cylinder(BGKSim):
             self.CL_max = max(self.CL_max, cl)
             self.CD_max = max(self.CD_max, cd)
             print('error= {:07.6f}, CL = {:07.6f}, CD = {:07.6f}'.format(err, cl, cd))
-            save_image(timestep, u)
+            # save_image(timestep, u)
 
 # Helper function to specify a parabolic poiseuille profile
 poiseuille_profile  = lambda x,x0,d,umax: np.maximum(0.,4.*umax/(d**2)*((x-x0)*d-(x-x0)**2))
@@ -132,9 +134,11 @@ if __name__ == '__main__':
             'print_info_rate': int(10000 / scale_factor),
             'return_fpost': True    # Need to retain fpost-collision for computation of lift and drag
         }
+        # characteristic time
+        tc = prescribed_vel/diam
+        niter_max = int(100//tc)
         sim = Cylinder(**kwargs)
-        t_max = int(1000000 / scale_factor)
-        sim.run(t_max)
+        sim.run(niter_max)
         CL_list.append(sim.CL_max)
         CD_list.append(sim.CD_max)
 

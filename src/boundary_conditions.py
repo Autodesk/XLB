@@ -1058,16 +1058,19 @@ class InterpolatedBounceBackBouzidi(BounceBackHalfway):
         -------
         None. The function updates the object's weights attribute in place.
         """
+        epsilon = 1e-12
+        nbd = len(self.indices[0])
         idx = np.array(self.indices).T
-        self.weights = np.full((idx.shape[0], self.lattice.q), 0.5)
+        bindex = np.arange(nbd)[:, None]
+        weights = np.full((idx.shape[0], self.lattice.q), 0.5)
         c = np.array(self.lattice.c)
         sdf_f = self.implicit_distances[self.indices]
         for q in range(1, self.lattice.q):
             solid_indices = idx + c[:, q]
             solid_indices_tuple = tuple(map(tuple, solid_indices.T))
             sdf_s = self.implicit_distances[solid_indices_tuple]
-            mask = self.iknownMask[:, q]
-            self.weights[mask, q] = sdf_f[mask] / (sdf_f[mask] - sdf_s[mask])
+            weights[:, q] = sdf_f / (sdf_f - sdf_s + epsilon)
+        self.weights = weights[bindex, self.iknown]
         return
 
     @partial(jit, static_argnums=(0,))
