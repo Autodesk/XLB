@@ -20,7 +20,6 @@ class IncompressibleNavierStokesSolver(Solver):
 
     _equilibrium_registry = {
         "Quadratic": QuadraticEquilibrium,
-        "Linear": LinearEquilibrium,
     }
     _collision_registry = {
         "BGK": BGK,

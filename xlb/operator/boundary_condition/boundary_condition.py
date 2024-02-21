@@ -8,10 +8,14 @@ from functools import partial
 import numpy as np
 from enum import Enum
 
-from xlb.operator.operator import Operator
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
+from xlb.operator.operator import Operator
+from xlb.operator.boundary_condition.boundary_masker import (
+    BoundaryMasker,
+    IndicesBoundaryMasker,
+)
 
 
 # Enum for implementation step
@@ -55,7 +59,7 @@ class BoundaryCondition(Operator):
         Create a boundary condition from indices and boundary id.
         """
         # Create boundary mask
-        boundary_mask = IndicesBoundaryMask(
+        boundary_mask = IndicesBoundaryMasker(
             indices, stream_indices, velocity_set, precision_policy, compute_backend
         )
 

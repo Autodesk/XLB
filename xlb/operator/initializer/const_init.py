@@ -32,5 +32,5 @@ class ConstInitializer(Operator):
 
     @Operator.register_backend(ComputeBackends.PALLAS)
     @partial(jax.jit, static_argnums=(0, 2))
-    def jax_implementation(self, const_value, sharding=None):
+    def pallas_implementation(self, const_value, sharding=None):
         return self.jax_implementation(const_value, sharding)

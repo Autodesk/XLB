@@ -1,14 +1,11 @@
 # Base class for all equilibriums
 
-from functools import partial
-import numpy as np
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
-from typing import Tuple
 
-from xlb.global_config import GlobalConfig
 from xlb.velocity_set.velocity_set import VelocitySet
+from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 

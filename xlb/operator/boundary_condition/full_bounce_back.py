@@ -9,8 +9,10 @@ from functools import partial
 import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
+from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.boundary_condition.boundary_condition import (
+from xlb.operator import Operator
+from xlb.operator.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
@@ -48,13 +50,12 @@ class FullBounceBack(BoundaryCondition):
         Create a full bounce-back boundary condition from indices.
         """
         # Create boundary mask
-        boundary_mask = IndicesBoundaryMask(
+        boundary_mask = IndicesBoundaryMasker(
             indices, False, velocity_set, precision_policy, compute_backend
         )
 
         # Create boundary condition
         return cls(
-            ImplementationStep.COLLISION,
             boundary_mask,
             velocity_set,
             precision_policy,
@@ -64,7 +65,8 @@ class FullBounceBack(BoundaryCondition):
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0), donate_argnums=(1, 2, 3, 4))
     def apply_jax(self, f_pre, f_post, boundary, mask):
-        flip = jnp.repeat(boundary, self.velocity_set.q, axis=-1)
+        flip = jnp.repeat(boundary, self.velocity_set.q, axis=0)
+        print(flip.shape)
         flipped_f = lax.select(flip, f_pre[self.velocity_set.opp_indices, ...], f_post)
         return flipped_f
 

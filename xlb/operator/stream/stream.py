@@ -15,13 +15,6 @@ class Stream(Operator):
     """
 
     @Operator.register_backend(ComputeBackend.JAX)
-    def __init__(self, grid, velocity_set: VelocitySet = None, compute_backend=None):
-        self.grid = grid
-        self.parallel_operator = ParallelOperator(
-            grid, self._streaming_jax_p, velocity_set
-        )
-        super().__init__(velocity_set, compute_backend)
-
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, f):
         """

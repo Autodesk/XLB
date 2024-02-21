@@ -111,11 +111,10 @@ class Operator:
         """
         return self._precision_to_dtype(self.precision_policy.store_precision)
 
-    @staticmethod
-    def _precision_to_dtype(precision):
+    def _precision_to_dtype(self, precision):
         """
         Convert the precision to the corresponding dtype
-        TODO: Maybe move this
+        TODO: Maybe move this to precision policy?
         """
         if precision == Precision.FP64:
             return self.backend.float64

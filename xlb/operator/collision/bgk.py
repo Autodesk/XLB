@@ -21,7 +21,7 @@ class BGK(Collision):
         fout = f - self.omega * fneq
         return fout
 
-    @Operator.register_backend(ComputeBackends.PALLAS)
+    @Operator.register_backend(ComputeBackend.PALLAS)
     def pallas_implementation(
         self, f: jnp.ndarray, feq: jnp.ndarray, rho: jnp.ndarray, u: jnp.ndarray
     ):

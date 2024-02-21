@@ -35,7 +35,7 @@ class Solver(Operator):
             self.grid = JaxGrid(**grid_configs)
         elif self.grid_backend is GridBackend.WARP:
             self.grid = WarpGrid(**grid_configs)
-        elif self.grid_backend is GridBackend.OOC
+        elif self.grid_backend is GridBackend.OOC:
             self.grid = OOCGrid(**grid_configs)
         else:
             raise ValueError(f"Grid backend {self.grid_backend} not recognized")

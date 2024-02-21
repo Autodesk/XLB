@@ -46,7 +46,7 @@ class Macroscopic(Operator):
 
         return rho, u
 
-    @Operator.register_backend(ComputeBackends.PALLAS)
+    @Operator.register_backend(ComputeBackend.PALLAS)
     def pallas_implementation(self, f):
         # TODO: Maybe this can be done with jnp.sum
         rho = jnp.sum(f, axis=0, keepdims=True)

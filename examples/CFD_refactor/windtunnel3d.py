@@ -7,6 +7,10 @@ import jax.numpy as jnp
 from jax import config
 
 from xlb.solver import IncompressibleNavierStokesSolver
+from xlb.velocity_set import D3Q27, D3Q19
+from xlb.compute_backend import ComputeBackend
+from xlb.precision_policy import PrecisionPolicy
+from xlb.grid_backend import GridBackend
 from xlb.operator.boundary_condition import BounceBack, BounceBackHalfway, DoNothing, EquilibriumBC
 
 
@@ -26,25 +30,49 @@ class WindTunnel(IncompressibleNavierStokesSolver):
         dx: float = 0.01, # m
         viscosity: float = 1.42e-5, # air at 20 degrees Celsius
         density: float = 1.2754, # kg/m^3
-    ):
-
-
-
-        omega: float,
-        shape: tuple[int, int, int],
         collision="BGK",
         equilibrium="Quadratic",
-        boundary_conditions=[],
-        initializer=None,
-        forcing=None,
-        velocity_set: VelocitySet = None,
-        precision_policy=None,
-        compute_backend=None,
-        grid_backend=None,
+        velocity_set=D3Q27(),
+        precision_policy=PrecisionPolicy.FP32FP32,
+        compute_backend=ComputeBackend.JAX,
+        grid_backend=GridBackend.JAX,
         grid_configs={},
     ):
- 
-        super().__init__(**kwargs)
+
+        # Set parameters
+        self.inlet_velocity = inlet_velocity
+        self.lower_bounds = lower_bounds
+        self.upper_bounds = upper_bounds
+        self.dx = dx
+        self.viscosity = viscosity
+        self.density = density
+
+        # Get fluid properties needed for the simulation
+        self.velocity_conversion = 0.05 / inlet_velocity
+        self.dt = self.dx * self.velocity_conversion
+        self.lbm_viscosity = self.viscosity * self.dt / (self.dx ** 2)
+        self.tau = 0.5 + self.lbm_viscosity
+        self.lbm_density = 1.0
+        self.mass_conversion = self.dx ** 3 * (self.density / self.lbm_density)
+
+        # Make boundary conditions
+
+
+        # Initialize the IncompressibleNavierStokesSolver
+        super().__init__(
+            omega=self.tau,
+            shape=shape,
+            collision=collision,
+            equilibrium=equilibrium,
+            boundary_conditions=boundary_conditions,
+            initializer=initializer,
+            forcing=forcing,
+            velocity_set=velocity_set,
+            precision_policy=precision_policy,
+            compute_backend=compute_backend,
+            grid_backend=grid_backend,
+            grid_configs=grid_configs,
+        )
 
     def voxelize_stl(self, stl_filename, length_lbm_unit):
         mesh = trimesh.load_mesh(stl_filename, process=False)
