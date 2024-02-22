@@ -34,6 +34,47 @@ class JaxGrid(Grid):
             self.grid_shape[0] // self.nDevices,
         ) + self.grid_shape[1:]
 
+
+    def parallelize_operator(self, operator: Operator):
+        # TODO: fix this
+
+        # Make parallel function
+        def _parallel_operator(f):
+            rightPerm = [
+                (i, (i + 1) % self.grid.nDevices) for i in range(self.grid.nDevices)
+            ]
+            leftPerm = [
+                ((i + 1) % self.grid.nDevices, i) for i in range(self.grid.nDevices)
+            ]
+            f = self.func(f)
+            left_comm, right_comm = (
+                f[self.velocity_set.right_indices, :1, ...],
+                f[self.velocity_set.left_indices, -1:, ...],
+            )
+            left_comm, right_comm = (
+                lax.ppermute(left_comm, perm=rightPerm, axis_name="x"),
+                lax.ppermute(right_comm, perm=leftPerm, axis_name="x"),
+            )
+            f = f.at[self.velocity_set.right_indices, :1, ...].set(left_comm)
+            f = f.at[self.velocity_set.left_indices, -1:, ...].set(right_comm)
+    
+            return f
+
+        in_specs = P(*((None, "x") + (self.grid.dim - 1) * (None,)))
+        out_specs = in_specs
+
+        f = shard_map(
+            self._parallel_func,
+            mesh=self.grid.global_mesh,
+            in_specs=in_specs,
+            out_specs=out_specs,
+            check_rep=False,
+        )(f)
+        return f
+
+
+
+
     def create_field(self, name: str, cardinality: int, callback=None):
         # Get shape of the field
         shape = (cardinality,) + (self.shape)
