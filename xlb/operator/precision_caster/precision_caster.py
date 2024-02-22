@@ -16,7 +16,7 @@ from xlb.compute_backend import ComputeBackend
 
 class PrecisionCaster(Operator):
     """
-    Class that handles the construction of lattice boltzmann precision casting operator
+    Class that handles the construction of lattice boltzmann precision casting operator.
     """
 
     def __init__(
@@ -84,15 +84,14 @@ class PrecisionCaster(Operator):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq, fout):
+    def warp_implementation(self, from_f, to_f):
         # Launch the warp kernel
         wp.launch(
             self._kernel,
             inputs=[
-                f,
-                feq,
-                fout,
+                from_f,
+                to_f,
             ],
-            dim=f.shape[1:],
+            dim=from_f.shape[1:],
         )
-        return fout
+        return to_f

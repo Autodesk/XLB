@@ -26,5 +26,5 @@ class Collision(Operator):
         precision_policy=None,
         compute_backend=None,
     ):
-        super().__init__(velocity_set, precision_policy, compute_backend)
         self.omega = omega
+        super().__init__(velocity_set, precision_policy, compute_backend)

@@ -3,6 +3,7 @@
 from functools import partial
 import jax.numpy as jnp
 from jax import jit, vmap
+import warp as wp
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
@@ -51,7 +52,7 @@ class Stream(Operator):
 
     def _construct_warp(self):
         # Make constants for warp
-        _c = wp.constant(self._warp_stream_mat(self.velocity_set.c))
+        _c = wp.constant(self._warp_int_stream_mat(self.velocity_set.c))
         _q = wp.constant(self.velocity_set.q)
         _d = wp.constant(self.velocity_set.d)
 

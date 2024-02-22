@@ -1,5 +1,7 @@
 import jax.numpy as jnp
 from jax import jit
+import warp as wp
+
 from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.collision.collision import Collision
@@ -18,7 +20,7 @@ class BGK(Collision):
         self, f: jnp.ndarray, feq: jnp.ndarray, rho: jnp.ndarray, u: jnp.ndarray
     ):
         fneq = f - feq
-        fout = f - self.omega * fneq
+        fout = f - self.compute_dtype(self.omega) * fneq
         return fout
 
     @Operator.register_backend(ComputeBackend.PALLAS)
@@ -35,6 +37,7 @@ class BGK(Collision):
         _q = wp.constant(self.velocity_set.q)
         _w = wp.constant(self._warp_lattice_vec(self.velocity_set.w))
         _d = wp.constant(self.velocity_set.d)
+        _omega = wp.constant(self.compute_dtype(self.omega))
 
         # Construct the functional
         @wp.func
@@ -45,7 +48,7 @@ class BGK(Collision):
             u: self._warp_u_vec,
         ) -> self._warp_lattice_vec:
             fneq = f - feq
-            fout = f - self.omega * fneq
+            fout = f - _omega * fneq
             return fout
 
         # Construct the warp kernel
@@ -66,7 +69,11 @@ class BGK(Collision):
             for l in range(_q):
                 _f[l] = f[l, i, j, k]
                 _feq[l] = feq[l, i, j, k]
-            _fout = functional(_f, _feq)
+            _u = self._warp_u_vec()
+            for l in range(_d):
+                _u[l] = u[l, i, j, k]
+            _rho = rho[0, i, j, k]
+            _fout = functional(_f, _feq, _rho, _u)
 
             # Write the result
             for l in range(_q):

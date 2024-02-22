@@ -46,6 +46,32 @@ class BoundaryCondition(Operator):
         self.boundary_masker = boundary_masker
 
     @classmethod
+    def from_function(
+        cls,
+        implementation_step: ImplementationStep,
+        boundary_function,
+        velocity_set,
+        precision_policy,
+        compute_backend,
+    ):
+        """
+        Create a boundary condition from a function.
+        """
+        # Create boundary mask
+        boundary_mask = BoundaryMasker.from_function(
+            boundary_function, velocity_set, precision_policy, compute_backend
+        )
+
+        # Create boundary condition
+        return cls(
+            implementation_step,
+            boundary_mask,
+            velocity_set,
+            precision_policy,
+            compute_backend,
+        )
+
+    @classmethod
     def from_indices(
         cls,
         implementation_step: ImplementationStep,

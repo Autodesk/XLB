@@ -7,6 +7,7 @@ from jax import jit, device_count
 import jax.lax as lax
 from functools import partial
 import numpy as np
+import warp as wp
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -32,7 +33,7 @@ class FullBounceBack(BoundaryCondition):
         boundary_masker: BoundaryMasker,
         velocity_set: VelocitySet,
         precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend.JAX,
+        compute_backend: ComputeBackend,
     ):
         super().__init__(
             ImplementationStep.COLLISION,
@@ -66,13 +67,12 @@ class FullBounceBack(BoundaryCondition):
     @partial(jit, static_argnums=(0), donate_argnums=(1, 2, 3, 4))
     def apply_jax(self, f_pre, f_post, boundary, mask):
         flip = jnp.repeat(boundary, self.velocity_set.q, axis=0)
-        print(flip.shape)
         flipped_f = lax.select(flip, f_pre[self.velocity_set.opp_indices, ...], f_post)
         return flipped_f
 
     def _construct_warp(self):
         # Make constants for warp
-        _opp_indices = wp.constant(self.velocity_set.opp_indices)
+        _opp_indices = wp.constant(self._warp_int_lattice_vec(self.velocity_set.opp_indices))
         _q = wp.constant(self.velocity_set.q)
         _d = wp.constant(self.velocity_set.d)
 
@@ -107,7 +107,12 @@ class FullBounceBack(BoundaryCondition):
             for l in range(_q):
                 _f_pre[l] = f_pre[l, i, j, k]
                 _f_post[l] = f_post[l, i, j, k]
-                _mask[l] = mask[l, i, j, k]
+
+                # TODO fix vec bool
+                if mask[l, i, j, k]:
+                    _mask[l] = wp.uint8(1)
+                else:
+                    _mask[l] = wp.uint8(0)
 
             # Check if the boundary is active
             if boundary[i, j, k]:

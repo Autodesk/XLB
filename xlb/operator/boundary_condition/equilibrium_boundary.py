@@ -5,18 +5,24 @@ from functools import partial
 import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
+from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.stream.stream import Stream
+from xlb.operator import Operator
 from xlb.operator.equilibrium.equilibrium import Equilibrium
 from xlb.operator.boundary_condition.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
+from xlb.operator.boundary_condition.boundary_masker import (
+    BoundaryMasker,
+    IndicesBoundaryMasker,
+)
+
 
 
 class EquilibriumBoundary(BoundaryCondition):
     """
-    A boundary condition that skips the streaming step.
+    Equilibrium boundary condition for a lattice Boltzmann method simulation.
     """
 
     def __init__(
@@ -25,11 +31,13 @@ class EquilibriumBoundary(BoundaryCondition):
         rho: float,
         u: tuple[float, float],
         equilibrium: Equilibrium,
+        boundary_masker: BoundaryMasker,
         velocity_set: VelocitySet,
-        compute_backend: ComputeBackend = ComputeBackend.JAX,
+        precision_policy: PrecisionPolicy,
+        compute_backend: ComputeBackend,
     ):
         super().__init__(
-            set_boundary=set_boundary,
+            ImplementationStep.COLLISION,
             implementation_step=ImplementationStep.STREAMING,
             velocity_set=velocity_set,
             compute_backend=compute_backend,
@@ -39,12 +47,13 @@ class EquilibriumBoundary(BoundaryCondition):
     @classmethod
     def from_indices(
         cls,
-        indices,
+        indices: np.ndarray,
         rho: float,
         u: tuple[float, float],
         equilibrium: Equilibrium,
         velocity_set: VelocitySet,
-        compute_backend: ComputeBackend = ComputeBackend.JAX,
+        precision_policy: PrecisionPolicy,
+        compute_backend: ComputeBackend,
     ):
         """
         Creates a boundary condition from a list of indices.

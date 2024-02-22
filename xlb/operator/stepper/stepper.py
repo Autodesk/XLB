@@ -1,10 +1,13 @@
 # Base class for all stepper operators
 
+from functools import partial
 import jax.numpy as jnp
+from jax import jit
+import warp as wp
 
-from xlb.velocity_set.velocity_set import VelocitySet
+from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.operator import Operator
+from xlb.operator import Operator
 from xlb.operator.boundary_condition import ImplementationStep
 from xlb.operator.precision_caster import PrecisionCaster
 
@@ -31,6 +34,15 @@ class Stepper(Operator):
         self.boundary_conditions = boundary_conditions
         self.forcing = forcing
 
+        # Get all operators for checking
+        self.operators = [
+            collision,
+            stream,
+            equilibrium,
+            macroscopic,
+            *boundary_conditions,
+        ]
+
         # Get velocity set, precision policy, and compute backend
         velocity_sets = set([op.velocity_set for op in self.operators])
         assert len(velocity_sets) == 1, "All velocity sets must be the same"
@@ -55,8 +67,7 @@ class Stepper(Operator):
                 raise ValueError("Boundary condition step not recognized")
 
         # Make operators for converting the precisions
-        self.cast_to_compute = PrecisionCaster(
-
+        #self.cast_to_compute = PrecisionCaster(
 
         # Make operator for setting boundary condition arrays
         self.set_boundary = SetBoundary(
@@ -66,16 +77,7 @@ class Stepper(Operator):
             precision_policy,
             compute_backend,
         )
-
-        # Get all operators for checking
-        self.operators = [
-            collision,
-            stream,
-            equilibrium,
-            macroscopic,
-            *boundary_conditions,
-            self.set_boundary,
-        ]
+        self.operators.append(self.set_boundary)
 
         # Initialize operator
         super().__init__(velocity_set, precision_policy, compute_backend)

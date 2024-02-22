@@ -47,10 +47,10 @@ class IndicesBoundaryMasker(Operator):
         return tuple([indices[:, i] for i in range(indices.shape[1])])
 
     @Operator.register_backend(ComputeBackend.JAX)
-    @partial(jit, static_argnums=(0), inline=True)
+    #@partial(jit, static_argnums=(0), inline=True) TODO: Fix this
     def jax_implementation(self, start_index, boundary_id, mask, id_number):
         # Get local indices from the meshgrid and the indices
-        local_indices = self.indices - start_index
+        local_indices = self.indices - np.array(start_index)[np.newaxis, :]
 
         # Remove any indices that are out of bounds
         local_indices = local_indices[
@@ -96,5 +96,23 @@ class IndicesBoundaryMasker(Operator):
         else:
             # Set the mask
             mask = mask.at[self._indices_to_tuple(local_indices)].set(True)
+
+        return boundary_id, mask
+
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(self, start_index, boundary_id, mask, id_number):
+        # Reuse the jax implementation, TODO: implement a warp version
+        # Convert to jax
+        boundary_id = wp.jax.to_jax(boundary_id)
+        mask = wp.jax.to_jax(mask)
+
+        # Call jax implementation
+        boundary_id, mask = self.jax_implementation(
+            start_index, boundary_id, mask, id_number
+        )
+
+        # Convert back to warp
+        boundary_id = wp.jax.to_warp(boundary_id)
+        mask = wp.jax.to_warp(mask)
 
         return boundary_id, mask

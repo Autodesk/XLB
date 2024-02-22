@@ -92,7 +92,7 @@ class Operator:
         This should be used with caution as all backends may not have the same API.
         """
         if self.compute_backend == ComputeBackend.JAX:
-            import jax as backend
+            import jax.numpy as backend
         elif self.compute_backend == ComputeBackend.WARP:
             import warp as backend
         return backend
@@ -152,7 +152,8 @@ class Operator:
         """
         Returns the warp type for the streaming matrix (c)
         """
-        return wp.vec(self.velocity_set.q, dtype=wp.bool)
+        #return wp.vec(self.velocity_set.q, dtype=wp.bool)
+        return wp.vec(self.velocity_set.q, dtype=wp.uint8) # TODO bool breaks
 
     @property
     def _warp_stream_mat(self):
@@ -161,6 +162,15 @@ class Operator:
         """
         return wp.mat(
             (self.velocity_set.d, self.velocity_set.q), dtype=self.compute_dtype
+        )
+
+    @property
+    def _warp_int_stream_mat(self):
+        """
+        Returns the warp type for the streaming matrix (c)
+        """
+        return wp.mat(
+            (self.velocity_set.d, self.velocity_set.q), dtype=wp.int32
         )
 
     @property
@@ -199,4 +209,4 @@ class Operator:
         TODO: Maybe a better way to do this?
         Maybe add this to the backend decorator?
         """
-        raise NotImplementedError("Children must implement this method")
+        return None, None

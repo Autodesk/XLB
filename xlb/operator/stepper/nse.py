@@ -1,14 +1,16 @@
 # Base class for all stepper operators
 
+from logging import warning
 from functools import partial
 from jax import jit
-from logging import warning
+import warp as wp
 
-from xlb.velocity_set.velocity_set import VelocitySet
+from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.stepper.stepper import Stepper
+from xlb.operator import Operator
+from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition import ImplementationStep
-from xlb.operator.collision.bgk import BGK
+from xlb.operator.collision import BGK
 
 
 class IncompressibleNavierStokesStepper(Stepper):
@@ -71,7 +73,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         return f
 
-    @Operator.register_backend(ComputeBackends.PALLAS)
+    @Operator.register_backend(ComputeBackend.PALLAS)
     @partial(jit, static_argnums=(0,))
     def apply_pallas(self, fin, boundary_id, mask, timestep):
         # Raise warning that the boundary conditions are not implemented
@@ -141,7 +143,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_0: self._warp_array_type,
             f_1: self._warp_array_type,
             boundary_id: self._warp_uint8_array_type,
-            mask: self._warp_array_bool_array_type,
+            mask: self._warp_bool_array_type,
             timestep: wp.int32,
         ):
             # Get the global index
@@ -201,7 +203,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 # Set the output
                 f_1[streamed_l, streamed_i, streamed_j, streamed_k] = f_pre_streaming[l]
 
-        return functional, kernel
+        return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, boundary_id, mask, timestep):
