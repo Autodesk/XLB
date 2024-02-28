@@ -1,17 +1,3 @@
-"""
-This script performs a Lattice Boltzmann Method (LBM) simulation of fluid flow over a car model. Here are the main concepts and steps in the simulation:
-
-Here are the main concepts introduced simulation:
-
-1. Lattice: Given the usually high Reynolds number required for these simulations, a D3Q27 lattice is used, which is a three-dimensional lattice model with 27 discrete velocity directions.
-
-2. Loading geometry and voxelization: The geometry of the car is loaded from a STL file. 
-This is a file format commonly used for 3D models. The model is then voxelized to a binary matrix which represents the presence or absence of the object in the lattice. We use the DrivAer model, which is a common car model used for aerodynamic simulations.
-
-3. Output: After each specified number of iterations, the script outputs the state of the simulation. This includes the error (difference between consecutive velocity fields), lift and drag coefficients, and visualization files in the VTK format.
-"""
-
-
 import os
 import jax
 import trimesh
@@ -20,21 +6,73 @@ import numpy as np
 import jax.numpy as jnp
 from jax import config
 
-from src.utils import *
-from src.models import BGKSim, KBCSim
-from src.lattice import LatticeD3Q19, LatticeD3Q27
-from src.boundary_conditions import *
+from xlb.solver import IncompressibleNavierStokesSolver
+from xlb.velocity_set import D3Q27, D3Q19
+from xlb.compute_backend import ComputeBackend
+from xlb.precision_policy import PrecisionPolicy
+from xlb.grid_backend import GridBackend
+from xlb.operator.boundary_condition import BounceBack, BounceBackHalfway, DoNothing, EquilibriumBC
 
-# Use 8 CPU devices
-# os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=8'
 
-# disable JIt compilation
+class WindTunnel(IncompressibleNavierStokesSolver):
+    """
+    This class extends the IncompressibleNavierStokesSolver class to define the boundary conditions for the wind tunnel simulation.
+    Units are in meters, seconds, and kilograms.
+    """
 
-jax.config.update('jax_array', True)
+    def __init__(
+        self, 
+        stl_filename: str
+        stl_center: tuple[float, float, float] = (0.0, 0.0, 0.0), # m
+        inlet_velocity: float = 27.78 # m/s
+        lower_bounds: tuple[float, float, float] = (0.0, 0.0, 0.0), # m
+        upper_bounds: tuple[float, float, float] = (1.0, 0.5, 0.5), # m
+        dx: float = 0.01, # m
+        viscosity: float = 1.42e-5, # air at 20 degrees Celsius
+        density: float = 1.2754, # kg/m^3
+        collision="BGK",
+        equilibrium="Quadratic",
+        velocity_set=D3Q27(),
+        precision_policy=PrecisionPolicy.FP32FP32,
+        compute_backend=ComputeBackend.JAX,
+        grid_backend=GridBackend.JAX,
+        grid_configs={},
+    ):
 
-class Car(KBCSim):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        # Set parameters
+        self.inlet_velocity = inlet_velocity
+        self.lower_bounds = lower_bounds
+        self.upper_bounds = upper_bounds
+        self.dx = dx
+        self.viscosity = viscosity
+        self.density = density
+
+        # Get fluid properties needed for the simulation
+        self.velocity_conversion = 0.05 / inlet_velocity
+        self.dt = self.dx * self.velocity_conversion
+        self.lbm_viscosity = self.viscosity * self.dt / (self.dx ** 2)
+        self.tau = 0.5 + self.lbm_viscosity
+        self.lbm_density = 1.0
+        self.mass_conversion = self.dx ** 3 * (self.density / self.lbm_density)
+
+        # Make boundary conditions
+
+
+        # Initialize the IncompressibleNavierStokesSolver
+        super().__init__(
+            omega=self.tau,
+            shape=shape,
+            collision=collision,
+            equilibrium=equilibrium,
+            boundary_conditions=boundary_conditions,
+            initializer=initializer,
+            forcing=forcing,
+            velocity_set=velocity_set,
+            precision_policy=precision_policy,
+            compute_backend=compute_backend,
+            grid_backend=grid_backend,
+            grid_configs=grid_configs,
+        )
 
     def voxelize_stl(self, stl_filename, length_lbm_unit):
         mesh = trimesh.load_mesh(stl_filename, process=False)
@@ -108,13 +146,6 @@ class Car(KBCSim):
         fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1], "u_z": u[..., 2]}
         save_fields_vtk(timestep, fields)
 
-class VehicleRecipe(Recipe):
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def set_boundary_conditions(self):
-
 if __name__ == '__main__':
     precision = 'f32/f32'
     lattice = LatticeD3Q27(precision)
@@ -132,16 +163,5 @@ if __name__ == '__main__':
 
     os.system('rm -rf ./*.vtk && rm -rf ./*.png')
 
-    kwargs = {
-        'lattice': lattice,
-        'omega': omega,
-        'nx': nx,
-        'ny': ny,
-        'nz': nz,
-        'precision': precision,
-        'io_rate': 100,
-        'print_info_rate': 100,
-        'return_fpost': True  # Need to retain fpost-collision for computation of lift and drag
-    }
     sim = Car(**kwargs)
     sim.run(200000)

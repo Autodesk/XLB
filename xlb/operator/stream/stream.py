@@ -2,13 +2,12 @@
 
 from functools import partial
 import jax.numpy as jnp
-from jax import jit, vmap, lax
+from jax import jit, vmap
+import warp as wp
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from jax.experimental.shard_map import shard_map
-from jax.sharding import PartitionSpec as P
 
 
 class Stream(Operator):
@@ -16,11 +15,7 @@ class Stream(Operator):
     Base class for all streaming operators.
     """
 
-    def __init__(self, grid, velocity_set: VelocitySet = None, compute_backend=None):
-        self.grid = grid
-        super().__init__(velocity_set, compute_backend)
-
-    @Operator.register_backend(ComputeBackends.JAX)
+    @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, f):
         """
@@ -31,16 +26,7 @@ class Stream(Operator):
         f: jax.numpy.ndarray
             The distribution function.
         """
-        in_specs = P(*((None, "x") + (self.grid.dim - 1) * (None,)))
-        out_specs = in_specs
-        return shard_map(
-            self._streaming_jax_m,
-            mesh=self.grid.global_mesh,
-            in_specs=in_specs,
-            out_specs=out_specs,
-        )(f)
 
-    def _streaming_jax_p(self, f):
         def _streaming_jax_i(f, c):
             """
             Perform individual streaming operation in a direction.
@@ -64,41 +50,73 @@ class Stream(Operator):
             f, jnp.array(self.velocity_set.c).T
         )
 
-    def _streaming_jax_m(self, f):
-        """
-        This function performs the streaming step in the Lattice Boltzmann Method, which is
-        the propagation of the distribution functions in the lattice.
+    def _construct_warp(self):
+        # Make constants for warp
+        _c = wp.constant(self._warp_int_stream_mat(self.velocity_set.c))
+        _q = wp.constant(self.velocity_set.q)
+        _d = wp.constant(self.velocity_set.d)
 
-        To enable multi-GPU/TPU functionality, it extracts the left and right boundary slices of the
-        distribution functions that need to be communicated to the neighboring processes.
+        # Construct the funcional to get streamed indices
+        @wp.func
+        def functional(
+            l: int,
+            i: int,
+            j: int,
+            k: int,
+            max_i: int,
+            max_j: int,
+            max_k: int,
+        ):
+            streamed_i = i + _c[l, 0]
+            streamed_j = j + _c[l, 1]
+            streamed_k = k + _c[l, 2]
+            if streamed_i < 0:
+                streamed_i = max_i - 1
+            elif streamed_i >= max_i:
+                streamed_i = 0
+            if streamed_j < 0:
+                streamed_j = max_j - 1
+            elif streamed_j >= max_j:
+                streamed_j = 0
+            if streamed_k < 0:
+                streamed_k = max_k - 1
+            elif streamed_k >= max_k:
+                streamed_k = 0
+            return streamed_i, streamed_j, streamed_k
 
-        The function then sends the left boundary slice to the right neighboring process and the right
-        boundary slice to the left neighboring process. The received data is then set to the
-        corresponding indices in the receiving domain.
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel(
+            f_0: self._warp_array_type,
+            f_1: self._warp_array_type,
+            max_i: int,
+            max_j: int,
+            max_k: int,
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
 
-        Parameters
-        ----------
-        f: jax.numpy.ndarray
-            The array holding the distribution functions for the simulation.
+            # Set the output
+            for l in range(_q):
+                streamed_i, streamed_j, streamed_k = functional(
+                    l, i, j, k, max_i, max_j, max_k
+                )
+                f_1[l, streamed_i, streamed_j, streamed_k] = f_0[l, i, j, k]
 
-        Returns
-        -------
-        jax.numpy.ndarray
-            The distribution functions after the streaming operation.
-        """
-        rightPerm = [(i, (i + 1) % self.grid.nDevices) for i in range(self.grid.nDevices)]
-        leftPerm = [((i + 1) % self.grid.nDevices, i) for i in range(self.grid.nDevices)]
+        return functional, kernel
 
-        f = self._streaming_jax_p(f)
-        left_comm, right_comm = (
-            f[self.velocity_set.right_indices, :1, ...],
-            f[self.velocity_set.left_indices, -1:, ...],
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(self, f_0, f_1):
+        # Launch the warp kernel
+        wp.launch(
+            self._kernel,
+            inputs=[
+                f_0,
+                f_1,
+                f_0.shape[1],
+                f_0.shape[2],
+                f_0.shape[3],
+            ],
+            dim=f_0.shape[1:],
         )
-        left_comm, right_comm = (
-            lax.ppermute(left_comm, perm=rightPerm, axis_name='x'),
-            lax.ppermute(right_comm, perm=leftPerm, axis_name='x'),
-        )
-        f = f.at[self.velocity_set.right_indices, :1, ...].set(left_comm)
-        f = f.at[self.velocity_set.left_indices, -1:, ...].set(right_comm)
-
-        return f
+        return f_1

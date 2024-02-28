@@ -129,7 +129,7 @@ def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
     if value.ndim == 2:
         dimensions = dimensions + (1,)
 
-    grid = pv.UniformGrid(dimensions=dimensions)
+    grid = pv.ImageData(dimensions=dimensions)
 
     # Add the fields to the grid
     for key, value in fields.items():
@@ -139,6 +139,7 @@ def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
     start = time()
     grid.save(output_filename, binary=True)
     print(f"Saved {output_filename} in {time() - start:.6f} seconds.")
+
 
 def save_BCs_vtk(timestep, BCs, gridInfo, output_dir="."):
     """
@@ -168,7 +169,7 @@ def save_BCs_vtk(timestep, BCs, gridInfo, output_dir="."):
         gridDimensions = (gridInfo["nx"] + 1, gridInfo["ny"] + 1, gridInfo["nz"] + 1)
         fieldDimensions = (gridInfo["nx"], gridInfo["ny"], gridInfo["nz"])
 
-    grid = pv.UniformGrid(dimensions=gridDimensions)
+    grid = pv.ImageData(dimensions=gridDimensions)
 
     # Dictionary to keep track of encountered BC names
     bcNamesCount = {}

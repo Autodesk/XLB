@@ -1,13 +1,15 @@
 # Base class for all equilibriums
-from xlb.global_config import GlobalConfig
-from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
-from xlb.operator.operator import Operator
-
 
 from functools import partial
 import jax.numpy as jnp
 from jax import jit
+import warp as wp
+from typing import Tuple
+
+from xlb.global_config import GlobalConfig
+from xlb.velocity_set.velocity_set import VelocitySet
+from xlb.compute_backend import ComputeBackend
+from xlb.operator.operator import Operator
 
 
 class Macroscopic(Operator):
@@ -19,17 +21,7 @@ class Macroscopic(Operator):
     and other physic types (e.g. temperature, electromagnetism, etc...)
     """
 
-    def __init__(
-        self,
-        velocity_set: VelocitySet = None,
-        compute_backend=None,
-    ):
-        self.velocity_set = velocity_set or GlobalConfig.velocity_set
-        self.compute_backend = compute_backend or GlobalConfig.compute_backend
-
-        super().__init__(velocity_set, compute_backend)
-
-    @Operator.register_backend(ComputeBackends.JAX)
+    @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0), inline=True)
     def jax_implementation(self, f):
         """
@@ -52,4 +44,92 @@ class Macroscopic(Operator):
         rho = jnp.sum(f, axis=0, keepdims=True)
         u = jnp.tensordot(self.velocity_set.c, f, axes=(-1, 0)) / rho
 
+        return rho, u
+
+    @Operator.register_backend(ComputeBackend.PALLAS)
+    def pallas_implementation(self, f):
+        # TODO: Maybe this can be done with jnp.sum
+        rho = jnp.sum(f, axis=0, keepdims=True)
+
+        u = jnp.zeros((3, *rho.shape[1:]))
+        u.at[0].set(
+            -f[9]
+            - f[10]
+            - f[11]
+            - f[12]
+            - f[13]
+            + f[14]
+            + f[15]
+            + f[16]
+            + f[17]
+            + f[18]
+        ) / rho
+        u.at[1].set(
+            -f[3] - f[4] - f[5] + f[6] + f[7] + f[8] - f[12] + f[13] - f[17] + f[18]
+        ) / rho
+        u.at[2].set(
+            -f[1] + f[2] - f[4] + f[5] - f[7] + f[8] - f[10] + f[11] - f[15] + f[16]
+        ) / rho
+
+        return rho, jnp.array(u)
+
+    def _construct_warp(self):
+        # Make constants for warp
+        _c = wp.constant(self._warp_stream_mat(self.velocity_set.c))
+        _q = wp.constant(self.velocity_set.q)
+        _d = wp.constant(self.velocity_set.d)
+
+        # Construct the functional
+        @wp.func
+        def functional(f: self._warp_lattice_vec):
+            # Compute rho and u
+            rho = self.compute_dtype(0.0)
+            u = self._warp_u_vec()
+            for l in range(_q):
+                rho += f[l]
+                for d in range(_d):
+                    if _c[l, d] == 1:
+                        u[d] += f[l]
+                    elif _c[l, d] == -1:
+                        u[d] -= f[l]
+            u /= rho
+
+            return rho, u
+            # return u, rho
+
+        # Construct the kernel
+        @wp.kernel
+        def kernel(
+            f: self._warp_array_type,
+            rho: self._warp_array_type,
+            u: self._warp_array_type,
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
+
+            # Get the equilibrium
+            _f = self._warp_lattice_vec()
+            for l in range(_q):
+                _f[l] = f[l, i, j, k]
+            (_rho, _u) = functional(_f)
+
+            # Set the output
+            rho[0, i, j, k] = _rho
+            for d in range(_d):
+                u[d, i, j, k] = _u[d]
+
+        return functional, kernel
+
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(self, f, rho, u):
+        # Launch the warp kernel
+        wp.launch(
+            self._kernel,
+            inputs=[
+                f,
+                rho,
+                u,
+            ],
+            dim=rho.shape[1:],
+        )
         return rho, u

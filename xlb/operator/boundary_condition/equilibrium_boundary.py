@@ -5,30 +5,39 @@ from functools import partial
 import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
-from xlb.operator.stream.stream import Stream
+from xlb.precision_policy import PrecisionPolicy
+from xlb.compute_backend import ComputeBackend
+from xlb.operator import Operator
 from xlb.operator.equilibrium.equilibrium import Equilibrium
 from xlb.operator.boundary_condition.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
+from xlb.operator.boundary_condition.boundary_masker import (
+    BoundaryMasker,
+    IndicesBoundaryMasker,
+)
+
+
 
 class EquilibriumBoundary(BoundaryCondition):
     """
-    A boundary condition that skips the streaming step.
+    Equilibrium boundary condition for a lattice Boltzmann method simulation.
     """
 
     def __init__(
-            self,
-            set_boundary,
-            rho: float,
-            u: tuple[float, float],
-            equilibrium: Equilibrium,
-            velocity_set: VelocitySet,
-            compute_backend: ComputeBackends = ComputeBackends.JAX,
-        ):
+        self,
+        set_boundary,
+        rho: float,
+        u: tuple[float, float],
+        equilibrium: Equilibrium,
+        boundary_masker: BoundaryMasker,
+        velocity_set: VelocitySet,
+        precision_policy: PrecisionPolicy,
+        compute_backend: ComputeBackend,
+    ):
         super().__init__(
-            set_boundary=set_boundary,
+            ImplementationStep.COLLISION,
             implementation_step=ImplementationStep.STREAMING,
             velocity_set=velocity_set,
             compute_backend=compute_backend,
@@ -37,18 +46,19 @@ class EquilibriumBoundary(BoundaryCondition):
 
     @classmethod
     def from_indices(
-            cls,
-            indices,
-            rho: float,
-            u: tuple[float, float],
-            equilibrium: Equilibrium,
-            velocity_set: VelocitySet,
-            compute_backend: ComputeBackends = ComputeBackends.JAX,
-        ):
+        cls,
+        indices: np.ndarray,
+        rho: float,
+        u: tuple[float, float],
+        equilibrium: Equilibrium,
+        velocity_set: VelocitySet,
+        precision_policy: PrecisionPolicy,
+        compute_backend: ComputeBackend,
+    ):
         """
         Creates a boundary condition from a list of indices.
         """
-       
+
         return cls(
             set_boundary=cls._set_boundary_from_indices(indices),
             rho=rho,
@@ -57,7 +67,6 @@ class EquilibriumBoundary(BoundaryCondition):
             velocity_set=velocity_set,
             compute_backend=compute_backend,
         )
-
 
     @partial(jit, static_argnums=(0), donate_argnums=(1, 2, 3, 4))
     def apply_jax(self, f_pre, f_post, boundary, mask):

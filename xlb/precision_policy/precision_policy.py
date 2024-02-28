@@ -13,16 +13,23 @@ from xlb.precision_policy.jax_precision_policy import (
 
 class Fp64Fp64:
     def __new__(cls):
-        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+        if (
+            GlobalConfig.compute_backend == ComputeBackends.JAX
+            or GlobalConfig.compute_backend == ComputeBackends.PALLAS
+        ):
             return JaxFp64Fp64()
         else:
             raise ValueError(
                 f"Unsupported compute backend: {GlobalConfig.compute_backend}"
             )
-        
+
+
 class Fp64Fp32:
     def __new__(cls):
-        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+        if (
+            GlobalConfig.compute_backend == ComputeBackends.JAX
+            or GlobalConfig.compute_backend == ComputeBackends.PALLAS
+        ):
             return JaxFp64Fp32()
         else:
             raise ValueError(
@@ -32,7 +39,10 @@ class Fp64Fp32:
 
 class Fp32Fp32:
     def __new__(cls):
-        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+        if (
+            GlobalConfig.compute_backend == ComputeBackends.JAX
+            or GlobalConfig.compute_backend == ComputeBackends.PALLAS
+        ):
             return JaxFp32Fp32()
         else:
             raise ValueError(
@@ -42,16 +52,23 @@ class Fp32Fp32:
 
 class Fp64Fp16:
     def __new__(cls):
-        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+        if (
+            GlobalConfig.compute_backend == ComputeBackends.JAX
+            or GlobalConfig.compute_backend == ComputeBackends.PALLAS
+        ):
             return JaxFp64Fp16()
         else:
             raise ValueError(
                 f"Unsupported compute backend: {GlobalConfig.compute_backend}"
             )
 
+
 class Fp32Fp16:
     def __new__(cls):
-        if GlobalConfig.compute_backend == ComputeBackends.JAX:
+        if (
+            GlobalConfig.compute_backend == ComputeBackends.JAX
+            or GlobalConfig.compute_backend == ComputeBackends.PALLAS
+        ):
             return JaxFp32Fp16()
         else:
             raise ValueError(

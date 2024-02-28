@@ -2,9 +2,10 @@
 
 from functools import partial
 from jax import jit
+import jax
 
 from xlb.velocity_set.velocity_set import VelocitySet
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.operator.boundary_condition import ImplementationStep
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.collision import BGK, KBC
@@ -12,99 +13,135 @@ from xlb.operator.stream import Stream
 from xlb.operator.macroscopic import Macroscopic
 from xlb.solver.solver import Solver
 from xlb.operator import Operator
+from jax.experimental import pallas as pl
 
 
-class IncompressibleNavierStokes(Solver):
+class IncompressibleNavierStokesSolver(Solver):
+
+    _equilibrium_registry = {
+        "Quadratic": QuadraticEquilibrium,
+    }
+    _collision_registry = {
+        "BGK": BGK,
+        "KBC": KBC,
+    }
+
     def __init__(
         self,
-        grid,
-        omega,
-        velocity_set: VelocitySet = None,
-        compute_backend=None,
-        precision_policy=None,
+        omega: float,
+        shape: tuple[int, int, int],
+        collision="BGK",
+        equilibrium="Quadratic",
         boundary_conditions=[],
-        collision_kernel="BGK",
+        initializer=None,
+        forcing=None,
+        velocity_set: VelocitySet = None,
+        precision_policy=None,
+        compute_backend=None,
+        grid_backend=None,
+        grid_configs={},
     ):
-        self.grid = grid
+        super().__init__(
+            shape=shape,
+            boundary_conditions=boundary_conditions,
+            velocity_set=velocity_set,
+            compute_backend=compute_backend,
+            precision_policy=precision_policy,
+            grid_backend=grid_backend,
+            grid_configs=grid_configs,
+        )
+
+        # Set omega
         self.omega = omega
-        self.collision_kernel = collision_kernel
-        super().__init__(velocity_set=velocity_set, compute_backend=compute_backend, precision_policy=precision_policy, boundary_conditions=boundary_conditions)
-        self.create_operators()
 
-    # Operators
-    def create_operators(self):
+        # Add fields to grid
+        self.grid.create_field("rho", 1, self.precision_policy.store_precision)
+        self.grid.create_field("u", 3, self.precision_policy.store_precision)
+        self.grid.create_field("f0", self.velocity_set.q, self.precision_policy.store_precision)
+        self.grid.create_field("f1", self.velocity_set.q, self.precision_policy.store_precision)
+
+        # Create operators
+        self.collision = self._get_collision(collision)(
+            omega=self.omega,
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=self.compute_backend,
+        )
+        self.stream = Stream(
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=self.compute_backend,
+        )
+        self.equilibrium = self._get_equilibrium(equilibrium)(
+            velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend
+        )
         self.macroscopic = Macroscopic(
-            velocity_set=self.velocity_set, compute_backend=self.compute_backend
+            velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend
         )
-        self.equilibrium = QuadraticEquilibrium(
-            velocity_set=self.velocity_set, compute_backend=self.compute_backend
-        )
-        self.collision = (
-            KBC(
-                omega=self.omega,
+        if initializer is None:
+            self.initializer = EquilibriumInitializer(
+                rho=1.0, u=(0.0, 0.0, 0.0),
                 velocity_set=self.velocity_set,
+                precision_policy=self.precision_policy,
                 compute_backend=self.compute_backend,
             )
-            if self.collision_kernel == "KBC"
-            else BGK(
-                omega=self.omega,
-                velocity_set=self.velocity_set,
-                compute_backend=self.compute_backend,
+        if forcing is not None:
+            raise NotImplementedError("Forcing not yet implemented")
+
+        # Create stepper operator
+        self.stepper = IncompressibleNavierStokesStepper(
+            collision=self.collision,
+            stream=self.stream,
+            equilibrium=self.equilibrium,
+            macroscopic=self.macroscopic,
+            boundary_conditions=self.boundary_conditions,
+            forcing=None,
+        )
+
+        # Add parrallelization
+        self.stepper = self.grid.parallelize_operator(self.stepper)
+
+        # Initialize
+        self.initialize()
+
+    def initialize(self):
+        self.initializer(f=self.grid.get_field("f0"))
+
+    def monitor(self):
+        pass
+
+    def run(self, steps: int, monitor_frequency: int = 1, compute_mlups: bool = False):
+
+        # Run steps
+        for _ in range(steps):
+            # Run step
+            self.stepper(
+                f0=self.grid.get_field("f0"),
+                f1=self.grid.get_field("f1")
             )
-        )
-        self.stream = Stream(self.grid,
-            velocity_set=self.velocity_set, compute_backend=self.compute_backend
-        )
+            self.grid.swap_fields("f0", "f1")
 
-    @Operator.register_backend(ComputeBackends.JAX)
-    @partial(jit, static_argnums=(0,))
-    def step(self, f, timestep):
-        """
-        Perform a single step of the lattice boltzmann method
-        """
+    def checkpoint(self):
+        raise NotImplementedError("Checkpointing not yet implemented")
 
-        # Cast to compute precision
-        f = self.precision_policy.cast_to_compute(f)
+    def _get_collision(self, collision: str):
+        if isinstance(collision, str):
+            try:
+                return self._collision_registry[collision]
+            except KeyError:
+                raise ValueError(f"Collision {collision} not recognized for incompressible Navier-Stokes solver")
+        elif issubclass(collision, Operator):
+            return collision
+        else:
+            raise ValueError(f"Collision {collision} not recognized for incompressible Navier-Stokes solver")
 
-        # Compute the macroscopic variables
-        rho, u = self.macroscopic(f)
-
-        # Compute equilibrium
-        feq = self.equilibrium(rho, u)
-
-        # Apply collision
-        f_post_collision = self.collision(
-            f,
-            feq,
-        )
-
-        # # Apply collision type boundary conditions
-        # for id_number, bc in self.collision_boundary_conditions.items():
-        #     f_post_collision = bc(
-        #         f_pre_collision,
-        #         f_post_collision,
-        #         boundary_id == id_number,
-        #         mask,
-        #     )
-        f_pre_streaming = f_post_collision
-
-        ## Apply forcing
-        # if self.forcing_op is not None:
-        #    f = self.forcing_op.apply_jax(f, timestep)
-
-        # Apply streaming
-        f_post_streaming = self.stream(f_pre_streaming)
-
-        # Apply boundary conditions
-        # for id_number, bc in self.stream_boundary_conditions.items():
-        #     f_post_streaming = bc(
-        #         f_pre_streaming,
-        #         f_post_streaming,
-        #         boundary_id == id_number,
-        #         mask,
-        #     )
-
-        # Copy back to store precision
-        f = self.precision_policy.cast_to_store(f_post_streaming)
-
-        return f
+    def _get_equilibrium(self, equilibrium: str):
+        if isinstance(equilibrium, str):
+            try:
+                return self._equilibrium_registry[equilibrium]
+            except KeyError:
+                raise ValueError(f"Equilibrium {equilibrium} not recognized for incompressible Navier-Stokes solver")
+        elif issubclass(equilibrium, Operator):
+            return equilibrium
+        else:
+            raise ValueError(f"Equilibrium {equilibrium} not recognized for incompressible Navier-Stokes solver")
