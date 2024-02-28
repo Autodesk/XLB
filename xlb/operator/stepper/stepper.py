@@ -82,6 +82,76 @@ class Stepper(Operator):
         # Initialize operator
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+    ######################################################
+    # TODO: This is a hacky way to do this. Need to refactor
+    ######################################################
+    """
+    def _construct_warp_bc_functional(self):
+        # identity collision boundary condition
+        @wp.func
+        def identity(
+            f_pre: self._warp_lattice_vec,
+            f_post: self._warp_lattice_vec,
+            mask: self._warp_bool_lattice_vec,
+        ):
+            return f_post
+        def get_bc_functional(id_number, self.collision_boundary_conditions):
+            if id_number in self.collision_boundary_conditions.keys():
+                return self.collision_boundary_conditions[id_number].warp_functional
+            else:
+                return identity
+
+        # Manually set the boundary conditions TODO: Extremely hacky
+        collision_bc_functional_0 = get_bc_functional(0, self.collision_boundary_conditions)
+        collision_bc_functional_1 = get_bc_functional(1, self.collision_boundary_conditions)
+        collision_bc_functional_2 = get_bc_functional(2, self.collision_boundary_conditions)
+        collision_bc_functional_3 = get_bc_functional(3, self.collision_boundary_conditions)
+        collision_bc_functional_4 = get_bc_functional(4, self.collision_boundary_conditions)
+        collision_bc_functional_5 = get_bc_functional(5, self.collision_boundary_conditions)
+        collision_bc_functional_6 = get_bc_functional(6, self.collision_boundary_conditions)
+        collision_bc_functional_7 = get_bc_functional(7, self.collision_boundary_conditions)
+        collision_bc_functional_8 = get_bc_functional(8, self.collision_boundary_conditions)
+
+        # Make the warp boundary condition functional
+        @wp.func
+        def warp_bc(
+            f_pre: self._warp_lattice_vec,
+            f_post: self._warp_lattice_vec,
+            mask: self._warp_bool_lattice_vec,
+            boundary_id: wp.uint8,
+        ):
+            if boundary_id == 0:
+                f_post = collision_bc_functional_0(f_pre, f_post, mask)
+            elif boundary_id == 1:
+                f_post = collision_bc_functional_1(f_pre, f_post, mask)
+            elif boundary_id == 2:
+                f_post = collision_bc_functional_2(f_pre, f_post, mask)
+            elif boundary_id == 3:
+                f_post = collision_bc_functional_3(f_pre, f_post, mask)
+            elif boundary_id == 4:
+                f_post = collision_bc_functional_4(f_pre, f_post, mask)
+            elif boundary_id == 5:
+                f_post = collision_bc_functional_5(f_pre, f_post, mask)
+            elif boundary_id == 6:
+                f_post = collision_bc_functional_6(f_pre, f_post, mask)
+            elif boundary_id == 7:
+                f_post = collision_bc_functional_7(f_pre, f_post, mask)
+            elif boundary_id == 8:
+                f_post = collision_bc_functional_8(f_pre, f_post, mask)
+
+            return f_post
+
+
+
+
+    ######################################################
+    """
+
+
+
+        
+
+
 
 class SetBoundary(Operator):
     """

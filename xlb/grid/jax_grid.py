@@ -1,15 +1,15 @@
-from xlb.grid.grid import Grid
-from xlb.compute_backends import ComputeBackends
 from jax.sharding import PartitionSpec as P
 from jax.sharding import NamedSharding, Mesh
 from jax.experimental import mesh_utils
-from xlb.operator.initializer import ConstInitializer
 import jax
 
+from xlb.grid import Grid
+from xlb.compute_backend import ComputeBackend
+from xlb.operator import Operator
 
 class JaxGrid(Grid):
-    def __init__(self, grid_shape, velocity_set, precision_policy, grid_backend):
-        super().__init__(grid_shape, velocity_set, precision_policy, grid_backend)
+    def __init__(self, shape):
+        super().__init__(shape)
         self._initialize_jax_backend()
 
     def _initialize_jax_backend(self):
@@ -73,8 +73,6 @@ class JaxGrid(Grid):
         return f
 
 
-
-
     def create_field(self, name: str, cardinality: int, callback=None):
         # Get shape of the field
         shape = (cardinality,) + (self.shape)
@@ -88,4 +86,4 @@ class JaxGrid(Grid):
             f = jax.make_array_from_callback(shape, self.sharding, callback)
 
         # Add field to the field dictionary
-        self.fields[name] = f
+        return f

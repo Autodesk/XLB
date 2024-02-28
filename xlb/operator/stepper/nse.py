@@ -136,6 +136,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         _q = wp.constant(self.velocity_set.q)
         _d = wp.constant(self.velocity_set.d)
         _nr_boundary_conditions = wp.constant(len(self.boundary_conditions))
+        print(_q)
 
         # Construct the kernel
         @wp.kernel
@@ -145,6 +146,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             boundary_id: self._warp_uint8_array_type,
             mask: self._warp_bool_array_type,
             timestep: wp.int32,
+            max_i: wp.int32,
+            max_j: wp.int32,
+            max_k: wp.int32,
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -152,51 +156,56 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Get the f, boundary id and mask
             _f = self._warp_lattice_vec()
             _boundary_id = boundary_id[0, i, j, k]
-            _mask = self._bool_lattice_vec()
+            _mask = self._warp_bool_lattice_vec()
             for l in range(_q):
-                _f[l] = self.f_0[l, i, j, k]
-                _mask[l] = mask[l, i, j, k]
+                _f[l] = f_0[l, i, j, k]
+
+                # TODO fix vec bool
+                if mask[l, i, j, k]:
+                    _mask[l] = wp.uint8(1)
+                else:
+                    _mask[l] = wp.uint8(0)
 
             # Compute rho and u
-            rho, u = self.macroscopic.functional(_f)
+            rho, u = self.macroscopic.warp_functional(_f)
 
             # Compute equilibrium
-            feq = self.equilibrium.functional(rho, u)
+            feq = self.equilibrium.warp_functional(rho, u)
 
             # Apply collision
-            f_post_collision = self.collision.functional(
+            f_post_collision = self.collision.warp_functional(
                 _f,
                 feq,
                 rho,
                 u,
             )
 
-            # Apply collision type boundary conditions
-            if _boundary_id == id_number:
-                f_post_collision = self.collision_boundary_conditions[
-                    id_number
-                ].functional(
-                    _f,
-                    f_post_collision,
-                    _mask,
-                )
+            ## Apply collision type boundary conditions
+            #if _boundary_id != wp.uint8(0):
+            #    f_post_collision = self.collision_boundary_conditions[
+            #        _boundary_id
+            #    ].warp_functional(
+            #        _f,
+            #        f_post_collision,
+            #        _mask,
+            #    )
             f_pre_streaming = f_post_collision  # store pre streaming vector
 
             # Apply forcing
             # if self.forcing_op is not None:
-            #    f = self.forcing.functional(f, timestep)
+            #    f = self.forcing.warp_functional(f, timestep)
 
             # Apply streaming
             for l in range(_q):
                 # Get the streamed indices
-                streamed_i, streamed_j, streamed_k = self.stream.functional(
-                    l, i, j, k, self._warp_max_i, self._warp_max_j, self._warp_max_k
+                streamed_i, streamed_j, streamed_k = self.stream.warp_functional(
+                    l, i, j, k, max_i, max_j, max_k
                 )
                 streamed_l = l
 
                 ## Modify the streamed indices based on streaming boundary condition
                 # if _boundary_id != 0:
-                #    streamed_l, streamed_i, streamed_j, streamed_k = self.stream_boundary_conditions[id_number].functional(
+                #    streamed_l, streamed_i, streamed_j, streamed_k = self.stream_boundary_conditions[id_number].warp_functional(
                 #        streamed_l, streamed_i, streamed_j, streamed_k, self._warp_max_i, self._warp_max_j, self._warp_max_k
                 #    )
 
@@ -206,15 +215,20 @@ class IncompressibleNavierStokesStepper(Stepper):
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, boundary_id, mask, timestep):
+    def warp_implementation(self, f_0, f_1, boundary_id, mask, timestep):
         # Launch the warp kernel
         wp.launch(
-            self._kernel,
+            self.warp_kernel,
             inputs=[
-                f,
-                rho,
-                u,
+                f_0,
+                f_1,
+                boundary_id,
+                mask,
+                timestep,
+                f_0.shape[1],
+                f_0.shape[2],
+                f_0.shape[3],
             ],
-            dim=rho.shape[1:],
+            dim=f_0.shape[1:],
         )
-        return rho, u
+        return f_1

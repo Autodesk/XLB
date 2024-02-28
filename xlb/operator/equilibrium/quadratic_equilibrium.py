@@ -113,7 +113,7 @@ class QuadraticEquilibrium(Equilibrium):
     def warp_implementation(self, rho, u, f):
         # Launch the warp kernel
         wp.launch(
-            self._kernel,
+            self.warp_kernel,
             inputs=[
                 rho,
                 u,

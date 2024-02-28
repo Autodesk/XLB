@@ -27,7 +27,7 @@ class Operator:
 
         # Construct the kernel based backend functions TODO: Maybe move this to the register or something
         if self.compute_backend == ComputeBackend.WARP:
-            self._functional, self._kernel = self._construct_warp()
+            self.warp_functional, self.warp_kernel = self._construct_warp()
 
     @classmethod
     def register_backend(cls, backend_name):
@@ -189,9 +189,9 @@ class Operator:
         Returns the warp type for arrays
         """
         if self.velocity_set.d == 2:
-            return wp.array3d(dtype=wp.bool)
+            return wp.array3d(dtype=wp.uint8)
         elif self.velocity_set.d == 3:
-            return wp.array4d(dtype=wp.bool)
+            return wp.array4d(dtype=wp.uint8)
 
     @property
     def _warp_bool_array_type(self):
