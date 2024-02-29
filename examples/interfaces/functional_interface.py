@@ -2,6 +2,7 @@
 
 import time
 from tqdm import tqdm
+import os
 import matplotlib.pyplot as plt
 
 import warp as wp
@@ -16,6 +17,7 @@ class TaylorGreenInitializer(Operator):
         # Construct the warp kernel
         @wp.kernel
         def kernel(
+            f0: self._warp_array_type,
             rho: self._warp_array_type,
             u: self._warp_array_type,
             vel: float,
@@ -51,11 +53,12 @@ class TaylorGreenInitializer(Operator):
         return None, kernel
 
     @Operator.register_backend(xlb.ComputeBackend.WARP)
-    def warp_implementation(self, rho, u, vel, nr):
+    def warp_implementation(self, f0, rho, u, vel, nr):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
             inputs=[
+                f0,
                 rho,
                 u,
                 vel,
@@ -89,7 +92,7 @@ if __name__ == "__main__":
             precision_policy=precision_policy,
             compute_backend=compute_backend)
     collision = xlb.operator.collision.BGK(
-            omega=1.0,
+            omega=1.9,
             velocity_set=velocity_set,
             precision_policy=precision_policy,
             compute_backend=compute_backend)
@@ -116,19 +119,26 @@ if __name__ == "__main__":
     #stepper = grid.parallelize_operator(stepper)
 
     # Set initial conditions
-    rho, u = initializer(rho, u, 0.1, nr)
+    rho, u = initializer(f0, rho, u, 0.1, nr)
     f0 = equilibrium(rho, u, f0)
 
-    # Plot initial conditions
-    #plt.imshow(f0[0, nr//2, :, :].numpy())
-    #plt.show()
-
     # Time stepping
+    plot_freq = 32
+    save_dir = "taylor_green"
+    os.makedirs(save_dir, exist_ok=True)
+    #compute_mlup = False # Plotting results 
+    compute_mlup = True
     num_steps = 1024
     start = time.time()
     for _ in tqdm(range(num_steps)):
         f1 = stepper(f0, f1, boundary_id, mask, _)
         f1, f0 = f0, f1
+        if (_ % plot_freq == 0) and (not compute_mlup):
+            rho, u = macroscopic(f0, rho, u)
+            plt.imshow(u[0, :, nr//2, :].numpy())
+            plt.colorbar()
+            plt.savefig(f"{save_dir}/{str(_).zfill(4)}.png")
+            plt.close()
     wp.synchronize()
     end = time.time()
 
