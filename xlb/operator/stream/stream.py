@@ -67,9 +67,9 @@ class Stream(Operator):
             max_j: int,
             max_k: int,
         ):
-            streamed_i = i + _c[l, 0]
-            streamed_j = j + _c[l, 1]
-            streamed_k = k + _c[l, 2]
+            streamed_i = i + _c[0, l]
+            streamed_j = j + _c[1, l]
+            streamed_k = k + _c[2, l]
             if streamed_i < 0:
                 streamed_i = max_i - 1
             elif streamed_i >= max_i:

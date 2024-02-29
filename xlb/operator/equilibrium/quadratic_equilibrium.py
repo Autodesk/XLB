@@ -69,12 +69,12 @@ class QuadraticEquilibrium(Equilibrium):
         ) -> self._warp_lattice_vec:
             feq = self._warp_lattice_vec()  # empty lattice vector
             for l in range(_q):
-                # Compute cu
+                ## Compute cu
                 cu = self.compute_dtype(0.0)
                 for d in range(_d):
-                    if _c[l, d] == 1:
+                    if _c[d, l] == 1:
                         cu += u[d]
-                    elif _c[l, d] == -1:
+                    elif _c[d, l] == -1:
                         cu -= u[d]
                 cu *= self.compute_dtype(3.0)
 
@@ -99,7 +99,7 @@ class QuadraticEquilibrium(Equilibrium):
             # Get the equilibrium
             _u = self._warp_u_vec()
             for d in range(_d):
-                _u[i] = u[d, i, j, k]
+                _u[d] = u[d, i, j, k]
             _rho = rho[0, i, j, k]
             feq = functional(_rho, _u)
 

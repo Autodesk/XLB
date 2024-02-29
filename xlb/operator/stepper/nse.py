@@ -136,7 +136,6 @@ class IncompressibleNavierStokesStepper(Stepper):
         _q = wp.constant(self.velocity_set.q)
         _d = wp.constant(self.velocity_set.d)
         _nr_boundary_conditions = wp.constant(len(self.boundary_conditions))
-        print(_q)
 
         # Construct the kernel
         @wp.kernel
@@ -145,10 +144,10 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: self._warp_array_type,
             boundary_id: self._warp_uint8_array_type,
             mask: self._warp_bool_array_type,
-            timestep: wp.int32,
-            max_i: wp.int32,
-            max_j: wp.int32,
-            max_k: wp.int32,
+            timestep: int,
+            max_i: int,
+            max_j: int,
+            max_k: int,
         ):
             # Get the global index
             i, j, k = wp.tid()

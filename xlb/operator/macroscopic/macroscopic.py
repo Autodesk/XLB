@@ -88,9 +88,9 @@ class Macroscopic(Operator):
             for l in range(_q):
                 rho += f[l]
                 for d in range(_d):
-                    if _c[l, d] == 1:
+                    if _c[d, l] == 1:
                         u[d] += f[l]
-                    elif _c[l, d] == -1:
+                    elif _c[d, l] == -1:
                         u[d] -= f[l]
             u /= rho
 
@@ -124,7 +124,7 @@ class Macroscopic(Operator):
     def warp_implementation(self, f, rho, u):
         # Launch the warp kernel
         wp.launch(
-            self._kernel,
+            self.warp_kernel,
             inputs=[
                 f,
                 rho,
