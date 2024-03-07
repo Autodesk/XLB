@@ -17,6 +17,7 @@ from xlb.operator.boundary_condition.boundary_masker import (
     BoundaryMasker,
     IndicesBoundaryMasker,
 )
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
 
 
@@ -24,6 +25,7 @@ class EquilibriumBoundary(BoundaryCondition):
     """
     Equilibrium boundary condition for a lattice Boltzmann method simulation.
     """
+    id = boundary_condition_registry.register_boundary_condition(__qualname__)
 
     def __init__(
         self,

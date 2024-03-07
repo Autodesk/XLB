@@ -55,24 +55,15 @@ class Stepper(Operator):
         compute_backend = compute_backends.pop()
 
         # Get collision and stream boundary conditions
-        self.collision_boundary_conditions = {}
-        self.stream_boundary_conditions = {}
-        for id_number, bc in enumerate(self.boundary_conditions):
-            bc_id = id_number + 1
-            if bc.implementation_step == ImplementationStep.COLLISION:
-                self.collision_boundary_conditions[bc_id] = bc
-            elif bc.implementation_step == ImplementationStep.STREAMING:
-                self.stream_boundary_conditions[bc_id] = bc
-            else:
-                raise ValueError("Boundary condition step not recognized")
+        self.collision_boundary_conditions = [bc for bc in boundary_conditions if bc.implementation_step == ImplementationStep.COLLISION]
+        self.stream_boundary_conditions = [bc for bc in boundary_conditions if bc.implementation_step == ImplementationStep.STREAMING]
 
         # Make operators for converting the precisions
         #self.cast_to_compute = PrecisionCaster(
 
         # Make operator for setting boundary condition arrays
         self.set_boundary = SetBoundary(
-            self.collision_boundary_conditions,
-            self.stream_boundary_conditions,
+            self.boundary_conditions,
             velocity_set,
             precision_policy,
             compute_backend,
@@ -148,11 +139,41 @@ class Stepper(Operator):
     """
 
 
+class ApplyCollisionBoundaryConditions(Operator):
+    """
+    Class that handles the construction of lattice boltzmann collision boundary condition operator
+    """
+
+    def __init__(
+        self,
+        boundary_conditions,
+        velocity_set,
+        precision_policy,
+        compute_backend,
+    ):
+        super().__init__(velocity_set, precision_policy, compute_backend)
+
+        # Set boundary conditions
+        self.boundary_conditions = boundary_conditions
+
+        # Check that all boundary conditions are collision boundary conditions
+        for bc in boundary_conditions:
+            assert bc.implementation_step == ImplementationStep.COLLISION, "All boundary conditions must be collision boundary conditions"
+
+    @Operator.register_backend(ComputeBackend.JAX)
+    @partial(jit, static_argnums=(0))
+    def jax_implementation(self, f_pre, f_post, mask, boundary_id):
+        """
+        Apply collision boundary conditions
+        """
+        for bc in self.boundary_conditions:
+            f_post, mask = bc.jax_implementation(f_pre, f_post, mask, boundary_id)
+        return f_post, mask
+
+    def _construct_warp(self):
+
 
         
-
-
-
 class SetBoundary(Operator):
     """
     Class that handles the construction of lattice boltzmann boundary condition operator
@@ -161,26 +182,23 @@ class SetBoundary(Operator):
 
     def __init__(
         self,
-        collision_boundary_conditions,
-        stream_boundary_conditions,
+        boundary_conditions,
         velocity_set,
         precision_policy,
         compute_backend,
     ):
         super().__init__(velocity_set, precision_policy, compute_backend)
 
-        # Set parameters
-        self.collision_boundary_conditions = collision_boundary_conditions
-        self.stream_boundary_conditions = stream_boundary_conditions
+        # Set boundary conditions
+        self.boundary_conditions = boundary_conditions
+
 
     def _apply_all_bc(self, ijk, boundary_id, mask, bc):
         """
         Apply all boundary conditions
         """
-        for id_number, bc in self.collision_boundary_conditions.items():
-            boundary_id, mask = bc.boundary_masker(ijk, boundary_id, mask, id_number)
-        for id_number, bc in self.stream_boundary_conditions.items():
-            boundary_id, mask = bc.boundary_masker(ijk, boundary_id, mask, id_number)
+        for bc in self.boundary_conditions:
+            boundary_id, mask = bc.boundary_masker(ijk, boundary_id, mask, bc.id)
         return boundary_id, mask
 
     @Operator.register_backend(ComputeBackend.JAX)

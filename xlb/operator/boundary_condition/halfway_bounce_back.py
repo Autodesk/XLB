@@ -11,12 +11,14 @@ from xlb.operator.boundary_condition.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
 
 class HalfwayBounceBack(BoundaryCondition):
     """
     Halfway Bounce-back boundary condition for a lattice Boltzmann method simulation.
     """
+    id = boundary_condition_registry.register_boundary_condition(__qualname__)
 
     def __init__(
         self,

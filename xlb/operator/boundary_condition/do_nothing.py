@@ -10,12 +10,14 @@ from xlb.operator.boundary_condition.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
 
 class DoNothing(BoundaryCondition):
     """
     A boundary condition that skips the streaming step.
     """
+    id = boundary_condition_registry.register_boundary_condition(__qualname__)
 
     def __init__(
         self,

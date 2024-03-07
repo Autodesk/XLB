@@ -21,12 +21,14 @@ from xlb.operator.boundary_condition.boundary_masker import (
     BoundaryMasker,
     IndicesBoundaryMasker,
 )
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
 
 class FullBounceBack(BoundaryCondition):
     """
     Full Bounce-back boundary condition for a lattice Boltzmann method simulation.
     """
+    id = boundary_condition_registry.register_boundary_condition(__qualname__)
 
     def __init__(
         self,
@@ -65,7 +67,8 @@ class FullBounceBack(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0), donate_argnums=(1, 2, 3, 4))
-    def apply_jax(self, f_pre, f_post, boundary, mask):
+    def apply_jax(self, f_pre, f_post, boundary_id, mask):
+        boundary = boundary_id == self.id
         flip = jnp.repeat(boundary, self.velocity_set.q, axis=0)
         flipped_f = lax.select(flip, f_pre[self.velocity_set.opp_indices, ...], f_post)
         return flipped_f
