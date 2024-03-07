@@ -24,7 +24,7 @@ from xlb.operator.boundary_condition.boundary_masker import (
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
 
-class FullBounceBack(BoundaryCondition):
+class FullBounceBackApplier(BoundaryApplier):
     """
     Full Bounce-back boundary condition for a lattice Boltzmann method simulation.
     """
@@ -32,34 +32,12 @@ class FullBounceBack(BoundaryCondition):
 
     def __init__(
         self,
-        boundary_masker: BoundaryMasker,
         velocity_set: VelocitySet,
         precision_policy: PrecisionPolicy,
         compute_backend: ComputeBackend,
     ):
         super().__init__(
             ImplementationStep.COLLISION,
-            boundary_masker,
-            velocity_set,
-            precision_policy,
-            compute_backend,
-        )
-
-    @classmethod
-    def from_indices(
-        cls, indices: np.ndarray, velocity_set, precision_policy, compute_backend
-    ):
-        """
-        Create a full bounce-back boundary condition from indices.
-        """
-        # Create boundary mask
-        boundary_mask = IndicesBoundaryMasker(
-            indices, False, velocity_set, precision_policy, compute_backend
-        )
-
-        # Create boundary condition
-        return cls(
-            boundary_mask,
             velocity_set,
             precision_policy,
             compute_backend,

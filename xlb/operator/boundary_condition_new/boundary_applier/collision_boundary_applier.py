@@ -25,25 +25,25 @@ class CollisionBoundaryCondition(Operator):
 
     def __init__(
         self,
-        boundary_conditions: list[BoundaryCondition],
+        boundary_appliers: list[BoundaryApplier],
     ):
         # Set boundary conditions
-        self.boundary_conditions = boundary_conditions
+        self.boundary_appliers = boundary_appliers
 
         # Check that all boundary conditions have the same implementation step other properties
-        for bc in self.boundary_conditions:
+        for bc in self.boundary_appliers:
             assert bc.implementation_step == ImplementationStep.COLLISION, (
                 "All boundary conditions must be applied during the collision step."
             )
 
         # Get velocity set, precision policy, and compute backend
-        velocity_sets = set([bc.velocity_set for bc in self.boundary_conditions])
+        velocity_sets = set([bc.velocity_set for bc in self.boundary_appliers])
         assert len(velocity_sets) == 1, "All velocity sets must be the same"
         velocity_set = velocity_sets.pop()
-        precision_policies = set([bc.precision_policy for bc in self.boundary_conditions])
+        precision_policies = set([bc.precision_policy for bc in self.boundary_appliers])
         assert len(precision_policies) == 1, "All precision policies must be the same"
         precision_policy = precision_policies.pop()
-        compute_backends = set([bc.compute_backend for bc in self.boundary_conditions])
+        compute_backends = set([bc.compute_backend for bc in self.boundary_appliers])
         assert len(compute_backends) == 1, "All compute backends must be the same"
         compute_backend = compute_backends.pop()
 

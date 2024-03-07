@@ -39,7 +39,6 @@ class EquilibriumBoundary(BoundaryCondition):
         compute_backend: ComputeBackend,
     ):
         super().__init__(
-            ImplementationStep.COLLISION,
             implementation_step=ImplementationStep.STREAMING,
             velocity_set=velocity_set,
             compute_backend=compute_backend,
