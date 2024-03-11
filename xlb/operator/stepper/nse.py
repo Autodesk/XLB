@@ -43,13 +43,9 @@ class IncompressibleNavierStokesStepper(Stepper):
         )
 
         # Apply collision type boundary conditions
-        for id_number, bc in self.collision_boundary_conditions.items():
-            f_post_collision = bc(
-                f_pre_collision,
-                f_post_collision,
-                boundary_id == id_number,
-                mask,
-            )
+        f_post_collision = self.collision_boundary_applier.jax_implementation(
+            f_pre_collision, f_post_collision, mask, boundary_id
+        )
         f_pre_streaming = f_post_collision
 
         ## Apply forcing
@@ -180,14 +176,12 @@ class IncompressibleNavierStokesStepper(Stepper):
             )
 
             ## Apply collision type boundary conditions
-            #if _boundary_id != wp.uint8(0):
-            #    f_post_collision = self.collision_boundary_conditions[
-            #        _boundary_id
-            #    ].warp_functional(
-            #        _f,
-            #        f_post_collision,
-            #        _mask,
-            #    )
+            f_post_collision = self.collision_boundary_applier.warp_functional(
+                _f,
+                f_post_collision,
+                _boundary_id,
+                _mask,
+            )
             f_pre_streaming = f_post_collision  # store pre streaming vector
 
             # Apply forcing

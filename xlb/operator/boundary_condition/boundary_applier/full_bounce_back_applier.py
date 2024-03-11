@@ -13,13 +13,9 @@ from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
-from xlb.operator.boundary_condition import (
-    BoundaryCondition,
+from xlb.operator.boundary_condition.boundary_applier import (
+    BoundaryApplier,
     ImplementationStep,
-)
-from xlb.operator.boundary_condition.boundary_masker import (
-    BoundaryMasker,
-    IndicesBoundaryMasker,
 )
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 

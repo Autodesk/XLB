@@ -22,8 +22,8 @@ class IndicesBoundaryMasker(Operator):
 
     def __init__(
         self,
-        indices: np.ndarray,
         stream_indices: bool,
+        id_number: int,
         velocity_set: VelocitySet,
         precision_policy: PrecisionPolicy,
         compute_backend: ComputeBackend.JAX,
@@ -31,8 +31,7 @@ class IndicesBoundaryMasker(Operator):
         super().__init__(velocity_set, precision_policy, compute_backend)
 
         # Set indices
-        # TODO: handle multi-gpu case (this will usually implicitly work)
-        self.indices = indices
+        self.id_number = id_number
         self.stream_indices = stream_indices
 
         # Make stream operator
@@ -48,7 +47,7 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     #@partial(jit, static_argnums=(0), inline=True) TODO: Fix this
-    def jax_implementation(self, start_index, boundary_id, mask, id_number):
+    def jax_implementation(self, indicies, start_index, boundary_id, mask, id_number):
         # Get local indices from the meshgrid and the indices
         local_indices = self.indices - np.array(start_index)[np.newaxis, :]
 

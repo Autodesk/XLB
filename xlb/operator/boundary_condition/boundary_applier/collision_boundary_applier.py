@@ -17,7 +17,7 @@ from xlb.operator.operator import Operator
 from xlb.boundary_condition.full_bounce_back import FullBounceBack
 
 
-class CollisionBoundaryCondition(Operator):
+class CollisionBoundaryApplier(Operator):
     """
     Class for combining collision and boundary conditions together
     into a single operator.

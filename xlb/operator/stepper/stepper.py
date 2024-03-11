@@ -9,6 +9,10 @@ from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
 from xlb.operator.boundary_condition import ImplementationStep
+from xlb.operator.boundary_condition.boundary_applier import (
+    CollisionBoundaryApplier
+    StreamingBoundaryApplier
+)
 from xlb.operator.precision_caster import PrecisionCaster
 
 
@@ -56,12 +60,13 @@ class Stepper(Operator):
         assert len(compute_backends) == 1, "All compute backends must be the same"
         compute_backend = compute_backends.pop()
 
-        # Get collision and stream boundary conditions
-        self.collision_boundary_conditions = [bc for bc in boundary_conditions if bc.implementation_step == ImplementationStep.COLLISION]
-        self.stream_boundary_conditions = [bc for bc in boundary_conditions if bc.implementation_step == ImplementationStep.STREAMING]
-
-        # Make operators for converting the precisions
-        #self.cast_to_compute = PrecisionCaster(
+        # Make single operators for all collision and streaming boundary conditions
+        self.collision_boundary_applier = CollisionBoundaryApplier(
+            [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.COLLISION]
+        )
+        self.streaming_boundary_applier = StreamingBoundaryApplier(
+            [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.STREAMING]
+        )
 
         # Initialize operator
         super().__init__(velocity_set, precision_policy, compute_backend)

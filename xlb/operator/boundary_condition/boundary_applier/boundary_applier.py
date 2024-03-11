@@ -17,13 +17,6 @@ from xlb.operator.boundary_condition.boundary_masker import (
     IndicesBoundaryMasker,
 )
 
-
-# Enum for implementation step
-class ImplementationStep(Enum):
-    COLLISION = 1
-    STREAMING = 2
-
-
 class BoundaryApplier(Operator):
     """
     Base class for boundary conditions in a LBM simulation.
