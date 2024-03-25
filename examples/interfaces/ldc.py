@@ -11,63 +11,6 @@ wp.init()
 import xlb
 from xlb.operator import Operator
 
-class TaylorGreenInitializer(Operator):
-
-    def _construct_warp(self):
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel(
-            f0: self._warp_array_type,
-            rho: self._warp_array_type,
-            u: self._warp_array_type,
-            vel: float,
-            nr: int,
-        ):
-            # Get the global index
-            i, j, k = wp.tid()
-
-            # Get real pos
-            x = 2.0 * wp.pi * wp.float(i) / wp.float(nr)
-            y = 2.0 * wp.pi * wp.float(j) / wp.float(nr)
-            z = 2.0 * wp.pi * wp.float(k) / wp.float(nr)
-
-            # Compute u
-            u[0, i, j, k] = vel * wp.sin(x) * wp.cos(y) * wp.cos(z)
-            u[1, i, j, k] = - vel * wp.cos(x) * wp.sin(y) * wp.cos(z)
-            u[2, i, j, k] = 0.0
-
-            # Compute rho
-            rho[0, i, j, k] = (
-                3.0
-                * vel
-                * vel
-                * (1.0 / 16.0)
-                * (
-                    wp.cos(2.0 * x)
-                    + (wp.cos(2.0 * y)
-                    * (wp.cos(2.0 * z) + 2.0))
-                )
-                + 1.0
-            )
-
-        return None, kernel
-
-    @Operator.register_backend(xlb.ComputeBackend.WARP)
-    def warp_implementation(self, f0, rho, u, vel, nr):
-        # Launch the warp kernel
-        wp.launch(
-            self.warp_kernel,
-            inputs=[
-                f0,
-                rho,
-                u,
-                vel,
-                nr,
-            ],
-            dim=rho.shape[1:],
-        )
-        return rho, u
-
 if __name__ == "__main__":
 
     # Set parameters
@@ -87,10 +30,6 @@ if __name__ == "__main__":
     mask = grid.create_field(cardinality=velocity_set.q, dtype=wp.bool)
 
     # Make operators
-    initializer = TaylorGreenInitializer(
-            velocity_set=velocity_set,
-            precision_policy=precision_policy,
-            compute_backend=compute_backend)
     collision = xlb.operator.collision.BGK(
             omega=1.9,
             velocity_set=velocity_set,
@@ -108,6 +47,7 @@ if __name__ == "__main__":
             velocity_set=velocity_set,
             precision_policy=precision_policy,
             compute_backend=compute_backend)
+     
     stepper = xlb.operator.stepper.IncompressibleNavierStokesStepper(
             collision=collision,
             equilibrium=equilibrium,

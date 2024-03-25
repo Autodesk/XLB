@@ -17,11 +17,12 @@ from xlb.operator.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.boundary_condition.boundary_masker import (
     BoundaryMasker,
     IndicesBoundaryMasker,
 )
-from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
+from xlb.operator.boundary_condition.boundary_applier import FullBounceBackApplier
 
 
 class FullBounceBack(BoundaryCondition):
@@ -58,6 +59,24 @@ class FullBounceBack(BoundaryCondition):
         """
         # Create boundary mask
         boundary_mask = IndicesBoundaryMasker(
+            False, velocity_set, precision_policy, compute_backend
+        )
+
+        # Create boundary condition
+        return cls(
+            boundary_mask,
+            velocity_set,
+            precision_policy,
+            compute_backend,
+        )
+
+    @classmethod
+    def from_stl(cls, velocity_set, precision_policy, compute_backend):
+        """
+        Create a full bounce-back boundary condition from an STL file.
+        """
+        # Create boundary mask
+        boundary_mask = STLBoundaryMasker(
             False, velocity_set, precision_policy, compute_backend
         )
 

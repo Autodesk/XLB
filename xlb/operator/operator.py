@@ -1,5 +1,6 @@
 # Base class for all operators, (collision, streaming, equilibrium, etc.)
 import warp as wp
+from typing import Any
 
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy, Precision
@@ -123,90 +124,11 @@ class Operator:
         elif precision == Precision.FP16:
             return self.backend.float16
 
-    ### WARP specific types ###
-    # These are used to define the types for the warp backend
-    # TODO: There might be a better place to put these
-    @property
-    def _warp_u_vec(self):
-        """
-        Returns the warp type for velocity
-        """
-        return wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-
-    @property
-    def _warp_lattice_vec(self):
-        """
-        Returns the warp type for the lattice
-        """
-        return wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-    @property
-    def _warp_int_lattice_vec(self):
-        """
-        Returns the warp type for the streaming matrix (c)
-        """
-        return wp.vec(self.velocity_set.q, dtype=wp.int32)
-
-    @property
-    def _warp_bool_lattice_vec(self):
-        """
-        Returns the warp type for the streaming matrix (c)
-        """
-        #return wp.vec(self.velocity_set.q, dtype=wp.bool)
-        return wp.vec(self.velocity_set.q, dtype=wp.uint8) # TODO bool breaks
-
-    @property
-    def _warp_stream_mat(self):
-        """
-        Returns the warp type for the streaming matrix (c)
-        """
-        return wp.mat(
-            (self.velocity_set.d, self.velocity_set.q), dtype=self.compute_dtype
-        )
-
-    @property
-    def _warp_int_stream_mat(self):
-        """
-        Returns the warp type for the streaming matrix (c)
-        """
-        return wp.mat(
-            (self.velocity_set.d, self.velocity_set.q), dtype=wp.int32
-        )
-
-    @property
-    def _warp_array_type(self):
-        """
-        Returns the warp type for arrays
-        """
-        if self.velocity_set.d == 2:
-            return wp.array3d(dtype=self.store_dtype)
-        elif self.velocity_set.d == 3:
-            return wp.array4d(dtype=self.store_dtype)
-
-    @property
-    def _warp_uint8_array_type(self):
-        """
-        Returns the warp type for arrays
-        """
-        if self.velocity_set.d == 2:
-            return wp.array3d(dtype=wp.uint8)
-        elif self.velocity_set.d == 3:
-            return wp.array4d(dtype=wp.uint8)
-
-    @property
-    def _warp_bool_array_type(self):
-        """
-        Returns the warp type for arrays
-        """
-        if self.velocity_set.d == 2:
-            return wp.array3d(dtype=wp.bool)
-        elif self.velocity_set.d == 3:
-            return wp.array4d(dtype=wp.bool)
-
     def _construct_warp(self):
         """
         Construct the warp functional and kernel of the operator
         TODO: Maybe a better way to do this?
         Maybe add this to the backend decorator?
+        Leave it for now, as it is not clear how the warp backend will evolve
         """
         return None, None

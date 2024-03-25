@@ -8,11 +8,9 @@ import warp as wp
 from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
-from xlb.operator.boundary_condition import ImplementationStep
-from xlb.operator.boundary_condition.boundary_applier import (
-    CollisionBoundaryApplier
-    StreamingBoundaryApplier
-)
+#from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
+#from xlb.operator.boundary_condition.boundary_applier.collision_boundary_applier import CollisionBoundaryApplier
+#from xlb.operator.boundary_condition.boundary_applier.stream_boundary_applier import StreamBoundaryApplier
 from xlb.operator.precision_caster import PrecisionCaster
 
 
@@ -27,7 +25,9 @@ class Stepper(Operator):
         stream,
         equilibrium,
         macroscopic,
-        boundary_conditions=[],
+        equilibrium_bc,
+        do_nothing_bc,
+        half_way_bc,
         forcing=None,
     ):
         # Set parameters
@@ -35,7 +35,14 @@ class Stepper(Operator):
         self.stream = stream
         self.equilibrium = equilibrium
         self.macroscopic = macroscopic
-        self.boundary_conditions = boundary_conditions
+        self.equilibrium_bc = equilibrium_bc
+        self.do_nothing_bc = do_nothing_bc
+        self.half_way_bc = half_way_bc
+        self.boundary_conditions = [
+            equilibrium_bc,
+            do_nothing_bc,
+            half_way_bc,
+        ]
         self.forcing = forcing
 
         # Get all operators for checking
@@ -44,9 +51,8 @@ class Stepper(Operator):
             stream,
             equilibrium,
             macroscopic,
-            *[bc.boundary_applier for bc in boundary_conditions],
-            *[bc.boundary_masker for bc in boundary_conditions],
-            forcing,
+            *self.boundary_conditions,
+            #forcing,
         ]
 
         # Get velocity set, precision policy, and compute backend
@@ -61,12 +67,12 @@ class Stepper(Operator):
         compute_backend = compute_backends.pop()
 
         # Make single operators for all collision and streaming boundary conditions
-        self.collision_boundary_applier = CollisionBoundaryApplier(
-            [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.COLLISION]
-        )
-        self.streaming_boundary_applier = StreamingBoundaryApplier(
-            [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.STREAMING]
-        )
+        #self.collision_boundary_applier = CollisionBoundaryApplier(
+        #    [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.COLLISION]
+        #)
+        #self.streaming_boundary_applier = StreamBoundaryApplier(
+        #    [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.STREAMING]
+        #)
 
         # Initialize operator
         super().__init__(velocity_set, precision_policy, compute_backend)

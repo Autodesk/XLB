@@ -1,0 +1,3 @@
+from xlb.operator.boundary_condition import boundary_condition_registry
+
+print(boundary_condition_registry.ids)

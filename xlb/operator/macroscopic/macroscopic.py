@@ -4,7 +4,7 @@ from functools import partial
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
-from typing import Tuple
+from typing import Tuple, Any
 
 from xlb.global_config import GlobalConfig
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -75,19 +75,19 @@ class Macroscopic(Operator):
 
     def _construct_warp(self):
         # Make constants for warp
-        _c = wp.constant(self._warp_stream_mat(self.velocity_set.c))
-        _q = wp.constant(self.velocity_set.q)
-        _d = wp.constant(self.velocity_set.d)
+        _c = self.velocity_set.wp_c
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
 
         # Construct the functional
         @wp.func
-        def functional(f: self._warp_lattice_vec):
+        def functional(f: _f_vec):
             # Compute rho and u
             rho = self.compute_dtype(0.0)
-            u = self._warp_u_vec()
-            for l in range(_q):
+            u = _u_vec()
+            for l in range(self.velocity_set.q):
                 rho += f[l]
-                for d in range(_d):
+                for d in range(self.velocity_set.d):
                     if _c[d, l] == 1:
                         u[d] += f[l]
                     elif _c[d, l] == -1:
@@ -95,28 +95,28 @@ class Macroscopic(Operator):
             u /= rho
 
             return rho, u
-            # return u, rho
 
         # Construct the kernel
         @wp.kernel
         def kernel(
-            f: self._warp_array_type,
-            rho: self._warp_array_type,
-            u: self._warp_array_type,
+            f: wp.array4d(dtype=Any),
+            rho: wp.array4d(dtype=Any),
+            u: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
 
             # Get the equilibrium
-            _f = self._warp_lattice_vec()
-            for l in range(_q):
-                _f[l] = f[l, i, j, k]
+            _f = _f_vec()
+            for l in range(self.velocity_set.q):
+                _f[l] = f[l, index[0], index[1], index[2]]
             (_rho, _u) = functional(_f)
 
             # Set the output
-            rho[0, i, j, k] = _rho
-            for d in range(_d):
-                u[d, i, j, k] = _u[d]
+            rho[0, index[0], index[1], index[2]] = _rho
+            for d in range(self.velocity_set.d):
+                u[d, index[0], index[1], index[2]] = _u[d]
 
         return functional, kernel
 

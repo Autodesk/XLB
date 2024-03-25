@@ -2,6 +2,7 @@ from functools import partial
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
+from typing import Any
 
 from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
@@ -56,22 +57,27 @@ class QuadraticEquilibrium(Equilibrium):
         return jnp.array(eq)
 
     def _construct_warp(self):
-        # Make constants for warp
-        _c = wp.constant(self._warp_stream_mat(self.velocity_set.c))
-        _q = wp.constant(self.velocity_set.q)
-        _w = wp.constant(self._warp_lattice_vec(self.velocity_set.w))
-        _d = wp.constant(self.velocity_set.d)
+        # Set local constants TODO: This is a hack and should be fixed with warp update
+        _c = self.velocity_set.wp_c
+        _w = self.velocity_set.wp_w
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
 
         # Construct the equilibrium functional
         @wp.func
         def functional(
-            rho: self.compute_dtype, u: self._warp_u_vec
-        ) -> self._warp_lattice_vec:
-            feq = self._warp_lattice_vec()  # empty lattice vector
-            for l in range(_q):
-                ## Compute cu
+            rho: Any,
+            u: Any,
+        ):
+            # Allocate the equilibrium
+            feq = _f_vec()
+
+            # Compute the equilibrium
+            for l in range(self.velocity_set.q):
+
+                # Compute cu
                 cu = self.compute_dtype(0.0)
-                for d in range(_d):
+                for d in range(self.velocity_set.d):
                     if _c[d, l] == 1:
                         cu += u[d]
                     elif _c[d, l] == -1:
@@ -89,23 +95,24 @@ class QuadraticEquilibrium(Equilibrium):
         # Construct the warp kernel
         @wp.kernel
         def kernel(
-            rho: self._warp_array_type,
-            u: self._warp_array_type,
-            f: self._warp_array_type,
+            rho: wp.array4d(dtype=Any),
+            u: wp.array4d(dtype=Any),
+            f: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
 
             # Get the equilibrium
-            _u = self._warp_u_vec()
-            for d in range(_d):
-                _u[d] = u[d, i, j, k]
-            _rho = rho[0, i, j, k]
+            _u = _u_vec()
+            for d in range(self.velocity_set.d):
+                _u[d] = u[d, index[0], index[1], index[2]]
+            _rho = rho[0, index[0], index[1], index[2]]
             feq = functional(_rho, _u)
 
             # Set the output
-            for l in range(_q):
-                f[l, i, j, k] = feq[l]
+            for l in range(self.velocity_set.q):
+                f[l, index[0], index[1], index[2]] = feq[l]
 
         return functional, kernel
 

@@ -4,6 +4,7 @@ import time
 from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
+from typing import Any
 
 import warp as wp
 wp.init()
@@ -17,9 +18,9 @@ class TaylorGreenInitializer(Operator):
         # Construct the warp kernel
         @wp.kernel
         def kernel(
-            f0: self._warp_array_type,
-            rho: self._warp_array_type,
-            u: self._warp_array_type,
+            f0: wp.array4d(dtype=Any),
+            rho: wp.array4d(dtype=Any),
+            u: wp.array4d(dtype=Any),
             vel: float,
             nr: int,
         ):
@@ -84,7 +85,7 @@ if __name__ == "__main__":
     f0 = grid.create_field(cardinality=velocity_set.q, dtype=wp.float32)
     f1 = grid.create_field(cardinality=velocity_set.q, dtype=wp.float32)
     boundary_id = grid.create_field(cardinality=1, dtype=wp.uint8)
-    mask = grid.create_field(cardinality=velocity_set.q, dtype=wp.bool)
+    missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=wp.bool)
 
     # Make operators
     initializer = TaylorGreenInitializer(
@@ -128,10 +129,10 @@ if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=True)
     #compute_mlup = False # Plotting results 
     compute_mlup = True
-    num_steps = 1024
+    num_steps = 1024 * 8
     start = time.time()
     for _ in tqdm(range(num_steps)):
-        f1 = stepper(f0, f1, boundary_id, mask, _)
+        f1 = stepper(f0, f1, boundary_id, missing_mask, _)
         f1, f0 = f0, f1
         if (_ % plot_freq == 0) and (not compute_mlup):
             rho, u = macroscopic(f0, rho, u)

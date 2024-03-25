@@ -11,7 +11,7 @@ class BoundaryConditionRegistry:
         self,
     ):
         self.ids = {}
-        self.next_id = 0
+        self.next_id = 1 # 0 is reserved for regular streaming
 
     def register_boundary_condition(self, boundary_condition):
         """

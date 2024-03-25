@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
+from typing import Any
 
 from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
@@ -32,21 +33,19 @@ class BGK(Collision):
         return fout
 
     def _construct_warp(self):
-        # Make constants for warp
-        _c = wp.constant(self._warp_stream_mat(self.velocity_set.c))
-        _q = wp.constant(self.velocity_set.q)
-        _w = wp.constant(self._warp_lattice_vec(self.velocity_set.w))
-        _d = wp.constant(self.velocity_set.d)
+        # Set local constants TODO: This is a hack and should be fixed with warp update
+        _w = self.velocity_set.wp_w
         _omega = wp.constant(self.compute_dtype(self.omega))
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         # Construct the functional
         @wp.func
         def functional(
-            f: self._warp_lattice_vec,
-            feq: self._warp_lattice_vec,
-            rho: self.compute_dtype,
-            u: self._warp_u_vec,
-        ) -> self._warp_lattice_vec:
+            f: Any,
+            feq: Any,
+            rho: Any,
+            u: Any,
+        ):
             fneq = f - feq
             fout = f - _omega * fneq
             return fout
@@ -54,30 +53,33 @@ class BGK(Collision):
         # Construct the warp kernel
         @wp.kernel
         def kernel(
-            f: self._warp_array_type,
-            feq: self._warp_array_type,
-            rho: self._warp_array_type,
-            u: self._warp_array_type,
-            fout: self._warp_array_type,
+            f: wp.array4d(dtype=Any),
+            feq: wp.array4d(dtype=Any),
+            rho: wp.array4d(dtype=Any),
+            u: wp.array4d(dtype=Any),
+            fout: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k) # TODO: Warp needs to fix this
 
-            # Get the equilibrium
-            _f = self._warp_lattice_vec()
-            _feq = self._warp_lattice_vec()
-            for l in range(_q):
-                _f[l] = f[l, i, j, k]
-                _feq[l] = feq[l, i, j, k]
+            # Load needed values
+            _f = _f_vec()
+            _feq = _f_vec()
+            for l in range(self.velocity_set.q):
+                _f[l] = f[l, index[0], index[1], index[2]]
+                _feq[l] = feq[l, index[0], index[1], index[2]]
             _u = self._warp_u_vec()
             for l in range(_d):
-                _u[l] = u[l, i, j, k]
-            _rho = rho[0, i, j, k]
+                _u[l] = u[l, index[0], index[1], index[2]]
+            _rho = rho[0, index[0], index[1], index[2]]
+
+            # Compute the collision
             _fout = functional(_f, _feq, _rho, _u)
 
             # Write the result
-            for l in range(_q):
-                fout[l, i, j, k] = _fout[l]
+            for l in range(self.velocity_set.q):
+                fout[l, index[0], index[1], index[2]] = _fout[l]
 
         return functional, kernel
 
@@ -85,7 +87,7 @@ class BGK(Collision):
     def warp_implementation(self, f, feq, rho, u, fout):
         # Launch the warp kernel
         wp.launch(
-            self._kernel,
+            self.warp_kernel,
             inputs=[
                 f,
                 feq,

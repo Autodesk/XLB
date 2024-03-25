@@ -14,6 +14,7 @@ from xlb.grid_backend import GridBackend
 from xlb.operator.boundary_condition import BounceBack, BounceBackHalfway, DoNothing, EquilibriumBC
 
 
+
 class WindTunnel(IncompressibleNavierStokesSolver):
     """
     This class extends the IncompressibleNavierStokesSolver class to define the boundary conditions for the wind tunnel simulation.
