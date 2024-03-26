@@ -103,26 +103,20 @@ class Operator:
         """
         Returns the compute dtype
         """
-        return self._precision_to_dtype(self.precision_policy.compute_precision)
+        if self.compute_backend == ComputeBackend.JAX:
+            return self.precision_policy.compute_precision.jax_dtype
+        elif self.compute_backend == ComputeBackend.WARP:
+            return self.precision_policy.compute_precision.wp_dtype
 
     @property
     def store_dtype(self):
         """
         Returns the store dtype
         """
-        return self._precision_to_dtype(self.precision_policy.store_precision)
-
-    def _precision_to_dtype(self, precision):
-        """
-        Convert the precision to the corresponding dtype
-        TODO: Maybe move this to precision policy?
-        """
-        if precision == Precision.FP64:
-            return self.backend.float64
-        elif precision == Precision.FP32:
-            return self.backend.float32
-        elif precision == Precision.FP16:
-            return self.backend.float16
+        if self.compute_backend == ComputeBackend.JAX:
+            return self.precision_policy.store_precision.jax_dtype
+        elif self.compute_backend == ComputeBackend.WARP:
+            return self.precision_policy.store_precision.wp_dtype
 
     def _construct_warp(self):
         """

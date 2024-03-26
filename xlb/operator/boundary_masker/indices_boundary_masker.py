@@ -42,9 +42,13 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     # @partial(jit, static_argnums=(0), inline=True) TODO: Fix this
-    def jax_implementation(self, indices, id_number, boundary_id, mask, start_index=(0, 0, 0)):
+    def jax_implementation(
+        self, indices, id_number, boundary_id, mask, start_index=(0, 0, 0)
+    ):
+        # TODO: This is somewhat untested and unoptimized
+
         # Get local indices from the meshgrid and the indices
-        local_indices = self.indices - np.array(start_index)[np.newaxis, :]
+        local_indices = indices - np.array(start_index)[np.newaxis, :]
 
         # Remove any indices that are out of bounds
         local_indices = local_indices[
@@ -68,7 +72,7 @@ class IndicesBoundaryMasker(Operator):
         )
         post_stream_mask = self.stream(pre_stream_mask)
 
-        # Set false for points inside the boundary (NOTE: removing this to be more consistent with the other boundary maskers)
+        # Set false for points inside the boundary (NOTE: removing this to be more consistent with the other boundary maskers, maybe add back in later)
         # post_stream_mask = post_stream_mask.at[
         #    post_stream_mask[0, ...] == True
         # ].set(False)
@@ -119,7 +123,6 @@ class IndicesBoundaryMasker(Operator):
                 and index[2] >= 0
                 and index[2] < mask.shape[3]
             ):
-
                 # Stream indices
                 for l in range(_q):
                     # Get the index of the streaming direction
@@ -128,16 +131,16 @@ class IndicesBoundaryMasker(Operator):
                         push_index[d] = index[d] + _c[d, l]
 
                     # Set the boundary id and mask
-                    boundary_id[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(
-                        id_number
-                    )
+                    boundary_id[
+                        0, push_index[0], push_index[1], push_index[2]
+                    ] = wp.uint8(id_number)
                     mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
-        self, indices, id_number, boundary_id, mask, start_index=(0, 0, 0)
+        self, indices, id_number, boundary_id, missing_mask, start_index=(0, 0, 0)
     ):
         # Launch the warp kernel
         wp.launch(
@@ -146,10 +149,10 @@ class IndicesBoundaryMasker(Operator):
                 indices,
                 id_number,
                 boundary_id,
-                mask,
+                missing_mask,
                 start_index,
             ],
             dim=indices.shape[0],
         )
 
-        return boundary_id, mask
+        return boundary_id, missing_mask

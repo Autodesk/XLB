@@ -28,11 +28,16 @@ class STLBoundaryMasker(Operator):
     ):
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+        # TODO: Implement this
+        raise NotImplementedError
+
         # Make stream operator
         self.stream = Stream(velocity_set, precision_policy, compute_backend)
 
     @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(self, mesh, id_number, boundary_id, mask, start_index=(0, 0, 0)):
+    def jax_implementation(
+        self, mesh, id_number, boundary_id, mask, start_index=(0, 0, 0)
+    ):
         # TODO: Implement this
         raise NotImplementedError
 

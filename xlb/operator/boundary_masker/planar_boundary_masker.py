@@ -31,8 +31,54 @@ class PlanarBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     # @partial(jit, static_argnums=(0), inline=True) TODO: Fix this
-    def jax_implementation(self, edge, start_index, boundary_id, mask, id_number):
-        raise NotImplementedError
+    def jax_implementation(
+        self,
+        lower_bound,
+        upper_bound,
+        direction,
+        id_number,
+        boundary_id,
+        mask,
+        start_index=(0, 0, 0),
+    ):
+        # Get plane dimensions
+        if direction[0] != 0:
+            dim = (
+                upper_bound[1] - lower_bound[1] + 1,
+                upper_bound[2] - lower_bound[2] + 1,
+            )
+        elif direction[1] != 0:
+            dim = (
+                upper_bound[0] - lower_bound[0] + 1,
+                upper_bound[2] - lower_bound[2] + 1,
+            )
+        elif direction[2] != 0:
+            dim = (
+                upper_bound[0] - lower_bound[0] + 1,
+                upper_bound[1] - lower_bound[1] + 1,
+            )
+
+        # Get the constants
+        _c = self.velocity_set.wp_c
+        _q = self.velocity_set.q
+
+        # Get the mask
+        for i in range(dim[0]):
+            for j in range(dim[1]):
+                for k in range(_q):
+                    d_dot_c = (
+                        direction[0] * _c[0, k]
+                        + direction[1] * _c[1, k]
+                        + direction[2] * _c[2, k]
+                    )
+                    if d_dot_c >= 0:
+                        mask[k, i, j] = True
+
+        # Get the boundary id
+        boundary_id[:, :, :] = id_number
+
+        return boundary_id, mask
+
 
     def _construct_warp(self):
         # Make constants for warp
@@ -104,11 +150,20 @@ class PlanarBoundaryMasker(Operator):
     ):
         # Get plane dimensions
         if direction[0] != 0:
-            dim = (upper_bound[1] - lower_bound[1], upper_bound[2] - lower_bound[2])
+            dim = (
+                upper_bound[1] - lower_bound[1] + 1,
+                upper_bound[2] - lower_bound[2] + 1,
+            )
         elif direction[1] != 0:
-            dim = (upper_bound[0] - lower_bound[0], upper_bound[2] - lower_bound[2])
+            dim = (
+                upper_bound[0] - lower_bound[0] + 1,
+                upper_bound[2] - lower_bound[2] + 1,
+            )
         elif direction[2] != 0:
-            dim = (upper_bound[0] - lower_bound[0], upper_bound[1] - lower_bound[1])
+            dim = (
+                upper_bound[0] - lower_bound[0] + 1,
+                upper_bound[1] - lower_bound[1] + 1,
+            )
 
         # Launch the warp kernel
         wp.launch(

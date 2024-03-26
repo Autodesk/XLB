@@ -13,10 +13,12 @@ from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
+
 # Enum for implementation step
 class ImplementationStep(Enum):
     COLLISION = 1
     STREAMING = 2
+
 
 class BoundaryCondition(Operator):
     """
@@ -28,7 +30,7 @@ class BoundaryCondition(Operator):
         implementation_step: ImplementationStep,
         velocity_set: VelocitySet,
         precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend
+        compute_backend: ComputeBackend,
     ):
         super().__init__(velocity_set, precision_policy, compute_backend)
 

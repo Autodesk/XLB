@@ -10,8 +10,7 @@ from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
 from xlb.operator.stepper import Stepper
-#from xlb.operator.boundary_condition import ImplementationStep
-from xlb.operator.collision import BGK
+from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 
 
 class IncompressibleNavierStokesStepper(Stepper):
@@ -20,17 +19,17 @@ class IncompressibleNavierStokesStepper(Stepper):
     """
 
     @Operator.register_backend(ComputeBackend.JAX)
-    @partial(jit, static_argnums=(0, 5))
+    @partial(jit, static_argnums=(0, 4), donate_argnums=(1))
     def apply_jax(self, f, boundary_id, missing_mask, timestep):
         """
         Perform a single step of the lattice boltzmann method
         """
 
-        # Cast to compute precision
-        f_pre_collision = self.precision_policy.cast_to_compute_jax(f)
+        # Cast to compute precision TODO add this back in
+        #f_pre_collision = self.precision_policy.cast_to_compute_jax(f)
 
         # Compute the macroscopic variables
-        rho, u = self.macroscopic(f_pre_collision)
+        rho, u = self.macroscopic(f)
 
         # Compute equilibrium
         feq = self.equilibrium(rho, u)
@@ -44,39 +43,42 @@ class IncompressibleNavierStokesStepper(Stepper):
         )
 
         # Apply collision type boundary conditions
-        f_post_collision = self.collision_boundary_applier.jax_implementation(
-            f_pre_collision, f_post_collision, missing_mask, boundary_id
-        )
-        f_pre_streaming = f_post_collision
+        for bc in self.boundary_conditions:
+            if bc.implementation_step == ImplementationStep.COLLISION:
+                f_post_collision = bc(
+                    f,
+                    f_post_collision,
+                    boundary_id,
+                    missing_mask,
+                )
 
         ## Apply forcing
         # if self.forcing_op is not None:
         #    f = self.forcing_op.apply_jax(f, timestep)
 
         # Apply streaming
-        f_post_streaming = self.stream(f_pre_streaming)
+        f_post_streaming = self.stream(f_post_collision)
 
         # Apply boundary conditions
-        for id_number, bc in self.stream_boundary_conditions.items():
-            f_post_streaming = bc(
-                f_pre_streaming,
-                f_post_streaming,
-                boundary_id == id_number,
-                missing_mask,
-            )
+        for bc in self.boundary_conditions:
+            if bc.implementation_step == ImplementationStep.STREAMING:
+                f_post_streaming = bc(
+                    f_post_collision,
+                    f_post_streaming,
+                    boundary_id,
+                    missing_mask,
+                )
 
         # Copy back to store precision
-        f = self.precision_policy.cast_to_store_jax(f_post_streaming)
+        #f = self.precision_policy.cast_to_store_jax(f_post_streaming)
 
-        return f
+        return f_post_streaming
 
     @Operator.register_backend(ComputeBackend.PALLAS)
     @partial(jit, static_argnums=(0,))
     def apply_pallas(self, fin, boundary_id, missing_mask, timestep):
         # Raise warning that the boundary conditions are not implemented
-        ################################################################
         warning("Boundary conditions are not implemented for PALLAS backend currently")
-        ################################################################
 
         from xlb.operator.parallel_operator import ParallelOperator
 
@@ -130,10 +132,15 @@ class IncompressibleNavierStokesStepper(Stepper):
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8) # TODO fix vec bool
+        _missing_mask_vec = wp.vec(
+            self.velocity_set.q, dtype=wp.uint8
+        )  # TODO fix vec bool
+
+        # Get the boundary condition ids
         _equilibrium_bc = wp.uint8(self.equilibrium_bc.id)
         _do_nothing_bc = wp.uint8(self.do_nothing_bc.id)
-        _half_way_bc = wp.uint8(self.half_way_bc.id)
+        _halfway_bounce_back_bc = wp.uint8(self.halfway_bounce_back_bc.id)
+        _fullway_bounce_back_bc = wp.uint8(self.fullway_bounce_back_bc.id)
 
         # Construct the kernel
         @wp.kernel
@@ -146,7 +153,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         ):
             # Get the global index
             i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k) # TODO warp should fix this
+            index = wp.vec3i(i, j, k)  # TODO warp should fix this
 
             # Get the boundary id and missing mask
             _boundary_id = boundary_id[0, index[0], index[1], index[2]]
@@ -159,33 +166,47 @@ class IncompressibleNavierStokesStepper(Stepper):
                     _missing_mask[l] = wp.uint8(0)
 
             # Apply streaming boundary conditions
-            if _boundary_id == wp.uint8(0):
-                # Regular streaming
-                _post_stream_f = self.stream.warp_functional(f_0, index)
-            elif _boundary_id == _equilibrium_bc:
+            if _boundary_id == _equilibrium_bc:
                 # Equilibrium boundary condition
-                _post_stream_f = self.equilibrium_bc.warp_functional(f_0, missing_mask, index)
+                f_post_stream = self.equilibrium_bc.warp_functional(
+                    f_0, _missing_mask, index
+                )
             elif _boundary_id == _do_nothing_bc:
                 # Do nothing boundary condition
-                _post_stream_f = self.do_nothing_bc.warp_functional(f_0, missing_mask, index)
-            elif _boundary_id == _half_way_bc:
+                f_post_stream = self.do_nothing_bc.warp_functional(
+                    f_0, _missing_mask, index
+                )
+            elif _boundary_id == _halfway_bounce_back_bc:
                 # Half way boundary condition
-                _post_stream_f = self.half_way_bc.warp_functional(f_0, missing_mask, index)
-                #_post_stream_f = self.stream.warp_functional(f_0, index)
-
+                f_post_stream = self.halfway_bounce_back_bc.warp_functional(
+                    f_0, _missing_mask, index
+                )
+            else:
+                # Regular streaming
+                f_post_stream = self.stream.warp_functional(f_0, index)
+ 
             # Compute rho and u
-            rho, u = self.macroscopic.warp_functional(_post_stream_f)
+            rho, u = self.macroscopic.warp_functional(f_post_stream)
 
             # Compute equilibrium
             feq = self.equilibrium.warp_functional(rho, u)
 
             # Apply collision
             f_post_collision = self.collision.warp_functional(
-                _post_stream_f,
+                f_post_stream,
                 feq,
                 rho,
                 u,
             )
+
+            # Apply collision type boundary conditions
+            if _boundary_id == _fullway_bounce_back_bc:
+                # Full way boundary condition
+                f_post_collision = self.fullway_bounce_back_bc.warp_functional(
+                    f_post_stream,
+                    f_post_collision,
+                    _missing_mask,
+                )
 
             # Set the output
             for l in range(self.velocity_set.q):

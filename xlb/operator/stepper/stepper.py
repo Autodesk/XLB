@@ -8,9 +8,6 @@ import warp as wp
 from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
-#from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
-#from xlb.operator.boundary_condition.boundary_applier.collision_boundary_applier import CollisionBoundaryApplier
-#from xlb.operator.boundary_condition.boundary_applier.stream_boundary_applier import StreamBoundaryApplier
 from xlb.operator.precision_caster import PrecisionCaster
 
 
@@ -25,24 +22,15 @@ class Stepper(Operator):
         stream,
         equilibrium,
         macroscopic,
-        equilibrium_bc,
-        do_nothing_bc,
-        half_way_bc,
-        forcing=None,
+        boundary_conditions=[],
+        forcing=None,  # TODO: Add forcing later
     ):
-        # Set parameters
+        # Add operators
         self.collision = collision
         self.stream = stream
         self.equilibrium = equilibrium
         self.macroscopic = macroscopic
-        self.equilibrium_bc = equilibrium_bc
-        self.do_nothing_bc = do_nothing_bc
-        self.half_way_bc = half_way_bc
-        self.boundary_conditions = [
-            equilibrium_bc,
-            do_nothing_bc,
-            half_way_bc,
-        ]
+        self.boundary_conditions = boundary_conditions
         self.forcing = forcing
 
         # Get all operators for checking
@@ -52,8 +40,9 @@ class Stepper(Operator):
             equilibrium,
             macroscopic,
             *self.boundary_conditions,
-            #forcing,
         ]
+        if forcing is not None:
+            self.operators.append(forcing)
 
         # Get velocity set, precision policy, and compute backend
         velocity_sets = set([op.velocity_set for op in self.operators])
@@ -66,13 +55,57 @@ class Stepper(Operator):
         assert len(compute_backends) == 1, "All compute backends must be the same"
         compute_backend = compute_backends.pop()
 
-        # Make single operators for all collision and streaming boundary conditions
-        #self.collision_boundary_applier = CollisionBoundaryApplier(
-        #    [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.COLLISION]
-        #)
-        #self.streaming_boundary_applier = StreamBoundaryApplier(
-        #    [bc.boundary_applier for bc in boundary_conditions if bc.implementation_step == ImplementationStep.STREAMING]
-        #)
+        # Add boundary conditions
+        # Warp cannot handle lists of functions currently
+        # Because of this we manually unpack the boundary conditions
+        ############################################
+        # TODO: Fix this later
+        ############################################
+        from xlb.operator.boundary_condition.equilibrium import EquilibriumBC
+        from xlb.operator.boundary_condition.do_nothing import DoNothingBC
+        from xlb.operator.boundary_condition.halfway_bounce_back import HalfwayBounceBackBC
+        from xlb.operator.boundary_condition.fullway_bounce_back import FullwayBounceBackBC
+        self.equilibrium_bc = None
+        self.do_nothing_bc = None
+        self.halfway_bounce_back_bc = None
+        self.fullway_bounce_back_bc = None
+        for bc in boundary_conditions:
+            if isinstance(bc, EquilibriumBC):
+                self.equilibrium_bc = bc
+            elif isinstance(bc, DoNothingBC):
+                self.do_nothing_bc = bc
+            elif isinstance(bc, HalfwayBounceBackBC):
+                self.halfway_bounce_back_bc = bc
+            elif isinstance(bc, FullwayBounceBackBC):
+                self.fullway_bounce_back_bc = bc
+        if self.equilibrium_bc is None:
+            self.equilibrium_bc = EquilibriumBC(
+                rho=1.0,
+                u=(0.0, 0.0, 0.0),
+                equilibrium_operator=self.equilibrium,
+                velocity_set=velocity_set,
+                precision_policy=precision_policy,
+                compute_backend=compute_backend
+            )
+        if self.do_nothing_bc is None:
+            self.do_nothing_bc = DoNothingBC(
+                velocity_set=velocity_set,
+                precision_policy=precision_policy,
+                compute_backend=compute_backend
+            )
+        if self.halfway_bounce_back_bc is None:
+            self.halfway_bounce_back_bc = HalfwayBounceBackBC(
+                velocity_set=velocity_set,
+                precision_policy=precision_policy,
+                compute_backend=compute_backend
+            )
+        if self.fullway_bounce_back_bc is None:
+            self.fullway_bounce_back_bc = FullwayBounceBackBC(
+                velocity_set=velocity_set,
+                precision_policy=precision_policy,
+                compute_backend=compute_backend
+            )
+        ############################################
 
         # Initialize operator
         super().__init__(velocity_set, precision_policy, compute_backend)

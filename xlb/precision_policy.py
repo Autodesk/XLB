@@ -2,12 +2,45 @@
 
 from enum import Enum, auto
 
+import jax.numpy as jnp
+import warp as wp
 
 class Precision(Enum):
     FP64 = auto()
     FP32 = auto()
     FP16 = auto()
+    UINT8 = auto()
+    BOOL = auto()
 
+    @property
+    def wp_dtype(self):
+        if self == Precision.FP64:
+            return wp.float64
+        elif self == Precision.FP32:
+            return wp.float32
+        elif self == Precision.FP16:
+            return wp.float16
+        elif self == Precision.UINT8:
+            return wp.uint8
+        elif self == Precision.BOOL:
+            return wp.bool
+        else:
+            raise ValueError("Invalid precision")
+
+    @property
+    def jax_dtype(self):
+        if self == Precision.FP64:
+            return jnp.float64
+        elif self == Precision.FP32:
+            return jnp.float32
+        elif self == Precision.FP16:
+            return jnp.float16
+        elif self == Precision.UINT8:
+            return jnp.uint8
+        elif self == Precision.BOOL:
+            return jnp.bool_
+        else:
+            raise ValueError("Invalid precision")
 
 class PrecisionPolicy(Enum):
     FP64FP64 = auto()

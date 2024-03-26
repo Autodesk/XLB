@@ -2,6 +2,7 @@
 Registry for boundary conditions in a LBM simulation.
 """
 
+
 class BoundaryConditionRegistry:
     """
     Registry for boundary conditions in a LBM simulation.
@@ -10,8 +11,9 @@ class BoundaryConditionRegistry:
     def __init__(
         self,
     ):
-        self.ids = {}
-        self.next_id = 1 # 0 is reserved for regular streaming
+        self.id_to_bc = {}  # Maps id number to boundary condition
+        self.bc_to_id = {}  # Maps boundary condition to id number
+        self.next_id = 1  # 0 is reserved for no boundary condition
 
     def register_boundary_condition(self, boundary_condition):
         """
@@ -19,7 +21,9 @@ class BoundaryConditionRegistry:
         """
         id = self.next_id
         self.next_id += 1
-        self.ids[boundary_condition] = id
+        self.id_to_bc[id] = boundary_condition
+        self.bc_to_id[boundary_condition] = id
         return id
+
 
 boundary_condition_registry = BoundaryConditionRegistry()

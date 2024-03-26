@@ -15,8 +15,6 @@ class QuadraticEquilibrium(Equilibrium):
     """
     Quadratic equilibrium of Boltzmann equation using hermite polynomials.
     Standard equilibrium model for LBM.
-
-    TODO: move this to a separate file and lower and higher order equilibriums
     """
 
     @Operator.register_backend(ComputeBackend.JAX)
@@ -74,7 +72,6 @@ class QuadraticEquilibrium(Equilibrium):
 
             # Compute the equilibrium
             for l in range(self.velocity_set.q):
-
                 # Compute cu
                 cu = self.compute_dtype(0.0)
                 for d in range(self.velocity_set.d):

@@ -1,6 +1,6 @@
 # Enum classes
 from xlb.compute_backend import ComputeBackend
-from xlb.precision_policy import PrecisionPolicy
+from xlb.precision_policy import PrecisionPolicy, Precision
 from xlb.physics_type import PhysicsType
 
 # Config

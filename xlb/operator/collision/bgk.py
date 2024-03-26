@@ -61,7 +61,7 @@ class BGK(Collision):
         ):
             # Get the global index
             i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k) # TODO: Warp needs to fix this
+            index = wp.vec3i(i, j, k)  # TODO: Warp needs to fix this
 
             # Load needed values
             _f = _f_vec()

@@ -45,7 +45,9 @@ class Stream(Operator):
                 The updated distribution function after streaming.
             """
             if self.velocity_set.d == 2:
-                return jnp.roll(f, (-c[0], -c[1]), axis=(0, 1)) # Negative sign is used to pull the distribution instead of pushing
+                return jnp.roll(
+                    f, (-c[0], -c[1]), axis=(0, 1)
+                )  # Negative sign is used to pull the distribution instead of pushing
             elif self.velocity_set.d == 3:
                 return jnp.roll(f, (-c[0], -c[1], -c[2]), axis=(0, 1, 2))
 
@@ -64,11 +66,9 @@ class Stream(Operator):
             f: wp.array4d(dtype=Any),
             index: Any,
         ):
-
             # Pull the distribution function
             _f = _f_vec()
             for l in range(self.velocity_set.q):
-
                 # Get pull index
                 pull_index = type(index)()
                 for d in range(self.velocity_set.d):
