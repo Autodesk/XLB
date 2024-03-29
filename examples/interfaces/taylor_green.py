@@ -214,7 +214,7 @@ def run_taylor_green(backend, compute_mlup=True):
 if __name__ == "__main__":
 
     # Run Taylor-Green vortex on different backends
-    #backends = ["warp", "jax"]
-    backends = ["jax"]
+    backends = ["warp", "jax"]
+    #backends = ["jax"]
     for backend in backends:
-        run_taylor_green(backend, compute_mlup=False)
+        run_taylor_green(backend, compute_mlup=True)

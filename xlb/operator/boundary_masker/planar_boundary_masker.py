@@ -41,41 +41,55 @@ class PlanarBoundaryMasker(Operator):
         mask,
         start_index=(0, 0, 0),
     ):
-        # Get plane dimensions
+        # TODO: Optimize this
+        
+        # x plane
         if direction[0] != 0:
-            dim = (
-                upper_bound[1] - lower_bound[1] + 1,
-                upper_bound[2] - lower_bound[2] + 1,
-            )
+
+            # Set boundary id
+            boundary_id = boundary_id.at[0, lower_bound[0], lower_bound[1] : upper_bound[1] + 1, lower_bound[2] : upper_bound[2] + 1].set(id_number)
+
+            # Set mask
+            for l in range(self.velocity_set.q):
+                d_dot_c = (
+                    direction[0] * self.velocity_set.c[0, l]
+                    + direction[1] * self.velocity_set.c[1, l]
+                    + direction[2] * self.velocity_set.c[2, l]
+                )
+                if d_dot_c >= 0:
+                    mask = mask.at[l, lower_bound[0], lower_bound[1] : upper_bound[1] + 1, lower_bound[2] : upper_bound[2] + 1].set(True)
+
+        # y plane
         elif direction[1] != 0:
-            dim = (
-                upper_bound[0] - lower_bound[0] + 1,
-                upper_bound[2] - lower_bound[2] + 1,
-            )
+
+            # Set boundary id
+            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0] + 1, lower_bound[1], lower_bound[2] : upper_bound[2] + 1].set(id_number)
+
+            # Set mask
+            for l in range(self.velocity_set.q):
+                d_dot_c = (
+                    direction[0] * self.velocity_set.c[0, l]
+                    + direction[1] * self.velocity_set.c[1, l]
+                    + direction[2] * self.velocity_set.c[2, l]
+                )
+                if d_dot_c >= 0:
+                    mask = mask.at[l, lower_bound[0] : upper_bound[0] + 1, lower_bound[1], lower_bound[2] : upper_bound[2] + 1].set(True)
+
+        # z plane
         elif direction[2] != 0:
-            dim = (
-                upper_bound[0] - lower_bound[0] + 1,
-                upper_bound[1] - lower_bound[1] + 1,
-            )
 
-        # Get the constants
-        _c = self.velocity_set.wp_c
-        _q = self.velocity_set.q
+            # Set boundary id
+            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0] + 1, lower_bound[1] : upper_bound[1] + 1, lower_bound[2]].set(id_number)
 
-        # Get the mask
-        for i in range(dim[0]):
-            for j in range(dim[1]):
-                for k in range(_q):
-                    d_dot_c = (
-                        direction[0] * _c[0, k]
-                        + direction[1] * _c[1, k]
-                        + direction[2] * _c[2, k]
-                    )
-                    if d_dot_c >= 0:
-                        mask[k, i, j] = True
-
-        # Get the boundary id
-        boundary_id[:, :, :] = id_number
+            # Set mask
+            for l in range(self.velocity_set.q):
+                d_dot_c = (
+                    direction[0] * self.velocity_set.c[0, l]
+                    + direction[1] * self.velocity_set.c[1, l]
+                    + direction[2] * self.velocity_set.c[2, l]
+                )
+                if d_dot_c >= 0:
+                    mask = mask.at[l, lower_bound[0] : upper_bound[0] + 1, lower_bound[1] : upper_bound[1] + 1, lower_bound[2]].set(True)
 
         return boundary_id, mask
 

@@ -166,7 +166,10 @@ class IncompressibleNavierStokesStepper(Stepper):
                     _missing_mask[l] = wp.uint8(0)
 
             # Apply streaming boundary conditions
-            if _boundary_id == _equilibrium_bc:
+            if (_boundary_id == wp.uint8(0)) or _boundary_id == _fullway_bounce_back_bc:
+                # Regular streaming
+                f_post_stream = self.stream.warp_functional(f_0, index)
+            elif _boundary_id == _equilibrium_bc:
                 # Equilibrium boundary condition
                 f_post_stream = self.equilibrium_bc.warp_functional(
                     f_0, _missing_mask, index
@@ -181,9 +184,6 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post_stream = self.halfway_bounce_back_bc.warp_functional(
                     f_0, _missing_mask, index
                 )
-            else:
-                # Regular streaming
-                f_post_stream = self.stream.warp_functional(f_0, index)
  
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
