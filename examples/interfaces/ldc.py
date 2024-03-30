@@ -120,12 +120,18 @@ def run_ldc(backend, compute_mlup=True):
         precision_policy=precision_policy,
         compute_backend=compute_backend,
     )
+    full_way_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(
+        velocity_set=velocity_set,
+        precision_policy=precision_policy,
+        compute_backend=compute_backend,
+    )
     stepper = xlb.operator.stepper.IncompressibleNavierStokesStepper(
         collision=collision,
         equilibrium=equilibrium,
         macroscopic=macroscopic,
         stream=stream,
-        boundary_conditions=[equilibrium_bc, half_way_bc],
+        #boundary_conditions=[equilibrium_bc, half_way_bc, full_way_bc],
+        boundary_conditions=[half_way_bc, full_way_bc, equilibrium_bc],
     )
     planar_boundary_masker = xlb.operator.boundary_masker.PlanarBoundaryMasker(
         velocity_set=velocity_set,
@@ -148,21 +154,22 @@ def run_ldc(backend, compute_mlup=True):
     )
 
     # Set outlet bc (top x face)
-    lower_bound = (nr-1, 1, 1)
-    upper_bound = (nr-1, nr-1, nr-1)
+    lower_bound = (nr-1, 0, 0)
+    upper_bound = (nr-1, nr, nr)
     direction = (-1, 0, 0)
     boundary_id, missing_mask = planar_boundary_masker(
         lower_bound,
         upper_bound,
         direction,
         half_way_bc.id,
+        #full_way_bc.id,
         boundary_id,
         missing_mask,
         (0, 0, 0)
     )
 
     # Set half way bc (bottom y face)
-    lower_bound = (1, 0, 1)
+    lower_bound = (0, 0, 0)
     upper_bound = (nr, 0, nr)
     direction = (0, 1, 0)
     boundary_id, missing_mask = planar_boundary_masker(
@@ -170,13 +177,14 @@ def run_ldc(backend, compute_mlup=True):
         upper_bound,
         direction,
         half_way_bc.id,
+        #full_way_bc.id,
         boundary_id,
         missing_mask,
         (0, 0, 0)
     )
 
     # Set half way bc (top y face)
-    lower_bound = (1, nr-1, 1)
+    lower_bound = (0, nr-1, 0)
     upper_bound = (nr, nr-1, nr)
     direction = (0, -1, 0)
     boundary_id, missing_mask = planar_boundary_masker(
@@ -184,13 +192,14 @@ def run_ldc(backend, compute_mlup=True):
         upper_bound,
         direction,
         half_way_bc.id,
+        #full_way_bc.id,
         boundary_id,
         missing_mask,
         (0, 0, 0)
     )
 
     # Set half way bc (bottom z face)
-    lower_bound = (1, 1, 0)
+    lower_bound = (0, 0, 0)
     upper_bound = (nr, nr, 0)
     direction = (0, 0, 1)
     boundary_id, missing_mask = planar_boundary_masker(
@@ -198,13 +207,14 @@ def run_ldc(backend, compute_mlup=True):
         upper_bound,
         direction,
         half_way_bc.id,
+        #full_way_bc.id,
         boundary_id,
         missing_mask,
         (0, 0, 0)
     )
 
     # Set half way bc (top z face)
-    lower_bound = (1, 1, nr-1)
+    lower_bound = (0, 0, nr-1)
     upper_bound = (nr, nr, nr-1)
     direction = (0, 0, -1)
     boundary_id, missing_mask = planar_boundary_masker(
@@ -212,6 +222,7 @@ def run_ldc(backend, compute_mlup=True):
         upper_bound,
         direction,
         half_way_bc.id,
+        #full_way_bc.id,
         boundary_id,
         missing_mask,
         (0, 0, 0)
@@ -226,10 +237,10 @@ def run_ldc(backend, compute_mlup=True):
         f0 = equilibrium(rho, u)
 
     # Time stepping
-    plot_freq = 512
+    plot_freq = 128
     save_dir = "ldc"
     os.makedirs(save_dir, exist_ok=True)
-    num_steps = nr * 512
+    num_steps = nr * 16
     start = time.time()
 
     for _ in tqdm(range(num_steps)):

@@ -47,7 +47,7 @@ class PlanarBoundaryMasker(Operator):
         if direction[0] != 0:
 
             # Set boundary id
-            boundary_id = boundary_id.at[0, lower_bound[0], lower_bound[1] : upper_bound[1] + 1, lower_bound[2] : upper_bound[2] + 1].set(id_number)
+            boundary_id = boundary_id.at[0, lower_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
 
             # Set mask
             for l in range(self.velocity_set.q):
@@ -57,13 +57,13 @@ class PlanarBoundaryMasker(Operator):
                     + direction[2] * self.velocity_set.c[2, l]
                 )
                 if d_dot_c >= 0:
-                    mask = mask.at[l, lower_bound[0], lower_bound[1] : upper_bound[1] + 1, lower_bound[2] : upper_bound[2] + 1].set(True)
+                    mask = mask.at[l, lower_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2] : upper_bound[2]].set(True)
 
         # y plane
         elif direction[1] != 0:
 
             # Set boundary id
-            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0] + 1, lower_bound[1], lower_bound[2] : upper_bound[2] + 1].set(id_number)
+            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0], lower_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
 
             # Set mask
             for l in range(self.velocity_set.q):
@@ -73,13 +73,13 @@ class PlanarBoundaryMasker(Operator):
                     + direction[2] * self.velocity_set.c[2, l]
                 )
                 if d_dot_c >= 0:
-                    mask = mask.at[l, lower_bound[0] : upper_bound[0] + 1, lower_bound[1], lower_bound[2] : upper_bound[2] + 1].set(True)
+                    mask = mask.at[l, lower_bound[0] : upper_bound[0], lower_bound[1], lower_bound[2] : upper_bound[2]].set(True)
 
         # z plane
         elif direction[2] != 0:
 
             # Set boundary id
-            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0] + 1, lower_bound[1] : upper_bound[1] + 1, lower_bound[2]].set(id_number)
+            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2]].set(id_number)
 
             # Set mask
             for l in range(self.velocity_set.q):
@@ -89,7 +89,7 @@ class PlanarBoundaryMasker(Operator):
                     + direction[2] * self.velocity_set.c[2, l]
                 )
                 if d_dot_c >= 0:
-                    mask = mask.at[l, lower_bound[0] : upper_bound[0] + 1, lower_bound[1] : upper_bound[1] + 1, lower_bound[2]].set(True)
+                    mask = mask.at[l, lower_bound[0] : upper_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2]].set(True)
 
         return boundary_id, mask
 
@@ -116,15 +116,15 @@ class PlanarBoundaryMasker(Operator):
             # Get local indices
             if direction[0] != 0:
                 i = lower_bound[0] - start_index[0]
-                j = plane_i - start_index[1]
-                k = plane_j - start_index[2]
+                j = plane_i + lower_bound[1] - start_index[1]
+                k = plane_j + lower_bound[2] - start_index[2]
             elif direction[1] != 0:
-                i = plane_i - start_index[0]
+                i = plane_i + lower_bound[0] - start_index[0]
                 j = lower_bound[1] - start_index[1]
-                k = plane_j - start_index[2]
+                k = plane_j + lower_bound[2] - start_index[2]
             elif direction[2] != 0:
-                i = plane_i - start_index[0]
-                j = plane_j - start_index[1]
+                i = plane_i + lower_bound[0] - start_index[0]
+                j = plane_j + lower_bound[1] - start_index[1]
                 k = lower_bound[2] - start_index[2]
 
             # Check if in bounds
@@ -165,18 +165,18 @@ class PlanarBoundaryMasker(Operator):
         # Get plane dimensions
         if direction[0] != 0:
             dim = (
-                upper_bound[1] - lower_bound[1] + 1,
-                upper_bound[2] - lower_bound[2] + 1,
+                upper_bound[1] - lower_bound[1],
+                upper_bound[2] - lower_bound[2],
             )
         elif direction[1] != 0:
             dim = (
-                upper_bound[0] - lower_bound[0] + 1,
-                upper_bound[2] - lower_bound[2] + 1,
+                upper_bound[0] - lower_bound[0],
+                upper_bound[2] - lower_bound[2],
             )
         elif direction[2] != 0:
             dim = (
-                upper_bound[0] - lower_bound[0] + 1,
-                upper_bound[1] - lower_bound[1] + 1,
+                upper_bound[0] - lower_bound[0],
+                upper_bound[1] - lower_bound[1],
             )
 
         # Launch the warp kernel

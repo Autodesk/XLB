@@ -52,7 +52,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
     def apply_jax(self, f_pre, f_post, boundary_id, missing_mask):
         boundary = boundary_id == self.id
         boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
-        return lax.select(missing_mask & boundary, f_pre[self.velocity_set.opp_indices], f_post)
+        return lax.select(jnp.logical_and(missing_mask, boundary), f_pre[self.velocity_set.opp_indices], f_post)
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update

@@ -46,10 +46,10 @@ class Stream(Operator):
             """
             if self.velocity_set.d == 2:
                 return jnp.roll(
-                    f, (-c[0], -c[1]), axis=(0, 1)
-                )  # Negative sign is used to pull the distribution instead of pushing
+                    f, (c[0], c[1]), axis=(0, 1)
+                )
             elif self.velocity_set.d == 3:
-                return jnp.roll(f, (-c[0], -c[1], -c[2]), axis=(0, 1, 2))
+                return jnp.roll(f, (c[0], c[1], c[2]), axis=(0, 1, 2))
 
         return vmap(_streaming_jax_i, in_axes=(0, 0), out_axes=0)(
             f, jnp.array(self.velocity_set.c).T

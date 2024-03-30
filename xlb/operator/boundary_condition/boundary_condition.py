@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from jax import jit, device_count
 from functools import partial
 import numpy as np
-from enum import Enum
+from enum import Enum, auto
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -16,8 +16,8 @@ from xlb.operator.operator import Operator
 
 # Enum for implementation step
 class ImplementationStep(Enum):
-    COLLISION = 1
-    STREAMING = 2
+    COLLISION = auto()
+    STREAMING = auto()
 
 
 class BoundaryCondition(Operator):
