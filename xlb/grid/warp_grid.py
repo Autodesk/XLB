@@ -2,6 +2,7 @@ import warp as wp
 
 from xlb.grid import Grid
 from xlb.operator import Operator
+from xlb.precision_policy import Precision
 
 class WarpGrid(Grid):
     def __init__(self, shape):
@@ -11,12 +12,12 @@ class WarpGrid(Grid):
         # TODO: Implement parallelization of the operator
         raise NotImplementedError("Parallelization of the operator is not implemented yet for the WarpGrid")
 
-    def create_field(self, cardinality: int, dtype, callback=None):
+    def create_field(self, cardinality: int, precision: Precision, callback=None):
         # Get shape of the field
         shape = (cardinality,) + (self.shape)
 
         # Create the field
-        f = wp.zeros(shape, dtype=dtype)
+        f = wp.zeros(shape, dtype=precision.wp_dtype)
 
         # Raise error on callback
         if callback is not None:

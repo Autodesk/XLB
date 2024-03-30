@@ -1,9 +1,8 @@
 # Base class for all stepper operators
 
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.boundary_condition import ImplementationStep
 from xlb.global_config import GlobalConfig
-from xlb.operator import Operator
+from xlb.operator.operator import Operator
 
 
 class Solver(Operator):

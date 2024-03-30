@@ -4,6 +4,7 @@ from functools import partial
 import jax.numpy as jnp
 from jax import jit, vmap
 import warp as wp
+from typing import Any
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
@@ -12,7 +13,7 @@ from xlb.operator.operator import Operator
 
 class Stream(Operator):
     """
-    Base class for all streaming operators.
+    Base class for all streaming operators. This is used for pulling the distribution
     """
 
     @Operator.register_backend(ComputeBackend.JAX)
@@ -20,6 +21,8 @@ class Stream(Operator):
     def jax_implementation(self, f):
         """
         JAX implementation of the streaming step.
+
+        TODO: Make sure this works with pull scheme.
 
         Parameters
         ----------
@@ -42,7 +45,9 @@ class Stream(Operator):
                 The updated distribution function after streaming.
             """
             if self.velocity_set.d == 2:
-                return jnp.roll(f, (c[0], c[1]), axis=(0, 1))
+                return jnp.roll(
+                    f, (c[0], c[1]), axis=(0, 1)
+                )
             elif self.velocity_set.d == 3:
                 return jnp.roll(f, (c[0], c[1], c[2]), axis=(0, 1, 2))
 
@@ -51,57 +56,50 @@ class Stream(Operator):
         )
 
     def _construct_warp(self):
-        # Make constants for warp
-        _c = wp.constant(self._warp_int_stream_mat(self.velocity_set.c))
-        _q = wp.constant(self.velocity_set.q)
-        _d = wp.constant(self.velocity_set.d)
+        # Set local constants TODO: This is a hack and should be fixed with warp update
+        _c = self.velocity_set.wp_c
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         # Construct the funcional to get streamed indices
         @wp.func
         def functional(
-            l: int,
-            i: int,
-            j: int,
-            k: int,
-            max_i: int,
-            max_j: int,
-            max_k: int,
+            f: wp.array4d(dtype=Any),
+            index: Any,
         ):
-            streamed_i = i + _c[0, l]
-            streamed_j = j + _c[1, l]
-            streamed_k = k + _c[2, l]
-            if streamed_i < 0:
-                streamed_i = max_i - 1
-            elif streamed_i >= max_i:
-                streamed_i = 0
-            if streamed_j < 0:
-                streamed_j = max_j - 1
-            elif streamed_j >= max_j:
-                streamed_j = 0
-            if streamed_k < 0:
-                streamed_k = max_k - 1
-            elif streamed_k >= max_k:
-                streamed_k = 0
-            return streamed_i, streamed_j, streamed_k
+            # Pull the distribution function
+            _f = _f_vec()
+            for l in range(self.velocity_set.q):
+                # Get pull index
+                pull_index = type(index)()
+                for d in range(self.velocity_set.d):
+                    pull_index[d] = index[d] - _c[d, l]
+
+                    if pull_index[d] < 0:
+                        pull_index[d] = f.shape[d + 1] - 1
+                    elif pull_index[d] >= f.shape[d + 1]:
+                        pull_index[d] = 0
+
+                # Read the distribution function
+                _f[l] = f[l, pull_index[0], pull_index[1], pull_index[2]]
+
+            return _f
 
         # Construct the warp kernel
         @wp.kernel
         def kernel(
-            f_0: self._warp_array_type,
-            f_1: self._warp_array_type,
-            max_i: int,
-            max_j: int,
-            max_k: int,
+            f_0: wp.array4d(dtype=Any),
+            f_1: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
 
             # Set the output
-            for l in range(_q):
-                streamed_i, streamed_j, streamed_k = functional(
-                    l, i, j, k, max_i, max_j, max_k
-                )
-                f_1[l, streamed_i, streamed_j, streamed_k] = f_0[l, i, j, k]
+            _f = functional(f_0, index)
+
+            # Write the output
+            for l in range(self.velocity_set.q):
+                f_1[l, index[0], index[1], index[2]] = _f[l]
 
         return functional, kernel
 
@@ -109,13 +107,10 @@ class Stream(Operator):
     def warp_implementation(self, f_0, f_1):
         # Launch the warp kernel
         wp.launch(
-            self._kernel,
+            self.warp_kernel,
             inputs=[
                 f_0,
                 f_1,
-                f_0.shape[1],
-                f_0.shape[2],
-                f_0.shape[3],
             ],
             dim=f_0.shape[1:],
         )

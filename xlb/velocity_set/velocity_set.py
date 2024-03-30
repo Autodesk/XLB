@@ -43,6 +43,13 @@ class VelocitySet(object):
         self.right_indices = self._construct_right_indices()
         self.left_indices = self._construct_left_indices()
 
+        # Make warp constants for these vectors
+        # TODO: Following warp updates these may not be necessary
+        self.wp_c = wp.constant(wp.mat((self.d, self.q), dtype=wp.int32)(self.c))
+        self.wp_w = wp.constant(wp.vec(self.q, dtype=wp.float32)(self.w)) # TODO: Make type optional somehow
+        self.wp_opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self.opp_indices))
+
+
     def warp_lattice_vec(self, dtype):
         return wp.vec(len(self.c), dtype=dtype)
 

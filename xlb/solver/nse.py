@@ -6,9 +6,9 @@ import jax
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.boundary_condition import ImplementationStep
-from xlb.operator.equilibrium import QuadraticEquilibrium
-from xlb.operator.collision import BGK, KBC
+from xlb.operator.equilibrium.quadratic_equilibrium import QuadraticEquilibrium
+from xlb.operator.collision.bgk import BGK
+from xlb.operator.collision.kbc import KBC
 from xlb.operator.stream import Stream
 from xlb.operator.macroscopic import Macroscopic
 from xlb.solver.solver import Solver

@@ -6,6 +6,7 @@ import jax
 from xlb.grid import Grid
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
+from xlb.precision_policy import Precision
 
 class JaxGrid(Grid):
     def __init__(self, shape):
@@ -31,8 +32,8 @@ class JaxGrid(Grid):
             else NamedSharding(self.global_mesh, P("cardinality", "x", "y", "z"))
         )
         self.grid_shape_per_gpu = (
-            self.grid_shape[0] // self.nDevices,
-        ) + self.grid_shape[1:]
+            self.shape[0] // self.nDevices,
+        ) + self.shape[1:]
 
 
     def parallelize_operator(self, operator: Operator):
@@ -73,15 +74,15 @@ class JaxGrid(Grid):
         return f
 
 
-    def create_field(self, name: str, cardinality: int, callback=None):
+    def create_field(self, cardinality: int, precision: Precision, callback=None):
         # Get shape of the field
         shape = (cardinality,) + (self.shape)
 
         # Create field
         if callback is None:
-            f = jax.numpy.full(shape, 0.0, dtype=self.precision_policy)
-            if self.sharding is not None:
-                f = jax.make_sharded_array(self.sharding, f)
+            f = jax.numpy.full(shape, 0.0, dtype=precision.jax_dtype)
+            #if self.sharding is not None:
+            #    f = jax.make_sharded_array(self.sharding, f)
         else:
             f = jax.make_array_from_callback(shape, self.sharding, callback)
 

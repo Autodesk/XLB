@@ -23,20 +23,28 @@ from xlb.operator.boundary_condition.boundary_condition_registry import (
 )
 
 
-class DoNothingBC(BoundaryCondition):
+class EquilibriumBC(BoundaryCondition):
     """
-    Do nothing boundary condition. This boundary condition skips the streaming step for the
-    boundary nodes.
+    Full Bounce-back boundary condition for a lattice Boltzmann method simulation.
     """
 
     id = boundary_condition_registry.register_boundary_condition(__qualname__)
 
     def __init__(
         self,
+        rho: float,
+        u: Tuple[float, float, float],
+        equilibrium_operator: Operator,
         velocity_set: VelocitySet,
         precision_policy: PrecisionPolicy,
         compute_backend: ComputeBackend,
     ):
+        # Store the equilibrium information
+        self.rho = rho
+        self.u = u
+        self.equilibrium_operator = equilibrium_operator
+
+        # Call the parent constructor
         super().__init__(
             ImplementationStep.STREAMING,
             velocity_set,
@@ -49,14 +57,22 @@ class DoNothingBC(BoundaryCondition):
     @partial(jit, static_argnums=(0))
     def apply_jax(self, f_pre, f_post, boundary_id, missing_mask):
         # TODO: This is unoptimized
+        feq = self.equilibrium_operator(jnp.array([self.rho]), jnp.array(self.u))
+        feq = jnp.reshape(feq, (self.velocity_set.q, 1, 1, 1))
+        feq = jnp.repeat(feq, f_pre.shape[1], axis=1)
+        feq = jnp.repeat(feq, f_pre.shape[2], axis=2)
+        feq = jnp.repeat(feq, f_pre.shape[3], axis=3)
         boundary = boundary_id == self.id
-        flip = jnp.repeat(boundary, self.velocity_set.q, axis=0)
-        skipped_f = lax.select(flip, f_pre, f_post)
+        boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
+        skipped_f = lax.select(boundary, feq, f_post)
         return skipped_f
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _rho = wp.float32(self.rho)
+        _u = _u_vec(self.u[0], self.u[1], self.u[2])
         _missing_mask_vec = wp.vec(
             self.velocity_set.q, dtype=wp.uint8
         )  # TODO fix vec bool
@@ -68,9 +84,7 @@ class DoNothingBC(BoundaryCondition):
             missing_mask: Any,
             index: Any,
         ):
-            _f = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1], index[2]]
+            _f = self.equilibrium_operator.warp_functional(_rho, _u)
             return _f
 
         # Construct the warp kernel
@@ -97,7 +111,7 @@ class DoNothingBC(BoundaryCondition):
                     _missing_mask[l] = wp.uint8(0)
 
             # Apply the boundary condition
-            if _boundary_id == wp.uint8(DoNothingBC.id):
+            if _boundary_id == wp.uint8(EquilibriumBC.id):
                 _f = functional(f_pre, _missing_mask, index)
             else:
                 _f = _f_vec()
