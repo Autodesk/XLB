@@ -2,6 +2,7 @@
 
 from functools import partial
 import numpy as np
+from stl import mesh as np_mesh
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
@@ -26,89 +27,106 @@ class STLBoundaryMasker(Operator):
         precision_policy: PrecisionPolicy,
         compute_backend: ComputeBackend.JAX,
     ):
+        # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
-
-        # TODO: Implement this
-        raise NotImplementedError
-
-        # Make stream operator
-        self.stream = Stream(velocity_set, precision_policy, compute_backend)
-
-    @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(
-        self, mesh, id_number, boundary_id, mask, start_index=(0, 0, 0)
-    ):
-        # TODO: Implement this
-        raise NotImplementedError
 
     def _construct_warp(self):
         # Make constants for warp
-        _opp_indices = wp.constant(
-            self._warp_int_lattice_vec(self.velocity_set.opp_indices)
-        )
+        _c = self.velocity_set.wp_c
         _q = wp.constant(self.velocity_set.q)
-        _d = wp.constant(self.velocity_set.d)
-        _id = wp.constant(self.id)
 
         # Construct the warp kernel
         @wp.kernel
-        def _voxelize_mesh(
-            voxels: wp.array3d(dtype=wp.uint8),
+        def kernel(
             mesh: wp.uint64,
-            spacing: wp.vec3,
             origin: wp.vec3,
-            shape: wp.vec(3, wp.uint32),
-            max_length: float,
-            material_id: int,
+            spacing: wp.vec3,
+            id_number: wp.int32,
+            boundary_id: wp.array4d(dtype=wp.uint8),
+            mask: wp.array4d(dtype=wp.bool),
+            start_index: wp.vec3i,
         ):
-            # get index of voxel
+            # get index
             i, j, k = wp.tid()
 
-            # position of voxel
-            ijk = wp.vec3(wp.float(i), wp.float(j), wp.float(k))
+            # Get local indices
+            index = wp.vec3i()
+            index[0] = i - start_index[0]
+            index[1] = j - start_index[1]
+            index[2] = k - start_index[2]
+
+            # position of the point
+            ijk = wp.vec3(
+                wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2])
+            )
             ijk = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
             pos = wp.cw_mul(ijk, spacing) + origin
 
-            # Only evaluate voxel if not set yet
-            if voxels[i, j, k] != wp.uint8(0):
-                return
+            # Compute the maximum length
+            max_length = wp.sqrt(
+                (spacing[0] * wp.float32(boundary_id.shape[1])) ** 2.0
+                + (spacing[1] * wp.float32(boundary_id.shape[2])) ** 2.0
+                + (spacing[2] * wp.float32(boundary_id.shape[3])) ** 2.0
+            )
 
-            # evaluate distance of point
+            # evaluate if point is inside mesh
             face_index = int(0)
             face_u = float(0.0)
             face_v = float(0.0)
             sign = float(0.0)
-            if wp.mesh_query_point(
+            if wp.mesh_query_point_sign_winding_number(
                 mesh, pos, max_length, sign, face_index, face_u, face_v
             ):
-                p = wp.mesh_eval_position(mesh, face_index, face_u, face_v)
-                delta = pos - p
-                norm = wp.sqrt(wp.dot(delta, delta))
-
                 # set point to be solid
-                if norm < wp.min(spacing):
-                    voxels[i, j, k] = wp.uint8(255)
-                elif sign < 0:  # TODO: fix this
-                    voxels[i, j, k] = wp.uint8(material_id)
-                else:
-                    pass
+                if sign <= 0:  # TODO: fix this
+                    # Stream indices
+                    for l in range(_q):
+                        # Get the index of the streaming direction
+                        push_index = wp.vec3i()
+                        for d in range(self.velocity_set.d):
+                            push_index[d] = index[d] + _c[d, l]
+
+                        # Set the boundary id and mask
+                        boundary_id[
+                            0, push_index[0], push_index[1], push_index[2]
+                        ] = wp.uint8(id_number)
+                        mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, start_index, boundary_id, mask, id_number):
-        # Reuse the jax implementation, TODO: implement a warp version
-        # Convert to jax
-        boundary_id = wp.jax.to_jax(boundary_id)
-        mask = wp.jax.to_jax(mask)
-
-        # Call jax implementation
-        boundary_id, mask = self.jax_implementation(
-            start_index, boundary_id, mask, id_number
+    def warp_implementation(
+        self,
+        stl_file,
+        origin,
+        spacing,
+        id_number,
+        boundary_id,
+        mask,
+        start_index=(0, 0, 0),
+    ):
+        # Load the mesh
+        mesh = np_mesh.Mesh.from_file(stl_file)
+        mesh_points = mesh.points.reshape(-1, 3)
+        mesh_indices = np.arange(mesh_points.shape[0])
+        mesh = wp.Mesh(
+            points=wp.array(mesh_points, dtype=wp.vec3),
+            indices=wp.array(mesh_indices, dtype=int),
         )
 
-        # Convert back to warp
-        boundary_id = wp.jax.to_warp(boundary_id)
-        mask = wp.jax.to_warp(mask)
+        # Launch the warp kernel
+        wp.launch(
+            self.warp_kernel,
+            inputs=[
+                mesh.id,
+                origin,
+                spacing,
+                id_number,
+                boundary_id,
+                mask,
+                start_index,
+            ],
+            dim=boundary_id.shape[1:],
+        )
 
         return boundary_id, mask

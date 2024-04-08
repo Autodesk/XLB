@@ -8,6 +8,7 @@ from jax import jit, vmap
 
 import warp as wp
 
+
 class VelocitySet(object):
     """
     Base class for the velocity set of the Lattice Boltzmann Method (LBM), e.g. D2Q9, D3Q27, etc.
@@ -46,9 +47,15 @@ class VelocitySet(object):
         # Make warp constants for these vectors
         # TODO: Following warp updates these may not be necessary
         self.wp_c = wp.constant(wp.mat((self.d, self.q), dtype=wp.int32)(self.c))
-        self.wp_w = wp.constant(wp.vec(self.q, dtype=wp.float32)(self.w)) # TODO: Make type optional somehow
-        self.wp_opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self.opp_indices))
-
+        self.wp_w = wp.constant(
+            wp.vec(self.q, dtype=wp.float32)(self.w)
+        )  # TODO: Make type optional somehow
+        self.wp_opp_indices = wp.constant(
+            wp.vec(self.q, dtype=wp.int32)(self.opp_indices)
+        )
+        self.wp_cc = wp.constant(
+            wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.cc)
+        )
 
     def warp_lattice_vec(self, dtype):
         return wp.vec(len(self.c), dtype=dtype)
