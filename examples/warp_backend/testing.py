@@ -98,11 +98,11 @@ def test_backends(compute_backend):
 if __name__ == "__main__":
 
     # Test backends
-    compute_backends = [
+    compute_backend = [
         xlb.ComputeBackend.WARP,
         xlb.ComputeBackend.JAX
     ]
 
-    for compute_backend in compute_backends:
+    for compute_backend in compute_backend:
         test_backends(compute_backend)
         print(f"Backend {compute_backend} passed all tests.")

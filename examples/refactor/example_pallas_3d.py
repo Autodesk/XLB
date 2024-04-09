@@ -1,5 +1,5 @@
 import xlb
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import Fp32Fp32
 
 from xlb.solver import IncompressibleNavierStokes
@@ -13,7 +13,7 @@ import jax.numpy as jnp
 # Initialize XLB with Pallas backend for 3D simulation
 xlb.init(
     precision_policy=Fp32Fp32,
-    compute_backend=ComputeBackends.PALLAS,  # Changed to Pallas backend
+    compute_backend=ComputeBackend.PALLAS,  # Changed to Pallas backend
     velocity_set=xlb.velocity_set.D3Q19,     # Changed to D3Q19 for 3D
 )
 
@@ -45,7 +45,7 @@ def initializer():
 
     rho = jnp.where(inside_sphere, rho.at[0, x, y, z].add(0.001), rho)
 
-    func_eq = QuadraticEquilibrium(compute_backend=ComputeBackends.JAX)
+    func_eq = QuadraticEquilibrium(compute_backend=ComputeBackend.JAX)
     f_eq = func_eq(rho, u)
 
     return f_eq
@@ -53,7 +53,7 @@ def initializer():
 
 f = initializer()
 
-compute_macro = Macroscopic(compute_backend=ComputeBackends.JAX)
+compute_macro = Macroscopic(compute_backend=ComputeBackend.JAX)
 
 solver = IncompressibleNavierStokes(grid, omega=1.0)
 

@@ -2,7 +2,7 @@ import xlb
 import time
 import jax
 import argparse
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import Fp32Fp32
 from xlb.operator.initializer import EquilibriumInitializer
 
@@ -23,7 +23,7 @@ num_steps = args.num_steps
 
 xlb.init(
     precision_policy=Fp32Fp32,
-    compute_backend=ComputeBackends.PALLAS,
+    compute_backend=ComputeBackend.PALLAS,
     velocity_set=xlb.velocity_set.D3Q19,
 )
 
@@ -37,7 +37,7 @@ print("f shape", f.shape)
 solver = IncompressibleNavierStokes(grid, omega=1.0)
 
 # Ahead-of-Time Compilation to remove JIT overhead
-# if xlb.current_backend() == ComputeBackends.JAX or xlb.current_backend() == ComputeBackends.PALLAS:
+# if xlb.current_backend() == ComputeBackend.JAX or xlb.current_backend() == ComputeBackend.PALLAS:
 #     lowered = jax.jit(solver.step).lower(f, timestep=0)
 #     solver_step_compiled = lowered.compile()
 

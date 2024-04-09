@@ -53,19 +53,13 @@ class EquilibriumBC(BoundaryCondition):
         )
 
     @Operator.register_backend(ComputeBackend.JAX)
-    #@partial(jit, static_argnums=(0), donate_argnums=(1, 2))
-    @partial(jit, static_argnums=(0))
+    # @partial(jit, static_argnums=(0))
     def apply_jax(self, f_pre, f_post, boundary_id, missing_mask):
-        # TODO: This is unoptimized
         feq = self.equilibrium_operator(jnp.array([self.rho]), jnp.array(self.u))
-        feq = jnp.reshape(feq, (self.velocity_set.q, 1, 1, 1))
-        feq = jnp.repeat(feq, f_pre.shape[1], axis=1)
-        feq = jnp.repeat(feq, f_pre.shape[2], axis=2)
-        feq = jnp.repeat(feq, f_pre.shape[3], axis=3)
-        boundary = boundary_id == self.id
-        boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
-        skipped_f = lax.select(boundary, feq, f_post)
-        return skipped_f
+        feq = feq[:, None, None, None]
+        boundary = (boundary_id == self.id)
+
+        return jnp.where(boundary, feq, f_post)
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update

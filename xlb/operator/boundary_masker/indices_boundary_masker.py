@@ -3,7 +3,7 @@
 from functools import partial
 import numpy as np
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, lax
 import warp as wp
 from typing import Tuple
 
@@ -36,60 +36,31 @@ class IndicesBoundaryMasker(Operator):
     def _indices_to_tuple(indices):
         """
         Converts a tensor of indices to a tuple for indexing
-        TODO: Might be better to index
         """
-        return tuple([indices[:, i] for i in range(indices.shape[1])])
+        return tuple(indices.T)
 
     @Operator.register_backend(ComputeBackend.JAX)
-    # @partial(jit, static_argnums=(0), inline=True) TODO: Fix this
     def jax_implementation(
         self, indices, id_number, boundary_id, mask, start_index=(0, 0, 0)
     ):
-        # TODO: This is somewhat untested and unoptimized
-
-        # Get local indices from the meshgrid and the indices
         local_indices = indices - np.array(start_index)[np.newaxis, :]
 
         # Remove any indices that are out of bounds
-        local_indices = local_indices[
-            (local_indices[:, 0] >= 0)
-            & (local_indices[:, 0] < mask.shape[0])
-            & (local_indices[:, 1] >= 0)
-            & (local_indices[:, 1] < mask.shape[1])
-            & (local_indices[:, 2] >= 0)
-            & (local_indices[:, 2] < mask.shape[2])
-        ]
+        indices_mask_x = (local_indices[:, 0] >= 0) & (local_indices[:, 0] < mask.shape[1])
+        indices_mask_y = (local_indices[:, 1] >= 0) & (local_indices[:, 1] < mask.shape[2])
+        indices_mask_z = (local_indices[:, 2] >= 0) & (local_indices[:, 2] < mask.shape[3])
+        indices_mask = indices_mask_x & indices_mask_y & indices_mask_z
 
-        # Set the boundary id
-        boundary_id = boundary_id.at[0, self._indices_to_tuple(local_indices)].set(
-            id_number
-        )
+        local_indices = self._indices_to_tuple(local_indices[indices_mask])
 
-        # Make mask then stream to get the edge points
-        pre_stream_mask = jnp.zeros_like(mask)
-        pre_stream_mask = pre_stream_mask.at[self._indices_to_tuple(local_indices)].set(
-            True
-        )
-        post_stream_mask = self.stream(pre_stream_mask)
+        @jit
+        def compute_boundary_id_and_mask(boundary_id, mask):
+            boundary_id = boundary_id.at[0, local_indices[0], local_indices[1], local_indices[2]].set(id_number)
+            mask = mask.at[:, local_indices[0], local_indices[1], local_indices[2]].set(True)
+            mask = self.stream(mask)
+            return boundary_id, mask
 
-        # Set false for points inside the boundary (NOTE: removing this to be more consistent with the other boundary maskers, maybe add back in later)
-        # post_stream_mask = post_stream_mask.at[
-        #    post_stream_mask[0, ...] == True
-        # ].set(False)
-
-        # Get indices on edges
-        edge_indices = jnp.argwhere(post_stream_mask)
-
-        # Set the mask
-        mask = mask.at[
-            edge_indices[:, 0], edge_indices[:, 1], edge_indices[:, 2], :
-        ].set(
-            post_stream_mask[
-                edge_indices[:, 0], edge_indices[:, 1], edge_indices[:, 2], :
-            ]
-        )
-
-        return boundary_id, mask
+        return compute_boundary_id_and_mask(boundary_id, mask)
 
     def _construct_warp(self):
         # Make constants for warp
@@ -131,9 +102,9 @@ class IndicesBoundaryMasker(Operator):
                         push_index[d] = index[d] + _c[d, l]
 
                     # Set the boundary id and mask
-                    boundary_id[
-                        0, push_index[0], push_index[1], push_index[2]
-                    ] = wp.uint8(id_number)
+                    boundary_id[0, index[0], index[1], index[2]] = (
+                        wp.uint8(id_number)
+                    )
                     mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel

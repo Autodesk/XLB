@@ -1,12 +1,16 @@
 from jax.sharding import PartitionSpec as P
 from jax.sharding import NamedSharding, Mesh
 from jax.experimental import mesh_utils
+from jax.experimental.shard_map import shard_map
+import numpy as np
+import jax.numpy as jnp
 import jax
 
 from xlb.grid import Grid
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
 from xlb.precision_policy import Precision
+
 
 class JaxGrid(Grid):
     def __init__(self, shape):
@@ -80,9 +84,8 @@ class JaxGrid(Grid):
 
         # Create field
         if callback is None:
-            f = jax.numpy.full(shape, 0.0, dtype=precision.jax_dtype)
-            #if self.sharding is not None:
-            #    f = jax.make_sharded_array(self.sharding, f)
+            f = np.full(shape, 0.0, dtype=precision.jax_dtype)
+            f = jax.device_put(f, self.sharding)
         else:
             f = jax.make_array_from_callback(shape, self.sharding, callback)
 

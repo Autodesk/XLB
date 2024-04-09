@@ -1,5 +1,5 @@
 import xlb
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import Fp32Fp32
 
 from xlb.solver import IncompressibleNavierStokes
@@ -10,7 +10,7 @@ from xlb.utils import save_fields_vtk, save_image
 
 xlb.init(
     precision_policy=Fp32Fp32,
-    compute_backend=ComputeBackends.JAX,
+    compute_backend=ComputeBackend.JAX,
     velocity_set=xlb.velocity_set.D2Q9,
 )
 

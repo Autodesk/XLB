@@ -51,9 +51,9 @@ class Stepper(Operator):
         precision_policies = set([op.precision_policy for op in self.operators])
         assert len(precision_policies) == 1, "All precision policies must be the same"
         precision_policy = precision_policies.pop()
-        compute_backends = set([op.compute_backend for op in self.operators])
-        assert len(compute_backends) == 1, "All compute backends must be the same"
-        compute_backend = compute_backends.pop()
+        compute_backend = set([op.compute_backend for op in self.operators])
+        assert len(compute_backend) == 1, "All compute backends must be the same"
+        compute_backend = compute_backend.pop()
 
         # Add boundary conditions
         # Warp cannot handle lists of functions currently

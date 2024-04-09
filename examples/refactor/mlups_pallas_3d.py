@@ -1,7 +1,7 @@
 import xlb
 import time
 import argparse
-from xlb.compute_backends import ComputeBackends
+from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import Fp32Fp32
 from xlb.solver import IncompressibleNavierStokes
 from xlb.grid import Grid
@@ -23,7 +23,7 @@ args = parser.parse_args()
 # Initialize XLB
 xlb.init(
     precision_policy=Fp32Fp32,
-    compute_backend=ComputeBackends.PALLAS,
+    compute_backend=ComputeBackend.PALLAS,
     velocity_set=xlb.velocity_set.D3Q19,
 )
 
@@ -56,7 +56,7 @@ def initializer():
 
     rho = jnp.where(inside_sphere, rho.at[0, x, y, z].add(0.001), rho)
 
-    func_eq = QuadraticEquilibrium(compute_backend=ComputeBackends.JAX)
+    func_eq = QuadraticEquilibrium(compute_backend=ComputeBackend.JAX)
     f_eq = func_eq(rho, u)
 
     return f_eq
