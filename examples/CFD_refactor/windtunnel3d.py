@@ -24,6 +24,7 @@ class UniformInitializer(Operator):
         def kernel(
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
+            boundary_id: wp.array4d(dtype=wp.uint8),
             vel: float,
         ):
             # Get the global index
@@ -40,13 +41,14 @@ class UniformInitializer(Operator):
         return None, kernel
 
     @Operator.register_backend(xlb.ComputeBackend.WARP)
-    def warp_implementation(self, rho, u, vel):
+    def warp_implementation(self, rho, u, boundary_id, vel):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
             inputs=[
                 rho,
                 u,
+                boundary_id,
                 vel,
             ],
             dim=rho.shape[1:],
@@ -54,6 +56,10 @@ class UniformInitializer(Operator):
         return rho, u
 
 class MomentumTransfer(Operator):
+
+    def __init__(self, halfway_bounce_back, velocity_set, precision_policy, compute_backend):
+        self.halfway_bounce_back = halfway_bounce_back
+        super().__init__(velocity_set, precision_policy, compute_backend)
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
@@ -69,7 +75,6 @@ class MomentumTransfer(Operator):
             if _c[0, l] == 0 and _c[1, l] == 0 and _c[2, l] == 0:
                 zero_index = l
         _zero_index = wp.int32(zero_index)
-        print(f"Zero index: {_zero_index}")
 
         # Construct the warp kernel
         @wp.kernel
@@ -96,17 +101,27 @@ class MomentumTransfer(Operator):
             # Determin if boundary is an edge by checking if center is missing
             is_edge = wp.bool(False)
             if _boundary_id == wp.uint8(xlb.operator.boundary_condition.HalfwayBounceBackBC.id):
-                if _missing_mask[_zero_index] != wp.uint8(1):
+                if _missing_mask[_zero_index] == wp.uint8(0):
                     is_edge = wp.bool(True)
 
             # If the boundary is an edge then add the momentum transfer
             m = wp.vec3()
             if is_edge:
+
+                # Get the distribution function
+                f_post_collision = _f_vec()
+                for l in range(self.velocity_set.q):
+                    f_post_collision[l] = f[l, index[0], index[1], index[2]]
+
+                # Apply streaming
+                f_post_stream = self.halfway_bounce_back.warp_functional(
+                    f, _missing_mask, index
+                )
+ 
+                # Compute the momentum transfer
                 for l in range(self.velocity_set.q):
                     if _missing_mask[l] == wp.uint8(1):
-                        phi = 2.0 * f[_opp_indices[l], index[0], index[1], index[2]]
-
-                        # Compute the momentum transfer
+                        phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
                         for d in range(self.velocity_set.d):
                             m[d] += phi * wp.float32(_c[d, _opp_indices[l]])
 
@@ -137,6 +152,7 @@ class WindTunnel:
     def __init__(
         self, 
         stl_filename: str,
+        no_slip_walls: bool = True,
         inlet_velocity: float = 27.78, # m/s
         lower_bounds: tuple[float, float, float] = (0.0, 0.0, 0.0), # m
         upper_bounds: tuple[float, float, float] = (1.0, 0.5, 0.5), # m
@@ -144,7 +160,6 @@ class WindTunnel:
         viscosity: float = 1.42e-5, # air at 20 degrees Celsius
         density: float = 1.2754, # kg/m^3
         solve_time: float = 1.0, # s
-        #collision="BGK",
         collision="KBC",
         equilibrium="Quadratic",
         velocity_set="D3Q27",
@@ -157,6 +172,7 @@ class WindTunnel:
 
         # Set parameters
         self.stl_filename = stl_filename
+        self.no_slip_walls = no_slip_walls
         self.inlet_velocity = inlet_velocity
         self.lower_bounds = lower_bounds
         self.upper_bounds = upper_bounds
@@ -168,14 +184,12 @@ class WindTunnel:
         self.monitor_frequency = monitor_frequency
 
         # Get fluid properties needed for the simulation
-        self.base_velocity = 0.05 # LBM units
+        self.base_velocity = 0.0289 # From http://jtam.pl/pdf-101879-33440?filename=Application%20of%20the.pdf (Maybe 0.5 better)
         self.velocity_conversion = self.base_velocity / inlet_velocity
         self.dt = self.dx * self.velocity_conversion
         self.lbm_viscosity = self.viscosity * self.dt / (self.dx ** 2)
-        self.tau = 0.5 + self.lbm_viscosity
+        self.tau = 0.5 + 3.0 * self.lbm_viscosity # tau = 0.5 + 3 * viscosity
         self.omega = 1.0 / self.tau
-        print(f"tau: {self.tau}")
-        print(f"omega: {self.omega}")
         self.lbm_density = 1.0
         self.mass_conversion = self.dx ** 3 * (self.density / self.lbm_density)
         self.nr_steps = int(solve_time / self.dt)
@@ -217,11 +231,6 @@ class WindTunnel:
             precision_policy=self.precision_policy,
             compute_backend=self.compute_backend,
         )
-        self.momentum_transfer = MomentumTransfer(
-            velocity_set=self.velocity_set,
-            precision_policy=self.precision_policy,
-            compute_backend=self.compute_backend,
-        )
         if collision == "BGK":
             self.collision = xlb.operator.collision.BGK(
                 omega=self.omega,
@@ -231,6 +240,13 @@ class WindTunnel:
             )
         elif collision == "KBC":
             self.collision = xlb.operator.collision.KBC(
+                omega=self.omega,
+                velocity_set=self.velocity_set,
+                precision_policy=self.precision_policy,
+                compute_backend=self.compute_backend,
+            )
+        elif collision == "SmagorinskyLESBGK":
+            self.collision = xlb.operator.collision.SmagorinskyLESBGK(
                 omega=self.omega,
                 velocity_set=self.velocity_set,
                 precision_policy=self.precision_policy,
@@ -286,6 +302,12 @@ class WindTunnel:
                 self.do_nothing_bc
             ],
         )
+        self.momentum_transfer = MomentumTransfer(
+            halfway_bounce_back=self.half_way_bc,
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=self.compute_backend,
+        )
         self.planar_boundary_masker = xlb.operator.boundary_masker.PlanarBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
@@ -306,7 +328,7 @@ class WindTunnel:
         """
 
         # Set initial conditions
-        self.rho, self.u = self.initializer(self.rho, self.u, self.base_velocity)
+        self.rho, self.u = self.initializer(self.rho, self.u, self.boundary_id, self.base_velocity)
         self.f0 = self.equilibrium(self.rho, self.u, self.f0)
 
     def initialize_boundary_conditions(self):
@@ -315,8 +337,12 @@ class WindTunnel:
         """
 
         # Set inlet bc (bottom x face)
-        lower_bound = (0, 1, 1) # no edges
-        upper_bound = (0, self.ny-1, self.nz-1)
+        if self.no_slip_walls:
+            lower_bound = (0, 2, 2) # no edges
+            upper_bound = (0, self.ny-2, self.nz-2)
+        else:
+            lower_bound = (0, 0, 0) # edges
+            upper_bound = (0, self.ny-1, self.nz-1)
         direction = (1, 0, 0)
         self.boundary_id, self.missing_mask = self.planar_boundary_masker(
             lower_bound,
@@ -329,9 +355,12 @@ class WindTunnel:
         )
     
         # Set outlet bc (top x face)
-        lower_bound = (self.nx-1, 1, 1)
-        upper_bound = (self.nx-1, self.ny-1, self.nz-1)
-        direction = (-1, 0, 0)
+        if self.no_slip_walls:
+            lower_bound = (self.nx-1, 1, 1)
+            upper_bound = (self.nx-1, self.ny-1, self.nz-1)
+        else:
+            lower_bound = (self.nx-1, 0, 0)
+            upper_bound = (self.nx-1, self.ny-1, self.nz-1)
         self.boundary_id, self.missing_mask = self.planar_boundary_masker(
             lower_bound,
             upper_bound,
@@ -341,63 +370,68 @@ class WindTunnel:
             self.missing_mask,
             (0, 0, 0)
         )
+
+        # Set no slip walls
+        if self.no_slip_walls:
+
+            # Set full way bc (bottom y face)
+            lower_bound = (0, 0, 0)
+            upper_bound = (self.nx, 0, self.nz)
+            direction = (0, 1, 0)
+            self.boundary_id, self.missing_mask = self.planar_boundary_masker(
+                lower_bound,
+                upper_bound,
+                direction,
+                self.full_way_bc.id,
+                self.boundary_id,
+                self.missing_mask,
+                (0, 0, 0)
+            )
+        
+            # Set full way bc (top y face)
+            lower_bound = (0, self.ny-1, 0)
+            upper_bound = (self.nx, self.ny-1, self.nz)
+            direction = (0, -1, 0)
+            self.boundary_id, self.missing_mask = self.planar_boundary_masker(
+                lower_bound,
+                upper_bound,
+                direction,
+                self.full_way_bc.id,
+                self.boundary_id,
+                self.missing_mask,
+                (0, 0, 0)
+            )
     
-        # Set full way bc (bottom y face)
-        lower_bound = (0, 0, 0)
-        upper_bound = (self.nx, 0, self.nz)
-        direction = (0, 1, 0)
-        self.boundary_id, self.missing_mask = self.planar_boundary_masker(
-            lower_bound,
-            upper_bound,
-            direction,
-            self.full_way_bc.id,
-            self.boundary_id,
-            self.missing_mask,
-            (0, 0, 0)
-        )
+            # Set full way bc (bottom z face)
+            lower_bound = (0, 0, 0)
+            upper_bound = (self.nx, self.ny, 0)
+            direction = (0, 0, 1)
+            self.boundary_id, self.missing_mask = self.planar_boundary_masker(
+                lower_bound,
+                upper_bound,
+                direction,
+                self.full_way_bc.id,
+                self.boundary_id,
+                self.missing_mask,
+                (0, 0, 0)
+            )
     
-        # Set full way bc (top y face)
-        lower_bound = (0, self.ny-1, 0)
-        upper_bound = (self.nx, self.ny-1, self.nz)
-        direction = (0, -1, 0)
-        self.boundary_id, self.missing_mask = self.planar_boundary_masker(
-            lower_bound,
-            upper_bound,
-            direction,
-            self.full_way_bc.id,
-            self.boundary_id,
-            self.missing_mask,
-            (0, 0, 0)
-        )
+            # Set full way bc (top z face)
+            lower_bound = (0, 0, self.nz-1)
+            upper_bound = (self.nx, self.ny, self.nz-1)
+            direction = (0, 0, -1)
+            self.boundary_id, self.missing_mask = self.planar_boundary_masker(
+                lower_bound,
+                upper_bound,
+                direction,
+                self.full_way_bc.id,
+                self.boundary_id,
+                self.missing_mask,
+                (0, 0, 0)
+            )
 
-        # Set full way bc (bottom z face)
-        lower_bound = (0, 0, 0)
-        upper_bound = (self.nx, self.ny, 0)
-        direction = (0, 0, 1)
-        self.boundary_id, self.missing_mask = self.planar_boundary_masker(
-            lower_bound,
-            upper_bound,
-            direction,
-            self.full_way_bc.id,
-            self.boundary_id,
-            self.missing_mask,
-            (0, 0, 0)
-        )
 
-        # Set full way bc (top z face)
-        lower_bound = (0, 0, self.nz-1)
-        upper_bound = (self.nx, self.ny, self.nz-1)
-        direction = (0, 0, -1)
-        self.boundary_id, self.missing_mask = self.planar_boundary_masker(
-            lower_bound,
-            upper_bound,
-            direction,
-            self.full_way_bc.id,
-            self.boundary_id,
-            self.missing_mask,
-            (0, 0, 0)
-        )
-
+    
         # Set stl half way bc
         self.boundary_id, self.missing_mask = self.stl_boundary_masker(
             self.stl_filename,
@@ -417,6 +451,7 @@ class WindTunnel:
         """
         Save the solid id array.
         """
+
 
         # Create grid
         grid = pv.RectilinearGrid(
@@ -448,7 +483,7 @@ class WindTunnel:
         self.drag_coefficients.append(c_d)
 
     def plot_drag_coefficient(self):
-        plt.plot(self.drag_coefficients[-30:])
+        plt.plot(self.drag_coefficients[-100:]) # Just plot the last 100 steps
         plt.xlabel("Time step")
         plt.ylabel("Drag coefficient")
         plt.savefig("drag_coefficient.png")
@@ -456,15 +491,20 @@ class WindTunnel:
 
     def run(self):
 
-        # Initialize the flow field
-        self.initialize_flow()
-
         # Initialize the boundary conditions
         self.initialize_boundary_conditions()
 
+        # Initialize the flow field
+        self.initialize_flow()
+
         # Compute cross section
+        for l in range(self.velocity_set.q):
+            if self.velocity_set.c[0, l] == 0 and self.velocity_set.c[1, l] == 0 and self.velocity_set.c[2, l] == 0:
+                zero_index = l
+        np_missing_mask = self.missing_mask.numpy()
         np_boundary_id = self.boundary_id.numpy()
-        cross_section = np.sum(np_boundary_id == self.half_way_bc.id, axis=(0, 1))
+        is_solid = np.logical_and(np_missing_mask[zero_index] == 1, np_boundary_id[0] == self.half_way_bc.id)
+        cross_section = np.sum(is_solid, axis=(0))
         self.cross_section = np.sum(cross_section > 0)
 
         # Run the simulation
@@ -486,27 +526,10 @@ class WindTunnel:
                 self.compute_rho_u()
                 self.save_state(str(i).zfill(8))
 
-if __name__ == '__main__':
-
-    # Parameters
-    inlet_velocity = 0.01 # m/s
-    stl_filename = "fastback_baseline.stl"
-    lower_bounds = (-4.0, -2.5, -1.5)
-    upper_bounds = (12.0, 2.5, 2.5)
-    dx = 0.03
-    solve_time = 10000.0
-
-    # Make wind tunnel
-    wind_tunnel = WindTunnel(
-        stl_filename=stl_filename,
-        inlet_velocity=inlet_velocity,
-        lower_bounds=lower_bounds,
-        upper_bounds=upper_bounds,
-        solve_time=solve_time,
-        dx=dx,
-    )
-
-    # Run the simulation
-    wind_tunnel.run()
-    wind_tunnel.save_state("final", save_velocity_distribution=True)
-
+        # Delete all the fields
+        del self.rho
+        del self.u
+        del self.f0
+        del self.f1
+        del self.boundary_id
+        del self.missing_mask

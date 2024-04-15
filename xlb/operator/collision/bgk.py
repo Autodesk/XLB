@@ -2,6 +2,7 @@ import jax.numpy as jnp
 from jax import jit
 import warp as wp
 from typing import Any
+import numpy as np
 
 from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
@@ -21,7 +22,7 @@ class BGK(Collision):
         self, f: jnp.ndarray, feq: jnp.ndarray, rho: jnp.ndarray, u: jnp.ndarray
     ):
         fneq = f - feq
-        fout = f - self.compute_dtype(self.omega) * fneq
+        fout = f - omega * fneq
         return fout
 
     @Operator.register_backend(ComputeBackend.PALLAS)
@@ -46,7 +47,10 @@ class BGK(Collision):
             rho: Any,
             u: Any,
         ):
+            # Compute the non-equilibrium distribution
             fneq = f - feq
+
+            # Compute the collision
             fout = f - _omega * fneq
             return fout
 
