@@ -7,7 +7,7 @@ from jax import jit, lax
 import warp as wp
 from typing import Tuple
 
-from xlb.global_config import GlobalConfig
+from xlb.default_config import DefaultConfig
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend

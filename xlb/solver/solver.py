@@ -1,7 +1,7 @@
 # Base class for all stepper operators
 
 from xlb.compute_backend import ComputeBackend
-from xlb.global_config import GlobalConfig
+from xlb.default_config import DefaultConfig
 from xlb.operator.operator import Operator
 
 
@@ -23,10 +23,10 @@ class Solver(Operator):
 
         # Set parameters
         self.shape = shape
-        self.velocity_set = velocity_set or GlobalConfig.velocity_set
-        self.precision_policy = precision_policy or GlobalConfig.precision_policy
-        self.compute_backend = compute_backend or GlobalConfig.compute_backend
-        self.grid_backend = grid_backend or GlobalConfig.grid_backend
+        self.velocity_set = velocity_set or DefaultConfig.velocity_set
+        self.precision_policy = precision_policy or DefaultConfig.precision_policy
+        self.compute_backend = compute_backend or DefaultConfig.compute_backend
+        self.grid_backend = grid_backend or DefaultConfig.grid_backend
         self.boundary_conditions = boundary_conditions
 
         # Make grid

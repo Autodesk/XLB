@@ -8,7 +8,7 @@ from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium.equilibrium import Equilibrium
 from xlb.operator import Operator
-from xlb.global_config import GlobalConfig
+from xlb.default_config import DefaultConfig
 
 
 class QuadraticEquilibrium(Equilibrium):
@@ -91,7 +91,7 @@ class QuadraticEquilibrium(Equilibrium):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel(
+        def kernel3d(
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
             f: wp.array4d(dtype=Any),
@@ -110,6 +110,29 @@ class QuadraticEquilibrium(Equilibrium):
             # Set the output
             for l in range(self.velocity_set.q):
                 f[l, index[0], index[1], index[2]] = feq[l]
+
+        @wp.kernel
+        def kernel2d(
+            rho: wp.array3d(dtype=Any),
+            u: wp.array3d(dtype=Any),
+            f: wp.array3d(dtype=Any),
+        ):
+            # Get the global index
+            i, j = wp.tid()
+            index = wp.vec2i(i, j)
+
+            # Get the equilibrium
+            _u = _u_vec()
+            for d in range(self.velocity_set.d):
+                _u[d] = u[d, index[0], index[1]]
+            _rho = rho[0, index[0], index[1]]
+            feq = functional(_rho, _u)
+
+            # Set the output
+            for l in range(self.velocity_set.q):
+                f[l, index[0], index[1]] = feq[l]
+
+        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 

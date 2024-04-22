@@ -7,11 +7,19 @@ import matplotlib.pyplot as plt
 from typing import Any
 import numpy as np
 
+from xlb.compute_backend import ComputeBackend
+
 import warp as wp
 
-wp.init()
-
 import xlb
+
+xlb.init(
+    default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
+    default_backend=ComputeBackend.WARP,
+    velocity_set=xlb.velocity_set.D2Q9,
+)
+
+
 from xlb.operator import Operator
 
 class UniformInitializer(Operator):
@@ -62,8 +70,8 @@ if __name__ == "__main__":
     nr = 256
     vel = 0.05
     shape = (nr, nr, nr)
-    grid = xlb.grid.WarpGrid(shape=shape)
-    rho = grid.create_field(cardinality=1, dtype=wp.float32)
+    grid = xlb.grid.grid(shape=shape)
+    rho = grid.create_field(cardinality=1)
     u = grid.create_field(cardinality=velocity_set.d, dtype=wp.float32)
     f0 = grid.create_field(cardinality=velocity_set.q, dtype=wp.float32)
     f1 = grid.create_field(cardinality=velocity_set.q, dtype=wp.float32)

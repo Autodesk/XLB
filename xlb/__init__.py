@@ -4,7 +4,7 @@ from xlb.precision_policy import PrecisionPolicy, Precision
 from xlb.physics_type import PhysicsType
 
 # Config
-from .global_config import init, current_backend
+from .default_config import init, default_backend
 
 # Velocity Set
 import xlb.velocity_set

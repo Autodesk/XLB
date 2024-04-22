@@ -4,7 +4,7 @@ from typing import Any
 
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy, Precision
-from xlb.global_config import GlobalConfig
+from xlb.default_config import DefaultConfig
 
 
 class Operator:
@@ -18,9 +18,9 @@ class Operator:
 
     def __init__(self, velocity_set, precision_policy, compute_backend):
         # Set the default values from the global config
-        self.velocity_set = velocity_set or GlobalConfig.velocity_set
-        self.precision_policy = precision_policy or GlobalConfig.precision_policy
-        self.compute_backend = compute_backend or GlobalConfig.compute_backend
+        self.velocity_set = velocity_set or DefaultConfig.velocity_set
+        self.precision_policy = precision_policy or DefaultConfig.default_precision_policy
+        self.compute_backend = compute_backend or DefaultConfig.default_backend
 
         # Check if the compute backend is supported
         if self.compute_backend not in ComputeBackend:
