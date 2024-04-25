@@ -15,8 +15,9 @@ def init_xlb_warp_env():
     )
 
 
-def test_warp_grid_create_field():
-    for grid_shape in [(100, 100), (100, 100, 100)]:
+@pytest.mark.parametrize("grid_size", [50, 100, 150])
+def test_warp_grid_create_field(grid_size):
+    for grid_shape in [(grid_size, grid_size), (grid_size, grid_size, grid_size)]:
         init_xlb_warp_env()
         my_grid = grid(grid_shape)
         f = my_grid.create_field(cardinality=9, dtype=Precision.FP32)

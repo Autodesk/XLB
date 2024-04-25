@@ -1,4 +1,6 @@
 # Base class for all operators, (collision, streaming, equilibrium, etc.)
+
+import inspect
 import warp as wp
 from typing import Any
 
@@ -16,10 +18,12 @@ class Operator:
 
     _backends = {}
 
-    def __init__(self, velocity_set, precision_policy, compute_backend):
+    def __init__(self, velocity_set=None, precision_policy=None, compute_backend=None):
         # Set the default values from the global config
         self.velocity_set = velocity_set or DefaultConfig.velocity_set
-        self.precision_policy = precision_policy or DefaultConfig.default_precision_policy
+        self.precision_policy = (
+            precision_policy or DefaultConfig.default_precision_policy
+        )
         self.compute_backend = compute_backend or DefaultConfig.default_backend
 
         # Check if the compute backend is supported
@@ -37,35 +41,41 @@ class Operator:
         """
 
         def decorator(func):
-            # Use the combination of operator name and backend name as the key
             subclass_name = func.__qualname__.split(".")[0]
-            key = (subclass_name, backend_name)
+            signature = inspect.signature(func)
+            key = (subclass_name, backend_name, str(signature))
             cls._backends[key] = func
             return func
 
         return decorator
 
+        return decorator
+
     def __call__(self, *args, callback=None, **kwargs):
-        """
-        Calls the operator with the compute backend specified in the constructor.
-        If a callback is provided, it is called either with the result of the operation
-        or with the original arguments and keyword arguments if the backend modifies them by reference.
-        """
-        key = (self.__class__.__name__, self.compute_backend)
-        backend_method = self._backends.get(key)
+        method_candidates = [
+            (key, method)
+            for key, method in self._backends.items()
+            if key[0] == self.__class__.__name__ and key[1] == self.compute_backend
+        ]
+        bound_arguments = None
+        for key, backend_method in method_candidates:
+            try:
+                # This attempts to bind the provided args and kwargs to the backend method's signature
+                bound_arguments = inspect.signature(backend_method).bind(
+                    self, *args, **kwargs
+                )
+                bound_arguments.apply_defaults()  # This fills in any default values
+                result = backend_method(self, *args, **kwargs)
+                callback_arg = result if result is not None else (args, kwargs)
+                if callback and callable(callback):
+                    callback(callback_arg)
+                return result
+            except TypeError:
+                continue  # This skips to the next candidate if binding fails
 
-        if backend_method:
-            result = backend_method(self, *args, **kwargs)
-
-            # Determine what to pass to the callback based on the backend behavior
-            callback_arg = result if result is not None else (args, kwargs)
-
-            if callback and callable(callback):
-                callback(callback_arg)
-
-            return result
-        else:
-            raise NotImplementedError(f"Backend {self.compute_backend} not implemented")
+        raise NotImplementedError(
+            f"No implementation found for backend with key {key} for operator {self.__class__.__name__}"
+        )
 
     @property
     def supported_compute_backend(self):

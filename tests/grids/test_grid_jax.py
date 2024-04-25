@@ -5,7 +5,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid
 from jax.sharding import Mesh
 from jax.experimental import mesh_utils
-
+import jax.numpy as jnp
 
 def init_xlb_env():
     xlb.init(
@@ -50,6 +50,17 @@ def test_jax_3d_grid_initialization(grid_size):
         "y",
         "z",
     ), "PartitionSpec is incorrect"
+
+def test_jax_grid_create_field_init_val():
+    init_xlb_env()
+    grid_shape = (100, 100)
+    init_val = 3.14
+    my_grid = grid(grid_shape)
+
+    f = my_grid.create_field(cardinality=9, init_val=init_val)
+    assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
+    assert jnp.allclose(f, init_val), "Field not properly initialized with init_val"
+
 
 
 @pytest.fixture(autouse=True)
