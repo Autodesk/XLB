@@ -193,6 +193,7 @@ class WindTunnel:
         self.lbm_density = 1.0
         self.mass_conversion = self.dx ** 3 * (self.density / self.lbm_density)
         self.nr_steps = int(solve_time / self.dt)
+        print(f"Tau: {self.tau}")
 
         # Get the grid shape
         self.nx = int((upper_bounds[0] - lower_bounds[0]) / dx)
@@ -320,6 +321,7 @@ class WindTunnel:
         )
 
         # Make list to store drag coefficients
+        self.time_steps = []
         self.drag_coefficients = []
 
     def initialize_flow(self):
@@ -473,7 +475,7 @@ class WindTunnel:
     def compute_rho_u(self):
         self.rho, self.u = self.macroscopic(self.f0, self.rho, self.u)
 
-    def monitor(self):
+    def monitor(self, i):
         # Compute the momentum transfer
         momentum = self.momentum_transfer(self.f0, self.boundary_id, self.missing_mask)[0]
         drag = momentum[0]
@@ -481,12 +483,36 @@ class WindTunnel:
         c_d = 2.0 * drag / (self.base_velocity ** 2 * self.cross_section)
         c_l = 2.0 * lift / (self.base_velocity ** 2 * self.cross_section)
         self.drag_coefficients.append(c_d)
+        self.time_steps.append(i)
 
     def plot_drag_coefficient(self):
-        plt.plot(self.drag_coefficients[-100:]) # Just plot the last 100 steps
+
+        # Compute moving average of drag coefficient, 100, 1000, 10000
+        drag_coefficients = np.array(self.drag_coefficients)
+        self.drag_coefficients_ma_10 = np.convolve(drag_coefficients, np.ones(10) / 10, mode='valid')
+        self.drag_coefficients_ma_100 = np.convolve(drag_coefficients, np.ones(100) / 100, mode='valid')
+        self.drag_coefficients_ma_1000 = np.convolve(drag_coefficients, np.ones(1000) / 1000, mode='valid')
+        self.drag_coefficients_ma_10000 = np.convolve(drag_coefficients, np.ones(10000) / 10000, mode='valid')
+        self.drag_coefficients_ma_100000 = np.convolve(drag_coefficients, np.ones(100000) / 100000, mode='valid')
+
+        # Plot drag coefficient
+        plt.plot(self.time_steps, drag_coefficients, label="Raw")
+        if len(self.time_steps) > 10:
+            plt.plot(self.time_steps[9:], self.drag_coefficients_ma_10, label="MA 10")
+        if len(self.time_steps) > 100:
+            plt.plot(self.time_steps[99:], self.drag_coefficients_ma_100, label="MA 100")
+        if len(self.time_steps) > 1000:
+            plt.plot(self.time_steps[999:], self.drag_coefficients_ma_1000, label="MA 1,000")
+        if len(self.time_steps) > 10000:
+            plt.plot(self.time_steps[9999:], self.drag_coefficients_ma_10000, label="MA 10,000")
+        if len(self.time_steps) > 100000:
+            plt.plot(self.time_steps[99999:], self.drag_coefficients_ma_100000, label="MA 100,000")
+
+        plt.ylim(-1.0, 1.0)
+        plt.legend()
         plt.xlabel("Time step")
         plt.ylabel("Drag coefficient")
-        plt.savefig("drag_coefficient.png")
+        plt.savefig("drag_coefficient_ma.png")
         plt.close()
 
     def run(self):
@@ -515,10 +541,10 @@ class WindTunnel:
 
             # Monitor
             if i % self.monitor_frequency == 0:
-                self.monitor()
+                self.monitor(i)
 
             # Save monitor plot
-            if i % (self.monitor_frequency * 10) == 0:
+            if i % (self.monitor_frequency * 100) == 0:
                 self.plot_drag_coefficient()
 
             # Save state
