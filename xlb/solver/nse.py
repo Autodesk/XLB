@@ -13,7 +13,6 @@ from xlb.operator.stream import Stream
 from xlb.operator.macroscopic import Macroscopic
 from xlb.solver.solver import Solver
 from xlb.operator import Operator
-from jax.experimental import pallas as pl
 
 
 class IncompressibleNavierStokesSolver(Solver):
@@ -29,36 +28,24 @@ class IncompressibleNavierStokesSolver(Solver):
     def __init__(
         self,
         omega: float,
-        shape: tuple[int, int, int],
+        domain_shape: tuple[int, int, int],
         collision="BGK",
         equilibrium="Quadratic",
         boundary_conditions=[],
-        initializer=None,
-        forcing=None,
-        velocity_set: VelocitySet = None,
+        velocity_set = None,
         precision_policy=None,
         compute_backend=None,
-        grid_backend=None,
-        grid_configs={},
     ):
         super().__init__(
-            shape=shape,
+            domain_shape=domain_shape,
             boundary_conditions=boundary_conditions,
             velocity_set=velocity_set,
             compute_backend=compute_backend,
             precision_policy=precision_policy,
-            grid_backend=grid_backend,
-            grid_configs=grid_configs,
         )
 
         # Set omega
         self.omega = omega
-
-        # Add fields to grid
-        self.grid.create_field("rho", 1, self.precision_policy.store_precision)
-        self.grid.create_field("u", 3, self.precision_policy.store_precision)
-        self.grid.create_field("f0", self.velocity_set.q, self.precision_policy.store_precision)
-        self.grid.create_field("f1", self.velocity_set.q, self.precision_policy.store_precision)
 
         # Create operators
         self.collision = self._get_collision(collision)(
@@ -78,15 +65,6 @@ class IncompressibleNavierStokesSolver(Solver):
         self.macroscopic = Macroscopic(
             velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend
         )
-        if initializer is None:
-            self.initializer = EquilibriumInitializer(
-                rho=1.0, u=(0.0, 0.0, 0.0),
-                velocity_set=self.velocity_set,
-                precision_policy=self.precision_policy,
-                compute_backend=self.compute_backend,
-            )
-        if forcing is not None:
-            raise NotImplementedError("Forcing not yet implemented")
 
         # Create stepper operator
         self.stepper = IncompressibleNavierStokesStepper(
@@ -97,15 +75,6 @@ class IncompressibleNavierStokesSolver(Solver):
             boundary_conditions=self.boundary_conditions,
             forcing=None,
         )
-
-        # Add parrallelization
-        self.stepper = self.grid.parallelize_operator(self.stepper)
-
-        # Initialize
-        self.initialize()
-
-    def initialize(self):
-        self.initializer(f=self.grid.get_field("f0"))
 
     def monitor(self):
         pass

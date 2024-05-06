@@ -7,7 +7,7 @@ from xlb.precision_policy import Fp32Fp32
 from xlb.operator.initializer import EquilibriumInitializer
 
 from xlb.solver import IncompressibleNavierStokes
-from xlb.grid import Grid
+from xlb.grid import grid_factory
 
 parser = argparse.ArgumentParser(
     description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)"
@@ -35,11 +35,6 @@ f = grid.create_field(cardinality=19)
 print("f shape", f.shape)
 
 solver = IncompressibleNavierStokes(grid, omega=1.0)
-
-# Ahead-of-Time Compilation to remove JIT overhead
-# if xlb.current_backend() == ComputeBackend.JAX or xlb.current_backend() == ComputeBackend.PALLAS:
-#     lowered = jax.jit(solver.step).lower(f, timestep=0)
-#     solver_step_compiled = lowered.compile()
 
 # Ahead-of-Time Compilation to remove JIT overhead
 f = solver.step(f, timestep=0)

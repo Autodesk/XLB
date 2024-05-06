@@ -4,7 +4,7 @@ import numpy as np
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
-from xlb.grid import grid
+from xlb.grid import grid_factory
 from xlb.default_config import DefaultConfig
 
 def init_xlb_env(velocity_set):
@@ -20,7 +20,7 @@ def init_xlb_env(velocity_set):
 ])
 def test_quadratic_equilibrium(dim, velocity_set, grid_shape):
     init_xlb_env(velocity_set)
-    my_grid = grid(grid_shape)
+    my_grid = grid_factory(grid_shape)
 
     rho = my_grid.create_field(cardinality=1, init_val=1.0)
     u = my_grid.create_field(cardinality=dim, init_val=0.0)

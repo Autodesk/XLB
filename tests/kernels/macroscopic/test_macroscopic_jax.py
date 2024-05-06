@@ -4,7 +4,7 @@ import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
-from xlb.grid import grid
+from xlb.grid import grid_factory
 from xlb.default_config import DefaultConfig
 
 
@@ -26,7 +26,7 @@ def init_xlb_env(velocity_set):
     ],)
 def test_macroscopic(dim, velocity_set, grid_shape, rho, velocity):
     init_xlb_env(velocity_set)
-    my_grid = grid(grid_shape)
+    my_grid = grid_factory(grid_shape)
 
     rho_field = my_grid.create_field(cardinality=1, init_val=rho)
     velocity_field = my_grid.create_field(cardinality=dim, init_val=velocity)

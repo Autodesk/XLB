@@ -37,7 +37,7 @@ class PlanarBoundaryMasker(Operator):
         upper_bound,
         direction,
         id_number,
-        boundary_id,
+        boundary_id_field,
         mask,
         start_index=(0, 0, 0),
     ):
@@ -47,7 +47,7 @@ class PlanarBoundaryMasker(Operator):
         if direction[0] != 0:
 
             # Set boundary id
-            boundary_id = boundary_id.at[0, lower_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
+            boundary_id_field = boundary_id_field.at[0, lower_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
 
             # Set mask
             for l in range(self.velocity_set.q):
@@ -63,7 +63,7 @@ class PlanarBoundaryMasker(Operator):
         elif direction[1] != 0:
 
             # Set boundary id
-            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0], lower_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
+            boundary_id_field = boundary_id_field.at[0, lower_bound[0] : upper_bound[0], lower_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
 
             # Set mask
             for l in range(self.velocity_set.q):
@@ -79,7 +79,7 @@ class PlanarBoundaryMasker(Operator):
         elif direction[2] != 0:
 
             # Set boundary id
-            boundary_id = boundary_id.at[0, lower_bound[0] : upper_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2]].set(id_number)
+            boundary_id_field = boundary_id_field.at[0, lower_bound[0] : upper_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2]].set(id_number)
 
             # Set mask
             for l in range(self.velocity_set.q):
@@ -91,7 +91,7 @@ class PlanarBoundaryMasker(Operator):
                 if d_dot_c >= 0:
                     mask = mask.at[l, lower_bound[0] : upper_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2]].set(True)
 
-        return boundary_id, mask
+        return boundary_id_field, mask
 
 
     def _construct_warp(self):
@@ -106,7 +106,7 @@ class PlanarBoundaryMasker(Operator):
             upper_bound: wp.vec3i,
             direction: wp.vec3i,
             id_number: wp.int32,
-            boundary_id: wp.array4d(dtype=wp.uint8),
+            boundary_id_field: wp.array4d(dtype=wp.uint8),
             mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -137,7 +137,7 @@ class PlanarBoundaryMasker(Operator):
                 and k < mask.shape[3]
             ):
                 # Set the boundary id
-                boundary_id[0, i, j, k] = wp.uint8(id_number)
+                boundary_id_field[0, i, j, k] = wp.uint8(id_number)
 
                 # Set mask for just directions coming from the boundary
                 for l in range(_q):
@@ -158,7 +158,7 @@ class PlanarBoundaryMasker(Operator):
         upper_bound,
         direction,
         id_number,
-        boundary_id,
+        boundary_id_field,
         mask,
         start_index=(0, 0, 0),
     ):
@@ -187,11 +187,11 @@ class PlanarBoundaryMasker(Operator):
                 upper_bound,
                 direction,
                 id_number,
-                boundary_id,
+                boundary_id_field,
                 mask,
                 start_index,
             ],
             dim=dim,
         )
 
-        return boundary_id, mask
+        return boundary_id_field, mask

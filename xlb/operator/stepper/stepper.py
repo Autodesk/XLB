@@ -23,7 +23,6 @@ class Stepper(Operator):
         equilibrium,
         macroscopic,
         boundary_conditions=[],
-        forcing=None,  # TODO: Add forcing later
     ):
         # Add operators
         self.collision = collision
@@ -31,7 +30,6 @@ class Stepper(Operator):
         self.equilibrium = equilibrium
         self.macroscopic = macroscopic
         self.boundary_conditions = boundary_conditions
-        self.forcing = forcing
 
         # Get all operators for checking
         self.operators = [
@@ -41,8 +39,6 @@ class Stepper(Operator):
             macroscopic,
             *self.boundary_conditions,
         ]
-        if forcing is not None:
-            self.operators.append(forcing)
 
         # Get velocity set, precision policy, and compute backend
         velocity_sets = set([op.velocity_set for op in self.operators])
@@ -61,10 +57,10 @@ class Stepper(Operator):
         ############################################
         # TODO: Fix this later
         ############################################
-        from xlb.operator.boundary_condition.equilibrium import EquilibriumBC
-        from xlb.operator.boundary_condition.do_nothing import DoNothingBC
-        from xlb.operator.boundary_condition.halfway_bounce_back import HalfwayBounceBackBC
-        from xlb.operator.boundary_condition.fullway_bounce_back import FullwayBounceBackBC
+        from xlb.operator.boundary_condition.bc_equilibrium import EquilibriumBC
+        from xlb.operator.boundary_condition.bc_do_nothing import DoNothingBC
+        from xlb.operator.boundary_condition.bc_halfway_bounce_back import HalfwayBounceBackBC
+        from xlb.operator.boundary_condition.bc_fullway_bounce_back import FullwayBounceBackBC
         self.equilibrium_bc = None
         self.do_nothing_bc = None
         self.halfway_bounce_back_bc = None

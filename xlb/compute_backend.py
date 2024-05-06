@@ -5,5 +5,4 @@ from enum import Enum, auto
 
 class ComputeBackend(Enum):
     JAX = auto()
-    PALLAS = auto()
     WARP = auto()

@@ -1,1 +1,1 @@
-from xlb.grid.grid import grid, Grid
+from xlb.grid.grid import grid_factory

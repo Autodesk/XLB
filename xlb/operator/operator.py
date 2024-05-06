@@ -70,11 +70,12 @@ class Operator:
                 if callback and callable(callback):
                     callback(callback_arg)
                 return result
-            except TypeError:
+            except Exception as e:
+                error = e
                 continue  # This skips to the next candidate if binding fails
 
-        raise NotImplementedError(
-            f"No implementation found for backend with key {key} for operator {self.__class__.__name__}"
+        raise Exception(
+            f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}"
         )
 
     @property

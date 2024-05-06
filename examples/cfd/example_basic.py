@@ -3,7 +3,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.default_config import DefaultConfig
 import warp as wp
-from xlb.grid import grid
+from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
 import xlb.velocity_set
 
@@ -15,7 +15,7 @@ xlb.init(
 
 grid_size = 50
 grid_shape = (grid_size, grid_size, grid_size)
-my_grid = grid(grid_shape)
+my_grid = grid_factory(grid_shape)
 f = my_grid.create_field(cardinality=9)
 
 # compute_macro = QuadraticEquilibrium()

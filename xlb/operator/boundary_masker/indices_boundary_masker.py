@@ -22,9 +22,9 @@ class IndicesBoundaryMasker(Operator):
 
     def __init__(
         self,
-        velocity_set: VelocitySet,
-        precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend.JAX,
+        velocity_set=None,
+        precision_policy=None,
+        compute_backend=None,
     ):
         # Make stream operator
         self.stream = Stream(velocity_set, precision_policy, compute_backend)
@@ -41,38 +41,87 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     def jax_implementation(
-        self, indices, id_number, boundary_id, mask, start_index=(0, 0, 0)
+        self, indices, id_number, boundary_id_field, mask, start_index=None
     ):
-        local_indices = indices - np.array(start_index)[np.newaxis, :]
+        dim = mask.ndim - 1
+        if start_index is None:
+            start_index = (0,) * dim
 
-        # Remove any indices that are out of bounds
-        indices_mask_x = (local_indices[:, 0] >= 0) & (local_indices[:, 0] < mask.shape[1])
-        indices_mask_y = (local_indices[:, 1] >= 0) & (local_indices[:, 1] < mask.shape[2])
-        indices_mask_z = (local_indices[:, 2] >= 0) & (local_indices[:, 2] < mask.shape[3])
-        indices_mask = indices_mask_x & indices_mask_y & indices_mask_z
+        local_indices = indices - np.array(start_index)[:, np.newaxis]
 
-        local_indices = self._indices_to_tuple(local_indices[indices_mask])
+        indices_mask = [
+            (local_indices[i, :] >= 0) & (local_indices[i, :] < mask.shape[i + 1])
+            for i in range(mask.ndim - 1)
+        ]
+        indices_mask = np.logical_and.reduce(indices_mask)
 
         @jit
-        def compute_boundary_id_and_mask(boundary_id, mask):
-            boundary_id = boundary_id.at[0, local_indices[0], local_indices[1], local_indices[2]].set(id_number)
-            mask = mask.at[:, local_indices[0], local_indices[1], local_indices[2]].set(True)
-            mask = self.stream(mask)
-            return boundary_id, mask
+        def compute_boundary_id_and_mask(boundary_id_field, mask):
+            if dim == 2:
+                boundary_id_field = boundary_id_field.at[
+                    0, local_indices[0], local_indices[1]
+                ].set(id_number)
+                mask = mask.at[:, local_indices[0], local_indices[1]].set(True)
 
-        return compute_boundary_id_and_mask(boundary_id, mask)
+            if dim == 3:
+                boundary_id_field = boundary_id_field.at[
+                    0, local_indices[0], local_indices[1], local_indices[2]
+                ].set(id_number)
+                mask = mask.at[
+                    :, local_indices[0], local_indices[1], local_indices[2]
+                ].set(True)
+
+            mask = self.stream(mask)
+            return boundary_id_field, mask
+
+        return compute_boundary_id_and_mask(boundary_id_field, mask)
 
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.wp_c
         _q = wp.constant(self.velocity_set.q)
 
-        # Construct the warp kernel
+        # Construct the warp 2D kernel
         @wp.kernel
-        def kernel(
+        def kernel2d(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.int32,
-            boundary_id: wp.array4d(dtype=wp.uint8),
+            boundary_id_field: wp.array3d(dtype=wp.uint8),
+            mask: wp.array3d(dtype=wp.bool),
+            start_index: wp.vec2i,
+        ):
+            # Get the index of indices
+            ii = wp.tid()
+
+            # Get local indices
+            index = wp.vec2i()
+            index[0] = indices[0, ii] - start_index[0]
+            index[1] = indices[1, ii] - start_index[1]
+
+            # Check if in bounds
+            if (
+                index[0] >= 0
+                and index[0] < mask.shape[1]
+                and index[1] >= 0
+                and index[1] < mask.shape[2]
+            ):
+                # Stream indices
+                for l in range(_q):
+                    # Get the index of the streaming direction
+                    push_index = wp.vec2i()
+                    for d in range(self.velocity_set.d):
+                        push_index[d] = index[d] + _c[d, l]
+
+                    # Set the boundary id and mask
+                    boundary_id_field[0, index[0], index[1]] = wp.uint8(id_number)
+                    mask[l, push_index[0], push_index[1]] = True
+
+        # Construct the warp 3D kernel
+        @wp.kernel
+        def kernel3d(
+            indices: wp.array2d(dtype=wp.int32),
+            id_number: wp.int32,
+            boundary_id_field: wp.array4d(dtype=wp.uint8),
             mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -81,9 +130,9 @@ class IndicesBoundaryMasker(Operator):
 
             # Get local indices
             index = wp.vec3i()
-            index[0] = indices[ii, 0] - start_index[0]
-            index[1] = indices[ii, 1] - start_index[1]
-            index[2] = indices[ii, 2] - start_index[2]
+            index[0] = indices[0, ii] - start_index[0]
+            index[1] = indices[1, ii] - start_index[1]
+            index[2] = indices[2, ii] - start_index[2]
 
             # Check if in bounds
             if (
@@ -102,28 +151,32 @@ class IndicesBoundaryMasker(Operator):
                         push_index[d] = index[d] + _c[d, l]
 
                     # Set the boundary id and mask
-                    boundary_id[0, index[0], index[1], index[2]] = (
-                        wp.uint8(id_number)
+                    boundary_id_field[0, index[0], index[1], index[2]] = wp.uint8(
+                        id_number
                     )
                     mask[l, push_index[0], push_index[1], push_index[2]] = True
+
+        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
-        self, indices, id_number, boundary_id, missing_mask, start_index=(0, 0, 0)
+        self, indices, id_number, boundary_id_field, missing_mask, start_index=None
     ):
+        if start_index is None:
+            start_index = (0,) * self.velocity_set.d
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
             inputs=[
                 indices,
                 id_number,
-                boundary_id,
+                boundary_id_field,
                 missing_mask,
                 start_index,
             ],
-            dim=indices.shape[0],
+            dim=indices.shape[1],
         )
 
-        return boundary_id, missing_mask
+        return boundary_id_field, missing_mask

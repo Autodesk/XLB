@@ -13,10 +13,7 @@ from xlb.precision_policy.jax_precision_policy import (
 
 class Fp64Fp64:
     def __new__(cls):
-        if (
-            DefaultConfig.compute_backend == ComputeBackend.JAX
-            or DefaultConfig.compute_backend == ComputeBackend.PALLAS
-        ):
+        if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp64Fp64()
         else:
             raise ValueError(
@@ -26,10 +23,7 @@ class Fp64Fp64:
 
 class Fp64Fp32:
     def __new__(cls):
-        if (
-            DefaultConfig.compute_backend == ComputeBackend.JAX
-            or DefaultConfig.compute_backend == ComputeBackend.PALLAS
-        ):
+        if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp64Fp32()
         else:
             raise ValueError(
@@ -39,10 +33,7 @@ class Fp64Fp32:
 
 class Fp32Fp32:
     def __new__(cls):
-        if (
-            DefaultConfig.compute_backend == ComputeBackend.JAX
-            or DefaultConfig.compute_backend == ComputeBackend.PALLAS
-        ):
+        if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp32Fp32()
         else:
             raise ValueError(
@@ -52,10 +43,7 @@ class Fp32Fp32:
 
 class Fp64Fp16:
     def __new__(cls):
-        if (
-            DefaultConfig.compute_backend == ComputeBackend.JAX
-            or DefaultConfig.compute_backend == ComputeBackend.PALLAS
-        ):
+        if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp64Fp16()
         else:
             raise ValueError(
@@ -65,10 +53,7 @@ class Fp64Fp16:
 
 class Fp32Fp16:
     def __new__(cls):
-        if (
-            DefaultConfig.compute_backend == ComputeBackend.JAX
-            or DefaultConfig.compute_backend == ComputeBackend.PALLAS
-        ):
+        if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp32Fp16()
         else:
             raise ValueError(

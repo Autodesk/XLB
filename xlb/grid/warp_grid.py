@@ -1,7 +1,7 @@
 from dataclasses import field
 import warp as wp
 
-from xlb.grid import Grid
+from .grid import Grid
 from xlb.operator import Operator
 from xlb.precision_policy import Precision
 from xlb.compute_backend import ComputeBackend

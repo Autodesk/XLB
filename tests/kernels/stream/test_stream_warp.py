@@ -7,7 +7,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.stream import Stream
 from xlb.default_config import DefaultConfig
 
-from xlb.grid import grid
+from xlb.grid import grid_factory
 
 
 def init_xlb_env(velocity_set):
@@ -29,7 +29,7 @@ def init_xlb_env(velocity_set):
 )
 def test_stream_operator(dim, velocity_set, grid_shape):
     init_xlb_env(velocity_set)
-    my_grid_jax = grid(grid_shape, compute_backend=ComputeBackend.JAX)
+    my_grid_jax = grid_factory(grid_shape, compute_backend=ComputeBackend.JAX)
     velocity_set = DefaultConfig.velocity_set
 
     f_initial = my_grid_jax.create_field(cardinality=velocity_set.q)
@@ -59,13 +59,13 @@ def test_stream_operator(dim, velocity_set, grid_shape):
     expected = jnp.stack(expected, axis=0)
 
     if dim == 2:
-        f_initial_warp = wp.from_numpy(f_initial, dtype=wp.float32)
+        f_initial_warp = wp.array(f_initial)
 
     elif dim == 3:
-        f_initial_warp = wp.from_numpy(f_initial, dtype=wp.float32)
+        f_initial_warp = wp.array(f_initial)
 
     stream_op = Stream()
-    my_grid_warp = grid(grid_shape, compute_backend=ComputeBackend.WARP)
+    my_grid_warp = grid_factory(grid_shape, compute_backend=ComputeBackend.WARP)
     f_streamed = my_grid_warp.create_field(cardinality=velocity_set.q)
     f_streamed = stream_op(f_initial_warp, f_streamed)
 

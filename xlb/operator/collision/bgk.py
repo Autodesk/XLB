@@ -22,12 +22,6 @@ class BGK(Collision):
         fout = f - self.compute_dtype(self.omega) * fneq
         return fout
 
-    @Operator.register_backend(ComputeBackend.PALLAS)
-    def pallas_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
-        fneq = f - feq
-        fout = f - self.omega * fneq
-        return fout
-
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _w = self.velocity_set.wp_w

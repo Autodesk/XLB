@@ -5,7 +5,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.stream import Stream
 from xlb.default_config import DefaultConfig
 
-from xlb.grid import grid
+from xlb.grid import grid_factory
 
 
 def init_xlb_env(velocity_set):
@@ -27,7 +27,7 @@ def init_xlb_env(velocity_set):
 )
 def test_stream_operator(dim, velocity_set, grid_shape):
     init_xlb_env(velocity_set)
-    my_grid = grid(grid_shape)
+    my_grid = grid_factory(grid_shape)
     velocity_set = DefaultConfig.velocity_set
 
     stream_op = Stream()

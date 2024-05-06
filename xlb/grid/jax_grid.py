@@ -10,7 +10,7 @@ from jax import lax
 import jax
 
 from xlb.default_config import DefaultConfig
-from xlb.grid import Grid
+from .grid import Grid
 from xlb.operator import Operator
 from xlb.precision_policy import Precision
 
@@ -41,7 +41,7 @@ class JaxGrid(Grid):
     def create_field(
         self,
         cardinality: int,
-        dtype: Literal[Precision.FP32, Precision.FP64, Precision.FP16] = None,
+        dtype: Literal[Precision.FP32, Precision.FP64, Precision.FP16, Precision.BOOL] = None,
         init_val=None,
     ):
         sharding_dim = self.shape[-1] // self.nDevices
@@ -49,7 +49,7 @@ class JaxGrid(Grid):
         full_shape = (cardinality, *self.shape)
         arrays = []
 
-        dype = dtype.jax_dtype if dtype else DefaultConfig.default_precision_policy.store_precision.jax_dtype
+        dtype = dtype.jax_dtype if dtype else DefaultConfig.default_precision_policy.store_precision.jax_dtype
 
         for d, index in self.sharding.addressable_devices_indices_map(
             full_shape

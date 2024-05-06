@@ -20,23 +20,24 @@ class IncompressibleNavierStokesStepper(Stepper):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0, 4), donate_argnums=(1))
-    def apply_jax(self, f, boundary_id, missing_mask, timestep):
+    def jax_implementation(self, f_0, f_1, boundary_id_field, missing_mask, timestep):
         """
         Perform a single step of the lattice boltzmann method
         """
 
-        # Cast to compute precision TODO add this back in
-        #f_pre_collision = self.precision_policy.cast_to_compute_jax(f)
+        # Cast to compute precision
+        f_0 = self.precision_policy.cast_to_compute_jax(f_0)
+        f_1 = self.precision_policy.cast_to_compute_jax(f_1)
 
         # Compute the macroscopic variables
-        rho, u = self.macroscopic(f)
+        rho, u = self.macroscopic(f_0)
 
         # Compute equilibrium
         feq = self.equilibrium(rho, u)
 
         # Apply collision
         f_post_collision = self.collision(
-            f,
+            f_0,
             feq,
             rho,
             u,
@@ -45,89 +46,30 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:
             if bc.implementation_step == ImplementationStep.COLLISION:
-                f_post_collision = bc(
-                    f,
+                f_0 = bc(
+                    f_0,
                     f_post_collision,
-                    boundary_id,
+                    boundary_id_field,
                     missing_mask,
                 )
 
-        ## Apply forcing
-        # if self.forcing_op is not None:
-        #    f = self.forcing_op.apply_jax(f, timestep)
-
         # Apply streaming
-        f_post_streaming = self.stream(f_post_collision)
+        f_1 = self.stream(f_0)
 
         # Apply boundary conditions
         for bc in self.boundary_conditions:
             if bc.implementation_step == ImplementationStep.STREAMING:
-                f_post_streaming = bc(
+                f_1 = bc(
                     f_post_collision,
-                    f_post_streaming,
-                    boundary_id,
+                    f_1,
+                    boundary_id_field,
                     missing_mask,
                 )
 
         # Copy back to store precision
-        #f = self.precision_policy.cast_to_store_jax(f_post_streaming)
+        f_1 = self.precision_policy.cast_to_store_jax(f_1)
 
-        return f_post_streaming
-
-    @Operator.register_backend(ComputeBackend.PALLAS)
-    @partial(jit, static_argnums=(0,))
-    def apply_pallas(self, fin, boundary_id, missing_mask, timestep):
-        # Raise warning that the boundary conditions are not implemented
-        warning("Boundary conditions are not implemented for PALLAS backend currently")
-
-        from xlb.operator.parallel_operator import ParallelOperator
-
-        def _pallas_collide(fin, fout):
-            idx = pl.program_id(0)
-
-            f = pl.load(fin, (slice(None), idx, slice(None), slice(None)))
-
-            print("f shape", f.shape)
-
-            rho, u = self.macroscopic(f)
-
-            print("rho shape", rho.shape)
-            print("u shape", u.shape)
-
-            feq = self.equilibrium(rho, u)
-
-            print("feq shape", feq.shape)
-
-            for i in range(self.velocity_set.q):
-                print("f shape", f[i].shape)
-                f_post_collision = self.collision(f[i], feq[i])
-                print("f_post_collision shape", f_post_collision.shape)
-                pl.store(fout, (i, idx, slice(None), slice(None)), f_post_collision)
-            # f_post_collision = self.collision(f, feq)
-            # pl.store(fout, (i, idx, slice(None), slice(None)), f_post_collision)
-
-        @jit
-        def _pallas_collide_kernel(fin):
-            return pl.pallas_call(
-                partial(_pallas_collide),
-                out_shape=jax.ShapeDtypeStruct(
-                    ((self.velocity_set.q,) + (self.grid.grid_shape_per_gpu)), fin.dtype
-                ),
-                # grid=1,
-                grid=(self.grid.grid_shape_per_gpu[0], 1, 1),
-            )(fin)
-
-        def _pallas_collide_and_stream(f):
-            f = _pallas_collide_kernel(f)
-            # f = self.stream._streaming_jax_p(f)
-
-            return f
-
-        fout = ParallelOperator(
-            self.grid, _pallas_collide_and_stream, self.velocity_set
-        )(fin)
-
-        return fout
+        return f_1
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
@@ -147,7 +89,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         def kernel(
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
-            boundary_id: wp.array4d(dtype=Any),
+            boundary_id_field: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
             timestep: int,
         ):
@@ -156,7 +98,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             index = wp.vec3i(i, j, k)  # TODO warp should fix this
 
             # Get the boundary id and missing mask
-            _boundary_id = boundary_id[0, index[0], index[1], index[2]]
+            _boundary_id = boundary_id_field[0, index[0], index[1], index[2]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # TODO fix vec bool
@@ -184,7 +126,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post_stream = self.halfway_bounce_back_bc.warp_functional(
                     f_0, _missing_mask, index
                 )
- 
+
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
 
@@ -215,14 +157,14 @@ class IncompressibleNavierStokesStepper(Stepper):
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_0, f_1, boundary_id, missing_mask, timestep):
+    def warp_implementation(self, f_0, f_1, boundary_id_field, missing_mask, timestep):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
             inputs=[
                 f_0,
                 f_1,
-                boundary_id,
+                boundary_id_field,
                 missing_mask,
                 timestep,
             ],

@@ -18,41 +18,13 @@ class QuadraticEquilibrium(Equilibrium):
     """
 
     @Operator.register_backend(ComputeBackend.JAX)
-    @partial(jit, static_argnums=(0), donate_argnums=(1, 2))
+    @partial(jit, static_argnums=(0))
     def jax_implementation(self, rho, u):
         cu = 3.0 * jnp.tensordot(self.velocity_set.c, u, axes=(0, 0))
         usqr = 1.5 * jnp.sum(jnp.square(u), axis=0, keepdims=True)
         w = self.velocity_set.w.reshape((-1,) + (1,) * (len(rho.shape) - 1))
         feq = rho * w * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
         return feq
-
-    @Operator.register_backend(ComputeBackend.PALLAS)
-    def pallas_implementation(self, rho, u):
-        u0, u1, u2 = u[0], u[1], u[2]
-        usqr = 1.5 * (u0**2 + u1**2 + u2**2)
-
-        eq = [
-            rho[0] * (1.0 / 18.0) * (1.0 - 3.0 * u0 + 4.5 * u0 * u0 - usqr),
-            rho[0] * (1.0 / 18.0) * (1.0 - 3.0 * u1 + 4.5 * u1 * u1 - usqr),
-            rho[0] * (1.0 / 18.0) * (1.0 - 3.0 * u2 + 4.5 * u2 * u2 - usqr),
-        ]
-
-        combined_velocities = [u0 + u1, u0 - u1, u0 + u2, u0 - u2, u1 + u2, u1 - u2]
-
-        for vel in combined_velocities:
-            eq.append(
-                rho[0] * (1.0 / 36.0) * (1.0 - 3.0 * vel + 4.5 * vel * vel - usqr)
-            )
-
-        eq.append(rho[0] * (1.0 / 3.0) * (1.0 - usqr))
-
-        for i in range(3):
-            eq.append(eq[i] + rho[0] * (1.0 / 18.0) * 6.0 * u[i])
-
-        for i, vel in enumerate(combined_velocities, 3):
-            eq.append(eq[i] + rho[0] * (1.0 / 36.0) * 6.0 * vel)
-
-        return jnp.array(eq)
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update

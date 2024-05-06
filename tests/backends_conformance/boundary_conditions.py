@@ -2,6 +2,7 @@ import unittest
 import numpy as np
 import jax.numpy as jnp
 import warp as wp
+from xlb.grid import grid_factory
 import xlb
 
 wp.init()
@@ -28,11 +29,7 @@ class TestBoundaryConditions(unittest.TestCase):
         # Make grid
         nr = 128
         shape = (nr, nr, nr)
-        if backend == "jax":
-            grid = xlb.grid.JaxGrid(shape=shape)
-        elif backend == "warp":
-            grid = xlb.grid.WarpGrid(shape=shape)
-
+        grid = grid_factory(shape)
         # Make fields
         f_pre = grid.create_field(
             cardinality=velocity_set.q, precision=xlb.Precision.FP32
@@ -41,7 +38,7 @@ class TestBoundaryConditions(unittest.TestCase):
             cardinality=velocity_set.q, precision=xlb.Precision.FP32
         )
         f = grid.create_field(cardinality=velocity_set.q, precision=xlb.Precision.FP32)
-        boundary_id = grid.create_field(cardinality=1, precision=xlb.Precision.UINT8)
+        boundary_id_field = grid.create_field(cardinality=1, precision=xlb.Precision.UINT8)
         missing_mask = grid.create_field(
             cardinality=velocity_set.q, precision=xlb.Precision.BOOL
         )
@@ -98,63 +95,63 @@ class TestBoundaryConditions(unittest.TestCase):
             indices = wp.from_numpy(indices, dtype=wp.int32)
 
         # Test equilibrium boundary condition
-        boundary_id, missing_mask = indices_boundary_masker(
-            indices, equilibrium_bc.id, boundary_id, missing_mask, (0, 0, 0)
+        boundary_id_field, missing_mask = indices_boundary_masker(
+            indices, equilibrium_bc.id, boundary_id_field, missing_mask, (0, 0, 0)
         )
         if backend == "jax":
-            f_equilibrium = equilibrium_bc(f_pre, f_post, boundary_id, missing_mask)
+            f_equilibrium = equilibrium_bc(f_pre, f_post, boundary_id_field, missing_mask)
         elif backend == "warp":
             f_equilibrium = grid.create_field(
                 cardinality=velocity_set.q, precision=xlb.Precision.FP32
             )
             f_equilibrium = equilibrium_bc(
-                f_pre, f_post, boundary_id, missing_mask, f_equilibrium
+                f_pre, f_post, boundary_id_field, missing_mask, f_equilibrium
             )
 
         # Test do nothing boundary condition
-        boundary_id, missing_mask = indices_boundary_masker(
-            indices, do_nothing_bc.id, boundary_id, missing_mask, (0, 0, 0)
+        boundary_id_field, missing_mask = indices_boundary_masker(
+            indices, do_nothing_bc.id, boundary_id_field, missing_mask, (0, 0, 0)
         )
         if backend == "jax":
-            f_do_nothing = do_nothing_bc(f_pre, f_post, boundary_id, missing_mask)
+            f_do_nothing = do_nothing_bc(f_pre, f_post, boundary_id_field, missing_mask)
         elif backend == "warp":
             f_do_nothing = grid.create_field(
                 cardinality=velocity_set.q, precision=xlb.Precision.FP32
             )
             f_do_nothing = do_nothing_bc(
-                f_pre, f_post, boundary_id, missing_mask, f_do_nothing
+                f_pre, f_post, boundary_id_field, missing_mask, f_do_nothing
             )
 
         # Test halfway bounce back boundary condition
-        boundary_id, missing_mask = indices_boundary_masker(
-            indices, halfway_bounce_back_bc.id, boundary_id, missing_mask, (0, 0, 0)
+        boundary_id_field, missing_mask = indices_boundary_masker(
+            indices, halfway_bounce_back_bc.id, boundary_id_field, missing_mask, (0, 0, 0)
         )
         if backend == "jax":
             f_halfway_bounce_back = halfway_bounce_back_bc(
-                f_pre, f_post, boundary_id, missing_mask
+                f_pre, f_post, boundary_id_field, missing_mask
             )
         elif backend == "warp":
             f_halfway_bounce_back = grid.create_field(
                 cardinality=velocity_set.q, precision=xlb.Precision.FP32
             )
             f_halfway_bounce_back = halfway_bounce_back_bc(
-                f_pre, f_post, boundary_id, missing_mask, f_halfway_bounce_back
+                f_pre, f_post, boundary_id_field, missing_mask, f_halfway_bounce_back
             )
 
         # Test the full boundary condition
-        boundary_id, missing_mask = indices_boundary_masker(
-            indices, fullway_bounce_back_bc.id, boundary_id, missing_mask, (0, 0, 0)
+        boundary_id_field, missing_mask = indices_boundary_masker(
+            indices, fullway_bounce_back_bc.id, boundary_id_field, missing_mask, (0, 0, 0)
         )
         if backend == "jax":
             f_fullway_bounce_back = fullway_bounce_back_bc(
-                f_pre, f_post, boundary_id, missing_mask
+                f_pre, f_post, boundary_id_field, missing_mask
             )
         elif backend == "warp":
             f_fullway_bounce_back = grid.create_field(
                 cardinality=velocity_set.q, precision=xlb.Precision.FP32
             )
             f_fullway_bounce_back = fullway_bounce_back_bc(
-                f_pre, f_post, boundary_id, missing_mask, f_fullway_bounce_back
+                f_pre, f_post, boundary_id_field, missing_mask, f_fullway_bounce_back
             )
 
         return f_equilibrium, f_do_nothing, f_halfway_bounce_back, f_fullway_bounce_back

@@ -2,7 +2,7 @@ import pytest
 import jax
 import xlb
 from xlb.compute_backend import ComputeBackend
-from xlb.grid import grid
+from xlb.grid import grid_factory
 from jax.sharding import Mesh
 from jax.experimental import mesh_utils
 import jax.numpy as jnp
@@ -19,7 +19,7 @@ def init_xlb_env():
 def test_jax_2d_grid_initialization(grid_size):
     init_xlb_env()
     grid_shape = (grid_size, grid_size)
-    my_grid = grid(grid_shape)
+    my_grid = grid_factory(grid_shape)
     f = my_grid.create_field(cardinality=9)
     n_devices = jax.device_count()
 
@@ -35,7 +35,7 @@ def test_jax_2d_grid_initialization(grid_size):
 def test_jax_3d_grid_initialization(grid_size):
     init_xlb_env()
     grid_shape = (grid_size, grid_size, grid_size)
-    my_grid = grid(grid_shape)
+    my_grid = grid_factory(grid_shape)
     f = my_grid.create_field(cardinality=9)
     n_devices = jax.device_count()
 
@@ -55,7 +55,7 @@ def test_jax_grid_create_field_init_val():
     init_xlb_env()
     grid_shape = (100, 100)
     init_val = 3.14
-    my_grid = grid(grid_shape)
+    my_grid = grid_factory(grid_shape)
 
     f = my_grid.create_field(cardinality=9, init_val=init_val)
     assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
