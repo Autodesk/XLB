@@ -17,22 +17,76 @@ def init_xlb_env(velocity_set):
 
 
 @pytest.mark.parametrize(
-    "dim,velocity_set,grid_shape",
+    "dim,velocity_set,grid_shape,lower_bound,upper_bound,direction",
     [
-        (2, xlb.velocity_set.D2Q9, (4, 4)),
-        (2, xlb.velocity_set.D2Q9, (50, 50)),
-        (2, xlb.velocity_set.D2Q9, (100, 100)),
-        (3, xlb.velocity_set.D3Q19, (50, 50, 50)),
-        (3, xlb.velocity_set.D3Q19, (100, 100, 100)),
-        (3, xlb.velocity_set.D3Q27, (50, 50, 50)),
-        (3, xlb.velocity_set.D3Q27, (100, 100, 100)),
+        # 2D Grids - Different directions
+        (
+            2,
+            xlb.velocity_set.D2Q9,
+            (4, 4),
+            (0, 0),
+            (2, 4),
+            (1, 0),
+        ),  # Horizontal direction
+        (
+            2,
+            xlb.velocity_set.D2Q9,
+            (50, 50),
+            (0, 0),
+            (50, 25),
+            (0, 1),
+        ),  # Vertical direction
+        (
+            2,
+            xlb.velocity_set.D2Q9,
+            (100, 100),
+            (50, 0),
+            (100, 50),
+            (0, 1),
+        ),  # Vertical direction
+        # 3D Grids - Different directions
+        (
+            3,
+            xlb.velocity_set.D3Q19,
+            (50, 50, 50),
+            (0, 0, 0),
+            (25, 50, 50),
+            (1, 0, 0),
+        ),  # Along x-axis
+        (
+            3,
+            xlb.velocity_set.D3Q19,
+            (100, 100, 100),
+            (0, 50, 0),
+            (50, 100, 100),
+            (0, 1, 0),
+        ),  # Along y-axis
+        (
+            3,
+            xlb.velocity_set.D3Q27,
+            (50, 50, 50),
+            (0, 0, 0),
+            (50, 25, 50),
+            (0, 0, 1),
+        ),  # Along z-axis
+        (
+            3,
+            xlb.velocity_set.D3Q27,
+            (100, 100, 100),
+            (0, 0, 0),
+            (50, 100, 50),
+            (1, 0, 0),
+        ),  # Along x-axis
     ],
 )
-def test_planar_masker_jax(dim, velocity_set, grid_shape):
+def test_planar_masker_warp(
+    dim, velocity_set, grid_shape, lower_bound, upper_bound, direction
+):
     init_xlb_env(velocity_set)
     my_grid = grid_factory(grid_shape)
     velocity_set = DefaultConfig.velocity_set
 
+    # Create required fields
     missing_mask = my_grid.create_field(
         cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
     )
@@ -42,16 +96,6 @@ def test_planar_masker_jax(dim, velocity_set, grid_shape):
     )
 
     planar_boundary_masker = xlb.operator.boundary_masker.PlanarBoundaryMasker()
-
-    if dim == 2:
-        lower_bound = (0, 0)
-        upper_bound = (1, grid_shape[1])
-        direction = (1, 0)
-    else:  # dim == 3
-        lower_bound = (0, 0, 0)
-        upper_bound = (1, grid_shape[1], grid_shape[2])
-        direction = (1, 0, 0)
-
     start_index = (0,) * dim
     id_number = 1
 
@@ -67,7 +111,7 @@ def test_planar_masker_jax(dim, velocity_set, grid_shape):
 
     boundary_id_field = boundary_id_field.numpy()
 
-    # Assert that the boundary condition is set on the left side of the domain based on the lower and upper bounds
+    # Assertions to verify boundary settings
     expected_slice = (slice(None),) + tuple(
         slice(lb, ub) for lb, ub in zip(lower_bound, upper_bound)
     )
@@ -75,14 +119,10 @@ def test_planar_masker_jax(dim, velocity_set, grid_shape):
         boundary_id_field[expected_slice] == id_number
     ), "Boundary not set correctly"
 
-    # Assert that the rest of the domain is not affected and is equal to fill_value
+    # Assertions for non-affected areas
     full_slice = tuple(slice(None) for _ in grid_shape)
     mask = np.ones_like(boundary_id_field, dtype=bool)
     mask[expected_slice] = False
     assert np.all(
         boundary_id_field[full_slice][mask] == fill_value
     ), "Rest of domain incorrectly affected"
-
-
-if __name__ == "__main__":
-    pytest.main()
