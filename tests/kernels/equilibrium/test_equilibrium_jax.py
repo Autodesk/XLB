@@ -30,8 +30,8 @@ def test_quadratic_equilibrium_jax(dim, velocity_set, grid_shape):
     init_xlb_env(velocity_set)
     my_grid = grid_factory(grid_shape)
 
-    rho = my_grid.create_field(cardinality=1, init_val=1.0)
-    u = my_grid.create_field(cardinality=dim, init_val=0.0)
+    rho = my_grid.create_field(cardinality=1, fill_value=1.0)
+    u = my_grid.create_field(cardinality=dim, fill_value=0.0)
 
     # Compute equilibrium
     compute_macro = QuadraticEquilibrium()

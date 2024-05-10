@@ -70,7 +70,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
     f_pre = wp.array(random_field)
 
     f_post = my_grid.create_field(
-        cardinality=velocity_set.q, dtype=xlb.Precision.FP32, init_val=2.0
+        cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
     f_pre = fullway_bc(f_pre, f_post, boundary_id_field, missing_mask, f_pre)

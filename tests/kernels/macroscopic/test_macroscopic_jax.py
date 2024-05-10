@@ -31,8 +31,8 @@ def test_macroscopic_jax(dim, velocity_set, grid_shape, rho, velocity):
     init_xlb_env(velocity_set)
     my_grid = grid_factory(grid_shape)
 
-    rho_field = my_grid.create_field(cardinality=1, init_val=rho)
-    velocity_field = my_grid.create_field(cardinality=dim, init_val=velocity)
+    rho_field = my_grid.create_field(cardinality=1, fill_value=rho)
+    velocity_field = my_grid.create_field(cardinality=dim, fill_value=velocity)
 
     # Compute equilibrium
     f_eq = QuadraticEquilibrium()(rho_field, velocity_field)

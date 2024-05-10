@@ -65,7 +65,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
     )
 
     f_pre = my_grid.create_field(
-        cardinality=velocity_set.q, dtype=xlb.Precision.FP32, init_val=0.0
+        cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=0.0
     )
     # Generate a random field with the same shape
     key = jax.random.PRNGKey(0)
@@ -74,7 +74,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
     f_pre += random_field
 
     f_post = my_grid.create_field(
-        cardinality=velocity_set.q, dtype=xlb.Precision.FP32, init_val=2.0
+        cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
     f = fullway_bc(f_pre, f_post, boundary_id_field, missing_mask)

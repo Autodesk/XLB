@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jax import jit
 import warp as wp
 from typing import Tuple
+from jax.numpy import where, einsum, full_like
 
 from xlb.default_config import DefaultConfig
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -22,15 +23,15 @@ class PlanarBoundaryMasker(Operator):
 
     def __init__(
         self,
-        velocity_set: VelocitySet,
-        precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend.JAX,
+        velocity_set: VelocitySet = None,
+        precision_policy: PrecisionPolicy = None,
+        compute_backend: ComputeBackend = None,
     ):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
     @Operator.register_backend(ComputeBackend.JAX)
-    # @partial(jit, static_argnums=(0), inline=True) TODO: Fix this
+    # @partial(jit, static_argnums=(0, 1, 2, 3, 4, 7))
     def jax_implementation(
         self,
         lower_bound,
@@ -39,69 +40,69 @@ class PlanarBoundaryMasker(Operator):
         id_number,
         boundary_id_field,
         mask,
-        start_index=(0, 0, 0),
+        start_index=None,
     ):
-        # TODO: Optimize this
-        
-        # x plane
-        if direction[0] != 0:
+        if start_index is None:
+            start_index = (0,) * self.velocity_set.d
 
-            # Set boundary id
-            boundary_id_field = boundary_id_field.at[0, lower_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
+        _, *dimensions = boundary_id_field.shape
 
-            # Set mask
-            for l in range(self.velocity_set.q):
-                d_dot_c = (
-                    direction[0] * self.velocity_set.c[0, l]
-                    + direction[1] * self.velocity_set.c[1, l]
-                    + direction[2] * self.velocity_set.c[2, l]
-                )
-                if d_dot_c >= 0:
-                    mask = mask.at[l, lower_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2] : upper_bound[2]].set(True)
+        indices = [
+            (max(0, lb + start), min(dim, ub + start))
+            for lb, ub, start, dim in zip(
+                lower_bound, upper_bound, start_index, dimensions
+            )
+        ]
 
-        # y plane
-        elif direction[1] != 0:
+        slices = [slice(None)]
+        slices.extend(slice(lb, ub) for lb, ub in indices)
+        boundary_id_field = boundary_id_field.at[tuple(slices)].set(id_number)
 
-            # Set boundary id
-            boundary_id_field = boundary_id_field.at[0, lower_bound[0] : upper_bound[0], lower_bound[1], lower_bound[2] : upper_bound[2]].set(id_number)
-
-            # Set mask
-            for l in range(self.velocity_set.q):
-                d_dot_c = (
-                    direction[0] * self.velocity_set.c[0, l]
-                    + direction[1] * self.velocity_set.c[1, l]
-                    + direction[2] * self.velocity_set.c[2, l]
-                )
-                if d_dot_c >= 0:
-                    mask = mask.at[l, lower_bound[0] : upper_bound[0], lower_bound[1], lower_bound[2] : upper_bound[2]].set(True)
-
-        # z plane
-        elif direction[2] != 0:
-
-            # Set boundary id
-            boundary_id_field = boundary_id_field.at[0, lower_bound[0] : upper_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2]].set(id_number)
-
-            # Set mask
-            for l in range(self.velocity_set.q):
-                d_dot_c = (
-                    direction[0] * self.velocity_set.c[0, l]
-                    + direction[1] * self.velocity_set.c[1, l]
-                    + direction[2] * self.velocity_set.c[2, l]
-                )
-                if d_dot_c >= 0:
-                    mask = mask.at[l, lower_bound[0] : upper_bound[0], lower_bound[1] : upper_bound[1], lower_bound[2]].set(True)
-
-        return boundary_id_field, mask
-
+        return boundary_id_field, None
 
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.wp_c
         _q = wp.constant(self.velocity_set.q)
 
-        # Construct the warp kernel
         @wp.kernel
-        def kernel(
+        def kernel2d(
+            lower_bound: wp.vec3i,
+            upper_bound: wp.vec3i,
+            direction: wp.vec2i,
+            id_number: wp.int32,
+            boundary_id_field: wp.array3d(dtype=wp.uint8),
+            mask: wp.array3d(dtype=wp.bool),
+            start_index: wp.vec2i,
+        ):
+            # Get the indices of the plane to mask
+            plane_i, plane_j = wp.tid()
+
+            # Get local indices
+            if direction[0] != 0:
+                i = lower_bound[0] - start_index[0]
+                j = plane_i + lower_bound[1] - start_index[1]
+            elif direction[1] != 0:
+                i = plane_i + lower_bound[0] - start_index[0]
+                j = lower_bound[1] - start_index[1]
+
+            # Check if in bounds
+            if i >= 0 and i < mask.shape[1] and j >= 0 and j < mask.shape[2]:
+                # Set the boundary id
+                boundary_id_field[0, i, j] = wp.uint8(id_number)
+
+                # Set mask for just directions coming from the boundary
+                for l in range(_q):
+                    d_dot_c = (
+                        direction[0] * _c[0, l]
+                        + direction[1] * _c[1, l]
+                        + direction[2] * _c[2, l]
+                    )
+                    if d_dot_c >= 0:
+                        mask[l, i, j] = wp.bool(True)
+
+        @wp.kernel
+        def kernel3d(
             lower_bound: wp.vec3i,
             upper_bound: wp.vec3i,
             direction: wp.vec3i,
@@ -148,6 +149,8 @@ class PlanarBoundaryMasker(Operator):
                     )
                     if d_dot_c >= 0:
                         mask[l, i, j, k] = wp.bool(True)
+
+        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return None, kernel
 

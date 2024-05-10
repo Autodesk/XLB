@@ -27,7 +27,7 @@ class WarpGrid(Grid):
         self,
         cardinality: int,
         dtype: Literal[Precision.FP32, Precision.FP64, Precision.FP16] = None,
-        init_val=None,
+        fill_value=None,
     ):
         dtype = (
             dtype.wp_dtype
@@ -36,8 +36,8 @@ class WarpGrid(Grid):
         )
         shape = (cardinality,) + (self.shape)
 
-        if init_val is None:
+        if fill_value is None:
             f = wp.zeros(shape, dtype=dtype)
         else:
-            f = wp.full(shape, init_val, dtype=dtype)
+            f = wp.full(shape, fill_value, dtype=dtype)
         return f

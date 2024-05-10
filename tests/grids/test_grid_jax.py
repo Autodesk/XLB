@@ -51,15 +51,15 @@ def test_jax_3d_grid_initialization(grid_size):
         "z",
     ), "PartitionSpec is incorrect"
 
-def test_jax_grid_create_field_init_val():
+def test_jax_grid_create_field_fill_value():
     init_xlb_env()
     grid_shape = (100, 100)
-    init_val = 3.14
+    fill_value = 3.14
     my_grid = grid_factory(grid_shape)
 
-    f = my_grid.create_field(cardinality=9, init_val=init_val)
+    f = my_grid.create_field(cardinality=9, fill_value=fill_value)
     assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
-    assert jnp.allclose(f, init_val), "Field not properly initialized with init_val"
+    assert jnp.allclose(f, fill_value), "Field not properly initialized with fill_value"
 
 
 

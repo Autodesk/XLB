@@ -19,6 +19,7 @@ def init_xlb_env(velocity_set):
 @pytest.mark.parametrize(
     "dim,velocity_set,grid_shape",
     [
+        (2, xlb.velocity_set.D2Q9, (4, 4)),
         (2, xlb.velocity_set.D2Q9, (50, 50)),
         (2, xlb.velocity_set.D2Q9, (100, 100)),
         (3, xlb.velocity_set.D3Q19, (50, 50, 50)),

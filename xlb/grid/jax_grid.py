@@ -42,7 +42,7 @@ class JaxGrid(Grid):
         self,
         cardinality: int,
         dtype: Literal[Precision.FP32, Precision.FP64, Precision.FP16, Precision.BOOL] = None,
-        init_val=None,
+        fill_value=None,
     ):
         sharding_dim = self.shape[-1] // self.nDevices
         device_shape = (cardinality, sharding_dim, *self.shape[1:])
@@ -55,8 +55,8 @@ class JaxGrid(Grid):
             full_shape
         ).items():
             jax.default_device = d
-            if init_val:
-                x = jnp.full(device_shape, init_val, dtype=dtype)
+            if fill_value:
+                x = jnp.full(device_shape, fill_value, dtype=dtype)
             else:
                 x = jnp.zeros(shape=device_shape, dtype=dtype)
             arrays += [jax.device_put(x, d)]

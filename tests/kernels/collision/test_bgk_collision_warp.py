@@ -32,8 +32,8 @@ def test_bgk_collision_warp(dim, velocity_set, grid_shape, omega):
     init_xlb_warp_env(velocity_set)
     my_grid = grid_factory(grid_shape)
 
-    rho = my_grid.create_field(cardinality=1, init_val=1.0)
-    u = my_grid.create_field(cardinality=dim, init_val=0.0)
+    rho = my_grid.create_field(cardinality=1, fill_value=1.0)
+    u = my_grid.create_field(cardinality=dim, fill_value=0.0)
 
     compute_macro = QuadraticEquilibrium()
 
