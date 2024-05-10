@@ -37,7 +37,7 @@ def test_planar_masker_jax(dim, velocity_set, grid_shape):
 
     fill_value = 0
     boundary_id_field = my_grid.create_field(
-        cardinality=1, dtype=xlb.Precision.UINT8, fill_value=0
+        cardinality=1, dtype=xlb.Precision.UINT8, fill_value=fill_value
     )
 
     planar_boundary_masker = xlb.operator.boundary_masker.PlanarBoundaryMasker()

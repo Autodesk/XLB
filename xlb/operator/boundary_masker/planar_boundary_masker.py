@@ -31,7 +31,7 @@ class PlanarBoundaryMasker(Operator):
         super().__init__(velocity_set, precision_policy, compute_backend)
 
     @Operator.register_backend(ComputeBackend.JAX)
-    # @partial(jit, static_argnums=(0, 1, 2, 3, 4, 7))
+    @partial(jit, static_argnums=(0, 1, 2, 3, 4, 7))
     def jax_implementation(
         self,
         lower_bound,
@@ -67,88 +67,45 @@ class PlanarBoundaryMasker(Operator):
 
         @wp.kernel
         def kernel2d(
-            lower_bound: wp.vec3i,
-            upper_bound: wp.vec3i,
+            lower_bound: wp.vec2i,
+            upper_bound: wp.vec2i,
             direction: wp.vec2i,
-            id_number: wp.int32,
+            id_number: wp.uint8,
             boundary_id_field: wp.array3d(dtype=wp.uint8),
             mask: wp.array3d(dtype=wp.bool),
             start_index: wp.vec2i,
         ):
-            # Get the indices of the plane to mask
-            plane_i, plane_j = wp.tid()
+            i, j = wp.tid()
+            lb_x, lb_y = lower_bound.x + start_index.x, lower_bound.y + start_index.y
+            ub_x, ub_y = upper_bound.x + start_index.x, upper_bound.y + start_index.y
 
-            # Get local indices
-            if direction[0] != 0:
-                i = lower_bound[0] - start_index[0]
-                j = plane_i + lower_bound[1] - start_index[1]
-            elif direction[1] != 0:
-                i = plane_i + lower_bound[0] - start_index[0]
-                j = lower_bound[1] - start_index[1]
-
-            # Check if in bounds
-            if i >= 0 and i < mask.shape[1] and j >= 0 and j < mask.shape[2]:
-                # Set the boundary id
-                boundary_id_field[0, i, j] = wp.uint8(id_number)
-
-                # Set mask for just directions coming from the boundary
-                for l in range(_q):
-                    d_dot_c = (
-                        direction[0] * _c[0, l]
-                        + direction[1] * _c[1, l]
-                        + direction[2] * _c[2, l]
-                    )
-                    if d_dot_c >= 0:
-                        mask[l, i, j] = wp.bool(True)
+            if lb_x <= i < ub_x and lb_y <= j < ub_y:
+                boundary_id_field[0, i, j] = id_number
 
         @wp.kernel
         def kernel3d(
             lower_bound: wp.vec3i,
             upper_bound: wp.vec3i,
             direction: wp.vec3i,
-            id_number: wp.int32,
+            id_number: wp.uint8,
             boundary_id_field: wp.array4d(dtype=wp.uint8),
             mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
-            # Get the indices of the plane to mask
-            plane_i, plane_j = wp.tid()
+            i, j, k = wp.tid()
+            lb_x, lb_y, lb_z = (
+                lower_bound.x + start_index.x,
+                lower_bound.y + start_index.y,
+                lower_bound.z + start_index.z,
+            )
+            ub_x, ub_y, ub_z = (
+                upper_bound.x + start_index.x,
+                upper_bound.y + start_index.y,
+                upper_bound.z + start_index.z,
+            )
 
-            # Get local indices
-            if direction[0] != 0:
-                i = lower_bound[0] - start_index[0]
-                j = plane_i + lower_bound[1] - start_index[1]
-                k = plane_j + lower_bound[2] - start_index[2]
-            elif direction[1] != 0:
-                i = plane_i + lower_bound[0] - start_index[0]
-                j = lower_bound[1] - start_index[1]
-                k = plane_j + lower_bound[2] - start_index[2]
-            elif direction[2] != 0:
-                i = plane_i + lower_bound[0] - start_index[0]
-                j = plane_j + lower_bound[1] - start_index[1]
-                k = lower_bound[2] - start_index[2]
-
-            # Check if in bounds
-            if (
-                i >= 0
-                and i < mask.shape[1]
-                and j >= 0
-                and j < mask.shape[2]
-                and k >= 0
-                and k < mask.shape[3]
-            ):
-                # Set the boundary id
-                boundary_id_field[0, i, j, k] = wp.uint8(id_number)
-
-                # Set mask for just directions coming from the boundary
-                for l in range(_q):
-                    d_dot_c = (
-                        direction[0] * _c[0, l]
-                        + direction[1] * _c[1, l]
-                        + direction[2] * _c[2, l]
-                    )
-                    if d_dot_c >= 0:
-                        mask[l, i, j, k] = wp.bool(True)
+            if lb_x <= i < ub_x and lb_y <= j < ub_y and lb_z <= k < ub_z:
+                boundary_id_field[0, i, j, k] = id_number
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
@@ -163,25 +120,11 @@ class PlanarBoundaryMasker(Operator):
         id_number,
         boundary_id_field,
         mask,
-        start_index=(0, 0, 0),
+        start_index=None,
     ):
-        # Get plane dimensions
-        if direction[0] != 0:
-            dim = (
-                upper_bound[1] - lower_bound[1],
-                upper_bound[2] - lower_bound[2],
-            )
-        elif direction[1] != 0:
-            dim = (
-                upper_bound[0] - lower_bound[0],
-                upper_bound[2] - lower_bound[2],
-            )
-        elif direction[2] != 0:
-            dim = (
-                upper_bound[0] - lower_bound[0],
-                upper_bound[1] - lower_bound[1],
-            )
-
+        if start_index is None:
+            start_index = (0,) * self.velocity_set.d
+    
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
@@ -194,7 +137,7 @@ class PlanarBoundaryMasker(Operator):
                 mask,
                 start_index,
             ],
-            dim=dim,
+            dim=mask.shape[1:],
         )
 
         return boundary_id_field, mask
