@@ -29,7 +29,7 @@ def init_xlb_env(velocity_set):
         # (3, xlb.velocity_set.D3Q19, (50, 50, 50), 1.1, 2.0), #TODO: Uncommenting will cause a Warp error. Needs investigation.
     ],
 )
-def test_macroscopic(dim, velocity_set, grid_shape, rho, velocity):
+def test_macroscopic_warp(dim, velocity_set, grid_shape, rho, velocity):
     init_xlb_env(velocity_set)
     my_grid = grid_factory(grid_shape)
 

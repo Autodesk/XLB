@@ -21,13 +21,15 @@ def init_xlb_env(velocity_set):
 @pytest.mark.parametrize(
     "dim,velocity_set,grid_shape",
     [
-        (2, xlb.velocity_set.D2Q9, (100, 100)),
+        (2, xlb.velocity_set.D2Q9, (50, 50)),
         (2, xlb.velocity_set.D2Q9, (100, 100)),
         (3, xlb.velocity_set.D3Q19, (50, 50, 50)),
-        (3, xlb.velocity_set.D3Q19, (50, 50, 50)),
+        (3, xlb.velocity_set.D3Q19, (100, 100, 100)),
+        (3, xlb.velocity_set.D3Q27, (50, 50, 50)),
+        (3, xlb.velocity_set.D3Q27, (100, 100, 100)),
     ],
 )
-def test_stream_operator(dim, velocity_set, grid_shape):
+def test_stream_operator_warp(dim, velocity_set, grid_shape):
     init_xlb_env(velocity_set)
     my_grid_jax = grid_factory(grid_shape, compute_backend=ComputeBackend.JAX)
     velocity_set = DefaultConfig.velocity_set

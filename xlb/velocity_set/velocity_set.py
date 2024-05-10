@@ -40,6 +40,7 @@ class VelocitySet(object):
         self.w = w
         self.cc = self._construct_lattice_moment()
         self.opp_indices = self._construct_opposite_indices()
+        self.get_opp_index = lambda i: self.opp_indices[i]
         self.main_indices = self._construct_main_indices()
         self.right_indices = self._construct_right_indices()
         self.left_indices = self._construct_left_indices()

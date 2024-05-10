@@ -20,9 +20,11 @@ def init_xlb_env(velocity_set):
     "dim,velocity_set,grid_shape",
     [
         (2, xlb.velocity_set.D2Q9, (50, 50)),
-        (2, xlb.velocity_set.D2Q9, (50, 50)),
-        (3, xlb.velocity_set.D3Q19, (20, 20, 20)),
-        (3, xlb.velocity_set.D3Q19, (20, 20, 20)),
+        (2, xlb.velocity_set.D2Q9, (100, 100)),
+        (3, xlb.velocity_set.D3Q19, (50, 50, 50)),
+        (3, xlb.velocity_set.D3Q19, (100, 100, 100)),
+        (3, xlb.velocity_set.D3Q27, (50, 50, 50)),
+        (3, xlb.velocity_set.D3Q27, (100, 100, 100)),
     ],
 )
 def test_indices_masker_warp(dim, velocity_set, grid_shape):

@@ -1,17 +1,17 @@
 import pytest
-import jax.numpy as jnp
 import numpy as np
+import warp as wp
 import xlb
+import jax
 from xlb.compute_backend import ComputeBackend
-from xlb.default_config import DefaultConfig
-
 from xlb.grid import grid_factory
+from xlb.default_config import DefaultConfig
 
 
 def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
-        default_backend=ComputeBackend.JAX,
+        default_backend=ComputeBackend.WARP,
         velocity_set=velocity_set,
     )
 
@@ -27,7 +27,7 @@ def init_xlb_env(velocity_set):
         (3, xlb.velocity_set.D3Q27, (100, 100, 100)),
     ],
 )
-def test_indices_masker_jax(dim, velocity_set, grid_shape):
+def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
     init_xlb_env(velocity_set)
     my_grid = grid_factory(grid_shape)
     velocity_set = DefaultConfig.velocity_set
@@ -35,6 +35,8 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
     missing_mask = my_grid.create_field(
         cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
     )
+
+    fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC()
 
     boundary_id_field = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
@@ -56,37 +58,41 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
             < sphere_radius**2
         )
 
-    indices = jnp.array(indices)
+    indices = wp.array(indices, dtype=wp.int32)
 
-    assert indices.shape[0] == dim
-    test_id = 5
     boundary_id_field, missing_mask = indices_boundary_masker(
-        indices, test_id, boundary_id_field, missing_mask, start_index=None
+        indices, fullway_bc.id, boundary_id_field, missing_mask, start_index=None
     )
 
-    assert missing_mask.dtype == xlb.Precision.BOOL.jax_dtype
+    # Generate a random field with the same shape
+    random_field = np.random.rand(velocity_set.q, *grid_shape).astype(np.float32)
+    # Add the random field to f_pre
+    f_pre = wp.array(random_field)
 
-    assert boundary_id_field.dtype == xlb.Precision.UINT8.jax_dtype
+    f_post = my_grid.create_field(
+        cardinality=velocity_set.q, dtype=xlb.Precision.FP32, init_val=2.0
+    )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    assert boundary_id_field.shape == (1,) + grid_shape
+    f_pre = fullway_bc(f_pre, f_post, boundary_id_field, missing_mask, f_pre)
 
-    assert missing_mask.shape == (velocity_set.q,) + grid_shape
+    f = f_pre.numpy()
+    f_post = f_post.numpy()
+    indices = indices.numpy()
 
-    if dim == 2:
-        assert jnp.all(boundary_id_field[0, indices[0], indices[1]] == test_id)
-        # assert that the rest of the boundary_id_field is zero
-        boundary_id_field = boundary_id_field.at[0, indices[0], indices[1]].set(0)
-        assert jnp.all(boundary_id_field == 0)
-    if dim == 3:
-        assert jnp.all(
-            boundary_id_field[0, indices[0], indices[1], indices[2]] == test_id
+    assert f.shape == (velocity_set.q,) + grid_shape
+
+    for i in range(velocity_set.q):
+        np.allclose(
+            f[velocity_set.get_opp_index(i)][tuple(indices)],
+            f_post[i][tuple(indices)],
         )
-        # assert that the rest of the boundary_id_field is zero
-        boundary_id_field = boundary_id_field.at[
-            0, indices[0], indices[1], indices[2]
-        ].set(0)
-        assert jnp.all(boundary_id_field == 0)
 
-
-if __name__ == "__main__":
-    pytest.main()
+    # Make sure that everywhere else the values are the same as f_post. Note that indices are just int values
+    mask_outside = np.ones(grid_shape, dtype=bool)
+    mask_outside[indices] = False  # Mark boundary as false
+    if dim == 2:
+        for i in range(velocity_set.q):
+            assert np.allclose(f[i, mask_outside], f_post[i, mask_outside])
+    else:
+        for i in range(velocity_set.q):
+            assert np.allclose(f[i, mask_outside], f_post[i, mask_outside])

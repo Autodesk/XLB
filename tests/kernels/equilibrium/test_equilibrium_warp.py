@@ -14,11 +14,18 @@ def init_xlb_env(velocity_set):
         velocity_set=velocity_set,
     )
 
-@pytest.mark.parametrize("dim,velocity_set,grid_shape", [
-    (2, xlb.velocity_set.D2Q9, (100, 100)),
-    (3, xlb.velocity_set.D3Q27, (50, 50, 50))
-])
-def test_quadratic_equilibrium(dim, velocity_set, grid_shape):
+@pytest.mark.parametrize(
+    "dim,velocity_set,grid_shape",
+    [
+        (2, xlb.velocity_set.D2Q9, (50, 50)),
+        (2, xlb.velocity_set.D2Q9, (100, 100)),
+        (3, xlb.velocity_set.D3Q19, (50, 50, 50)),
+        (3, xlb.velocity_set.D3Q19, (100, 100, 100)),
+        (3, xlb.velocity_set.D3Q27, (50, 50, 50)),
+        (3, xlb.velocity_set.D3Q27, (100, 100, 100)),
+    ],
+)
+def test_quadratic_equilibrium_warp(dim, velocity_set, grid_shape):
     init_xlb_env(velocity_set)
     my_grid = grid_factory(grid_shape)
 

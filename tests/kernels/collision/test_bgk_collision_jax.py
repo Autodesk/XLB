@@ -23,6 +23,8 @@ def init_xlb_env(velocity_set):
         (2, xlb.velocity_set.D2Q9, (100, 100), 1.0),
         (3, xlb.velocity_set.D3Q19, (50, 50, 50), 0.6),
         (3, xlb.velocity_set.D3Q19, (50, 50, 50), 1.0),
+        (3, xlb.velocity_set.D3Q27, (50, 50, 50), 0.6),
+        (3, xlb.velocity_set.D3Q27, (50, 50, 50), 1.0),
     ],
 )
 def test_bgk_ollision(dim, velocity_set, grid_shape, omega):
