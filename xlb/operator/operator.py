@@ -3,10 +3,11 @@
 import inspect
 import warp as wp
 from typing import Any
+import traceback
 
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy, Precision
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 
 
 class Operator:
@@ -72,10 +73,11 @@ class Operator:
                 return result
             except Exception as e:
                 error = e
+                traceback_str = traceback.format_exc()
                 continue  # This skips to the next candidate if binding fails
 
         raise Exception(
-            f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}"
+            f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}\n {traceback_str}"
         )
 
     @property
