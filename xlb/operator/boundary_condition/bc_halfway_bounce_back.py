@@ -47,12 +47,15 @@ class HalfwayBounceBackBC(BoundaryCondition):
         )
 
     @Operator.register_backend(ComputeBackend.JAX)
-    #@partial(jit, static_argnums=(0), donate_argnums=(1, 2))
     @partial(jit, static_argnums=(0))
     def apply_jax(self, f_pre, f_post, boundary_id_field, missing_mask):
         boundary = boundary_id_field == self.id
         boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
-        return lax.select(jnp.logical_and(missing_mask, boundary), f_pre[self.velocity_set.opp_indices], f_post)
+        return jnp.where(
+            jnp.logical_and(missing_mask, boundary),
+            f_pre[self.velocity_set.opp_indices],
+            f_post,
+        )
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
@@ -63,9 +66,38 @@ class HalfwayBounceBackBC(BoundaryCondition):
             self.velocity_set.q, dtype=wp.uint8
         )  # TODO fix vec bool
 
+        @wp.func
+        def functional2d(
+            f: wp.array3d(dtype=Any),
+            missing_mask: Any,
+            index: Any,
+        ):
+            # Pull the distribution function
+            _f = _f_vec()
+            for l in range(self.velocity_set.q):
+                # Get pull index
+                pull_index = type(index)()
+
+                # If the mask is missing then take the opposite index
+                if missing_mask[l] == wp.uint8(1):
+                    use_l = _opp_indices[l]
+                    for d in range(self.velocity_set.d):
+                        pull_index[d] = index[d]
+
+                # Pull the distribution function
+                else:
+                    use_l = l
+                    for d in range(self.velocity_set.d):
+                        pull_index[d] = index[d] - _c[d, l]
+
+                # Get the distribution function
+                _f[l] = f[use_l, pull_index[0], pull_index[1]]
+
+            return _f
+
         # Construct the funcional to get streamed indices
         @wp.func
-        def functional(
+        def functional3d(
             f: wp.array4d(dtype=Any),
             missing_mask: Any,
             index: Any,
@@ -95,7 +127,42 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel(
+        def kernel2d(
+            f_pre: wp.array3d(dtype=Any),
+            f_post: wp.array3d(dtype=Any),
+            boundary_id_field: wp.array3d(dtype=wp.uint8),
+            missing_mask: wp.array3d(dtype=wp.bool),
+            f: wp.array3d(dtype=Any),
+        ):
+            # Get the global index
+            i, j = wp.tid()
+            index = wp.vec3i(i, j)
+
+            # Get the boundary id and missing mask
+            _boundary_id = boundary_id_field[0, index[0], index[1]]
+            _missing_mask = _missing_mask_vec()
+            for l in range(self.velocity_set.q):
+                # TODO fix vec bool
+                if missing_mask[l, index[0], index[1]]:
+                    _missing_mask[l] = wp.uint8(1)
+                else:
+                    _missing_mask[l] = wp.uint8(0)
+
+            # Apply the boundary condition
+            if _boundary_id == wp.uint8(HalfwayBounceBackBC.id):
+                _f = functional2d(f_pre, _missing_mask, index)
+            else:
+                _f = _f_vec()
+                for l in range(self.velocity_set.q):
+                    _f[l] = f_post[l, index[0], index[1]]
+
+            # Write the distribution function
+            for l in range(self.velocity_set.q):
+                f[l, index[0], index[1]] = _f[l]
+
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             boundary_id_field: wp.array4d(dtype=wp.uint8),
@@ -118,7 +185,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(HalfwayBounceBackBC.id):
-                _f = functional(f_pre, _missing_mask, index)
+                _f = functional3d(f_pre, _missing_mask, index)
             else:
                 _f = _f_vec()
                 for l in range(self.velocity_set.q):
@@ -127,6 +194,9 @@ class HalfwayBounceBackBC(BoundaryCondition):
             # Write the distribution function
             for l in range(self.velocity_set.q):
                 f[l, index[0], index[1], index[2]] = _f[l]
+
+        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
+        functional = functional3d if self.velocity_set.d == 3 else functional2d
 
         return functional, kernel
 
