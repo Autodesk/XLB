@@ -78,3 +78,19 @@ class PrecisionPolicy(Enum):
             return Precision.FP16
         else:
             raise ValueError("Invalid precision policy")
+
+    def cast_to_compute_jax(self, array):
+        compute_precision = self.compute_precision
+        return jnp.array(array, dtype=compute_precision.jax_dtype)
+
+    def cast_to_store_jax(self, array):
+        store_precision = self.store_precision
+        return jnp.array(array, dtype=store_precision.jax_dtype)
+
+    def cast_to_compute_warp(self, array):
+        compute_precision = self.compute_precision
+        return wp.array(array, dtype=compute_precision.wp_dtype)
+
+    def cast_to_store_warp(self, array):
+        store_precision = self.store_precision
+        return wp.array(array, dtype=store_precision.wp_dtype)

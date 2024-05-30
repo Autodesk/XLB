@@ -1,6 +1,7 @@
 """
 Base class for Collision operators
 """
+
 from xlb.velocity_set import VelocitySet
 from xlb.operator import Operator
 

@@ -10,7 +10,7 @@ class DefaultConfig:
 
 
 def init(velocity_set, default_backend, default_precision_policy):
-    DefaultConfig.velocity_set = velocity_set()
+    DefaultConfig.velocity_set = velocity_set
     DefaultConfig.default_backend = default_backend
     DefaultConfig.default_precision_policy = default_precision_policy
 

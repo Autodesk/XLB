@@ -6,7 +6,7 @@ from xlb.operator import Operator
 from xlb.precision_policy import Precision
 from xlb.compute_backend import ComputeBackend
 from typing import Literal
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 import numpy as np
 
 
@@ -16,12 +16,6 @@ class WarpGrid(Grid):
 
     def _initialize_backend(self):
         pass
-
-    def parallelize_operator(self, operator: Operator):
-        # TODO: Implement parallelization of the operator
-        raise NotImplementedError(
-            "Parallelization of the operator is not implemented yet for the WarpGrid"
-        )
 
     def create_field(
         self,

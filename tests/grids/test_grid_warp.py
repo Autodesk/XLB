@@ -7,7 +7,7 @@ from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
 
 
-def init_xlb_warp_env():
+def init_xlb_env():
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
@@ -18,7 +18,7 @@ def init_xlb_warp_env():
 @pytest.mark.parametrize("grid_size", [50, 100, 150])
 def test_warp_grid_create_field(grid_size):
     for grid_shape in [(grid_size, grid_size), (grid_size, grid_size, grid_size)]:
-        init_xlb_warp_env()
+        init_xlb_env()
         my_grid = grid_factory(grid_shape)
         f = my_grid.create_field(cardinality=9, dtype=Precision.FP32)
 
@@ -27,7 +27,7 @@ def test_warp_grid_create_field(grid_size):
 
 
 def test_warp_grid_create_field_fill_value():
-    init_xlb_warp_env()
+    init_xlb_env()
     grid_shape = (100, 100)
     fill_value = 3.14
     my_grid = grid_factory(grid_shape)
@@ -42,7 +42,7 @@ def test_warp_grid_create_field_fill_value():
 
 @pytest.fixture(autouse=True)
 def setup_xlb_env():
-    init_xlb_warp_env()
+    init_xlb_env()
 
 
 if __name__ == "__main__":

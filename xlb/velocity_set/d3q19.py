@@ -13,7 +13,6 @@ class D3Q19(VelocitySet):
     D3Q19 stands for three-dimensional nineteen-velocity model. It is a common model used in the
     Lattice Boltzmann Method for simulating fluid flows in three dimensions.
     """
-
     def __init__(self):
         # Construct the velocity vectors and weights
         c = np.array(

@@ -5,14 +5,13 @@ import xlb
 import jax
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
-from xlb.default_config import DefaultConfig
-
+from xlb import DefaultConfig
 
 def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
-        velocity_set=velocity_set,
+        velocity_set=velocity_set(),
     )
 
 
@@ -38,7 +37,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
 
     fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC()
 
-    boundary_id_field = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
 
@@ -60,8 +59,8 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
 
     indices = wp.array(indices, dtype=wp.int32)
 
-    boundary_id_field, missing_mask = indices_boundary_masker(
-        indices, fullway_bc.id, boundary_id_field, missing_mask, start_index=None
+    boundary_mask, missing_mask = indices_boundary_masker(
+        indices, fullway_bc.id, boundary_mask, missing_mask, start_index=None
     )
 
     # Generate a random field with the same shape
@@ -73,7 +72,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    f_pre = fullway_bc(f_pre, f_post, boundary_id_field, missing_mask, f_pre)
+    f_pre = fullway_bc(f_pre, f_post, boundary_mask, missing_mask, f_pre)
 
     f = f_pre.numpy()
     f_post = f_post.numpy()

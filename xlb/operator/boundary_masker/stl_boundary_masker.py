@@ -8,7 +8,7 @@ from jax import jit
 import warp as wp
 from typing import Tuple
 
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
@@ -42,7 +42,7 @@ class STLBoundaryMasker(Operator):
             origin: wp.vec3,
             spacing: wp.vec3,
             id_number: wp.int32,
-            boundary_id_field: wp.array4d(dtype=wp.uint8),
+            boundary_mask: wp.array4d(dtype=wp.uint8),
             mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -64,9 +64,9 @@ class STLBoundaryMasker(Operator):
 
             # Compute the maximum length
             max_length = wp.sqrt(
-                (spacing[0] * wp.float32(boundary_id_field.shape[1])) ** 2.0
-                + (spacing[1] * wp.float32(boundary_id_field.shape[2])) ** 2.0
-                + (spacing[2] * wp.float32(boundary_id_field.shape[3])) ** 2.0
+                (spacing[0] * wp.float32(boundary_mask.shape[1])) ** 2.0
+                + (spacing[1] * wp.float32(boundary_mask.shape[2])) ** 2.0
+                + (spacing[2] * wp.float32(boundary_mask.shape[3])) ** 2.0
             )
 
             # evaluate if point is inside mesh
@@ -87,7 +87,7 @@ class STLBoundaryMasker(Operator):
                             push_index[d] = index[d] + _c[d, l]
 
                         # Set the boundary id and mask
-                        boundary_id_field[
+                        boundary_mask[
                             0, push_index[0], push_index[1], push_index[2]
                         ] = wp.uint8(id_number)
                         mask[l, push_index[0], push_index[1], push_index[2]] = True
@@ -101,7 +101,7 @@ class STLBoundaryMasker(Operator):
         origin,
         spacing,
         id_number,
-        boundary_id_field,
+        boundary_mask,
         mask,
         start_index=(0, 0, 0),
     ):
@@ -122,11 +122,11 @@ class STLBoundaryMasker(Operator):
                 origin,
                 spacing,
                 id_number,
-                boundary_id_field,
+                boundary_mask,
                 mask,
                 start_index,
             ],
-            dim=boundary_id_field.shape[1:],
+            dim=boundary_mask.shape[1:],
         )
 
-        return boundary_id_field, mask
+        return boundary_mask, mask

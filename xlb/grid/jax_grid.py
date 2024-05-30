@@ -9,7 +9,9 @@ import jax.numpy as jnp
 from jax import lax
 import jax
 
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
+
+
 from .grid import Grid
 from xlb.operator import Operator
 from xlb.precision_policy import Precision

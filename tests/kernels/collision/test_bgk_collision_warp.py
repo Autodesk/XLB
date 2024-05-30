@@ -7,14 +7,14 @@ from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.collision import BGK
 from xlb.grid import grid_factory
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 from xlb.precision_policy import Precision
 
-def init_xlb_warp_env(velocity_set):
+def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
-        velocity_set=velocity_set,
+        velocity_set=velocity_set(),
     )
 
 @pytest.mark.parametrize(
@@ -29,7 +29,7 @@ def init_xlb_warp_env(velocity_set):
     ],
 )
 def test_bgk_collision_warp(dim, velocity_set, grid_shape, omega):
-    init_xlb_warp_env(velocity_set)
+    init_xlb_env(velocity_set)
     my_grid = grid_factory(grid_shape)
 
     rho = my_grid.create_field(cardinality=1, fill_value=1.0)

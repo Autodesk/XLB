@@ -7,7 +7,7 @@ from jax import jit, lax
 import warp as wp
 from typing import Tuple
 
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
@@ -41,7 +41,7 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     def jax_implementation(
-        self, indices, id_number, boundary_id_field, mask, start_index=None
+        self, indices, id_number, boundary_mask, mask, start_index=None
     ):
         dim = mask.ndim - 1
         if start_index is None:
@@ -56,15 +56,15 @@ class IndicesBoundaryMasker(Operator):
         indices_mask = np.logical_and.reduce(indices_mask)
 
         @jit
-        def compute_boundary_id_and_mask(boundary_id_field, mask):
+        def compute_boundary_id_and_mask(boundary_mask, mask):
             if dim == 2:
-                boundary_id_field = boundary_id_field.at[
+                boundary_mask = boundary_mask.at[
                     0, local_indices[0], local_indices[1]
                 ].set(id_number)
                 mask = mask.at[:, local_indices[0], local_indices[1]].set(True)
 
             if dim == 3:
-                boundary_id_field = boundary_id_field.at[
+                boundary_mask = boundary_mask.at[
                     0, local_indices[0], local_indices[1], local_indices[2]
                 ].set(id_number)
                 mask = mask.at[
@@ -72,9 +72,9 @@ class IndicesBoundaryMasker(Operator):
                 ].set(True)
 
             mask = self.stream(mask)
-            return boundary_id_field, mask
+            return boundary_mask, mask
 
-        return compute_boundary_id_and_mask(boundary_id_field, mask)
+        return compute_boundary_id_and_mask(boundary_mask, mask)
 
     def _construct_warp(self):
         # Make constants for warp
@@ -86,7 +86,7 @@ class IndicesBoundaryMasker(Operator):
         def kernel2d(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.int32,
-            boundary_id_field: wp.array3d(dtype=wp.uint8),
+            boundary_mask: wp.array3d(dtype=wp.uint8),
             mask: wp.array3d(dtype=wp.bool),
             start_index: wp.vec2i,
         ):
@@ -113,7 +113,7 @@ class IndicesBoundaryMasker(Operator):
                         push_index[d] = index[d] + _c[d, l]
 
                     # Set the boundary id and mask
-                    boundary_id_field[0, index[0], index[1]] = wp.uint8(id_number)
+                    boundary_mask[0, index[0], index[1]] = wp.uint8(id_number)
                     mask[l, push_index[0], push_index[1]] = True
 
         # Construct the warp 3D kernel
@@ -121,7 +121,7 @@ class IndicesBoundaryMasker(Operator):
         def kernel3d(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.int32,
-            boundary_id_field: wp.array4d(dtype=wp.uint8),
+            boundary_mask: wp.array4d(dtype=wp.uint8),
             mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -151,7 +151,7 @@ class IndicesBoundaryMasker(Operator):
                         push_index[d] = index[d] + _c[d, l]
 
                     # Set the boundary id and mask
-                    boundary_id_field[0, index[0], index[1], index[2]] = wp.uint8(
+                    boundary_mask[0, index[0], index[1], index[2]] = wp.uint8(
                         id_number
                     )
                     mask[l, push_index[0], push_index[1], push_index[2]] = True
@@ -162,7 +162,7 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
-        self, indices, id_number, boundary_id_field, missing_mask, start_index=None
+        self, indices, id_number, boundary_mask, missing_mask, start_index=None
     ):
         if start_index is None:
             start_index = (0,) * self.velocity_set.d
@@ -172,11 +172,11 @@ class IndicesBoundaryMasker(Operator):
             inputs=[
                 indices,
                 id_number,
-                boundary_id_field,
+                boundary_mask,
                 missing_mask,
                 start_index,
             ],
             dim=indices.shape[1],
         )
 
-        return boundary_id_field, missing_mask
+        return boundary_mask, missing_mask

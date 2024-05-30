@@ -12,8 +12,7 @@ from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from xlb.default_config import DefaultConfig
-
+from xlb import DefaultConfig
 
 # Enum for implementation step
 class ImplementationStep(Enum):

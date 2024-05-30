@@ -4,7 +4,7 @@ import xlb
 import warp as wp
 
 from xlb.compute_backend import ComputeBackend
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 from xlb.grid import grid_factory
 
 
@@ -12,7 +12,7 @@ def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
-        velocity_set=velocity_set,
+        velocity_set=velocity_set(),
     )
 
 
@@ -91,7 +91,7 @@ def test_planar_masker_warp(
         cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
     )
     fill_value = 0
-    boundary_id_field = my_grid.create_field(
+    boundary_mask = my_grid.create_field(
         cardinality=1, dtype=xlb.Precision.UINT8, fill_value=fill_value
     )
 
@@ -99,30 +99,30 @@ def test_planar_masker_warp(
     start_index = (0,) * dim
     id_number = 1
 
-    boundary_id_field, missing_mask = planar_boundary_masker(
+    boundary_mask, missing_mask = planar_boundary_masker(
         lower_bound,
         upper_bound,
         direction,
         id_number,
-        boundary_id_field,
+        boundary_mask,
         missing_mask,
         start_index,
     )
 
-    boundary_id_field = boundary_id_field.numpy()
+    boundary_mask = boundary_mask.numpy()
 
     # Assertions to verify boundary settings
     expected_slice = (slice(None),) + tuple(
         slice(lb, ub) for lb, ub in zip(lower_bound, upper_bound)
     )
     assert np.all(
-        boundary_id_field[expected_slice] == id_number
+        boundary_mask[expected_slice] == id_number
     ), "Boundary not set correctly"
 
     # Assertions for non-affected areas
     full_slice = tuple(slice(None) for _ in grid_shape)
-    mask = np.ones_like(boundary_id_field, dtype=bool)
+    mask = np.ones_like(boundary_mask, dtype=bool)
     mask[expected_slice] = False
     assert np.all(
-        boundary_id_field[full_slice][mask] == fill_value
+        boundary_mask[full_slice][mask] == fill_value
     ), "Rest of domain incorrectly affected"

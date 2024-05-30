@@ -3,7 +3,6 @@ from jax import jit
 import warp as wp
 from typing import Any
 
-from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.collision.collision import Collision
 from xlb.operator import Operator
@@ -37,31 +36,6 @@ class BGK(Collision):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel3d(
-            f: wp.array4d(dtype=Any),
-            feq: wp.array4d(dtype=Any),
-            fout: wp.array4d(dtype=Any),
-        ):
-            # Get the global index
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)  # TODO: Warp needs to fix this
-
-            # Load needed values
-            _f = _f_vec()
-            _feq = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1], index[2]]
-                _feq[l] = feq[l, index[0], index[1], index[2]]
-
-            # Compute the collision
-            _fout = functional(_f, _feq)
-
-            # Write the result
-            for l in range(self.velocity_set.q):
-                fout[l, index[0], index[1], index[2]] = _fout[l]
-
-        # Construct the warp kernel
-        @wp.kernel
         def kernel2d(
             f: wp.array3d(dtype=Any),
             feq: wp.array3d(dtype=Any),
@@ -85,19 +59,43 @@ class BGK(Collision):
             for l in range(self.velocity_set.q):
                 fout[l, index[0], index[1]] = _fout[l]
 
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel3d(
+            f: wp.array4d(dtype=Any),
+            feq: wp.array4d(dtype=Any),
+            fout: wp.array4d(dtype=Any),
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)  # TODO: Warp needs to fix this
+
+            # Load needed values
+            _f = _f_vec()
+            _feq = _f_vec()
+            for l in range(self.velocity_set.q):
+                _f[l] = f[l, index[0], index[1], index[2]]
+                _feq[l] = feq[l, index[0], index[1], index[2]]
+
+            # Compute the collision
+            _fout = functional(_f, _feq)
+
+            # Write the result
+            for l in range(self.velocity_set.q):
+                fout[l, index[0], index[1], index[2]] = _fout[l]
+
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq, fout):
+    def warp_implementation(self, f, feq):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
             inputs=[
                 f,
                 feq,
-                fout,
             ],
             dim=f.shape[1:],
         )

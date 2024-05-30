@@ -2,7 +2,7 @@ import pytest
 import jax.numpy as jnp
 import xlb
 from xlb.compute_backend import ComputeBackend
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 from xlb.grid import grid_factory
 
 
@@ -10,7 +10,7 @@ def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.JAX,
-        velocity_set=velocity_set,
+        velocity_set=velocity_set(),
     )
 
 
@@ -89,7 +89,7 @@ def test_planar_masker_jax(
     )
 
     fill_value = 0
-    boundary_id_field = my_grid.create_field(
+    boundary_mask = my_grid.create_field(
         cardinality=1, dtype=xlb.Precision.UINT8, fill_value=fill_value
     )
 
@@ -98,12 +98,12 @@ def test_planar_masker_jax(
     start_index = (0,) * dim
     id_number = 1
 
-    boundary_id_field, missing_mask = planar_boundary_masker(
+    boundary_mask, missing_mask = planar_boundary_masker(
         lower_bound,
         upper_bound,
         direction,
         id_number,
-        boundary_id_field,
+        boundary_mask,
         missing_mask,
         start_index,
     )
@@ -113,15 +113,15 @@ def test_planar_masker_jax(
         slice(lb, ub) for lb, ub in zip(lower_bound, upper_bound)
     )
     assert jnp.all(
-        boundary_id_field[expected_slice] == id_number
+        boundary_mask[expected_slice] == id_number
     ), "Boundary not set correctly"
 
     # Assert that the rest of the domain is not affected and is equal to fill_value
     full_slice = tuple(slice(None) for _ in grid_shape)
-    mask = jnp.ones_like(boundary_id_field, dtype=bool)
+    mask = jnp.ones_like(boundary_mask, dtype=bool)
     mask = mask.at[expected_slice].set(False)
     assert jnp.all(
-        boundary_id_field[full_slice][mask] == fill_value
+        boundary_mask[full_slice][mask] == fill_value
     ), "Rest of domain incorrectly affected"
 
 

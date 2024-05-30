@@ -4,7 +4,7 @@ from xlb.precision_policy import PrecisionPolicy, Precision
 from xlb.physics_type import PhysicsType
 
 # Config
-from .default_config import init, default_backend
+from .default_config import init, DefaultConfig
 
 # Velocity Set
 import xlb.velocity_set
@@ -20,7 +20,7 @@ import xlb.operator.macroscopic
 import xlb.grid
 
 # Solvers
-import xlb.solver
+import xlb.helper
 
 # Utils
 import xlb.utils

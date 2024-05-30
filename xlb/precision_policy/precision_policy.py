@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from xlb.compute_backend import ComputeBackend
-from xlb.default_config import DefaultConfig
-
+from xlb import DefaultConfig
 from xlb.precision_policy.jax_precision_policy import (
     JaxFp32Fp32,
     JaxFp32Fp16,

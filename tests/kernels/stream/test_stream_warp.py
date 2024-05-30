@@ -5,8 +5,7 @@ import warp as wp
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.stream import Stream
-from xlb.default_config import DefaultConfig
-
+from xlb import DefaultConfig
 from xlb.grid import grid_factory
 
 
@@ -14,7 +13,7 @@ def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
-        velocity_set=velocity_set,
+        velocity_set=velocity_set(),
     )
 
 

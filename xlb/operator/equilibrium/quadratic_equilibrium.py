@@ -8,8 +8,7 @@ from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium.equilibrium import Equilibrium
 from xlb.operator import Operator
-from xlb.default_config import DefaultConfig
-
+from xlb import DefaultConfig
 
 class QuadraticEquilibrium(Equilibrium):
     """

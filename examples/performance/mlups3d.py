@@ -6,7 +6,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import Fp32Fp32
 from xlb.operator.initializer import EquilibriumInitializer
 
-from xlb.solver import IncompressibleNavierStokes
+from xlb.helper import IncompressibleNavierStokes
 from xlb.grid import grid_factory
 
 parser = argparse.ArgumentParser(

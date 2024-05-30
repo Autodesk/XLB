@@ -5,7 +5,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.grid import grid_factory
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 import warp as wp
 
 
@@ -13,7 +13,7 @@ def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
-        velocity_set=velocity_set,
+        velocity_set=velocity_set(),
     )
 
 

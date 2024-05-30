@@ -6,7 +6,7 @@ from jax import jit
 import warp as wp
 from typing import Tuple, Any
 
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator

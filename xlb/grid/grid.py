@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Literal, Optional, Tuple
 
-from xlb.default_config import DefaultConfig
+from xlb import DefaultConfig
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import Precision
 

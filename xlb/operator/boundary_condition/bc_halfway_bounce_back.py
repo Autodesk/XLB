@@ -48,8 +48,8 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, boundary_id_field, missing_mask):
-        boundary = boundary_id_field == self.id
+    def apply_jax(self, f_pre, f_post, boundary_mask, missing_mask):
+        boundary = boundary_mask == self.id
         boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
         return jnp.where(
             jnp.logical_and(missing_mask, boundary),
@@ -130,7 +130,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
         def kernel2d(
             f_pre: wp.array3d(dtype=Any),
             f_post: wp.array3d(dtype=Any),
-            boundary_id_field: wp.array3d(dtype=wp.uint8),
+            boundary_mask: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
             f: wp.array3d(dtype=Any),
         ):
@@ -139,7 +139,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
             index = wp.vec3i(i, j)
 
             # Get the boundary id and missing mask
-            _boundary_id = boundary_id_field[0, index[0], index[1]]
+            _boundary_id = boundary_mask[0, index[0], index[1]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # TODO fix vec bool
@@ -165,7 +165,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
         def kernel3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
-            boundary_id_field: wp.array4d(dtype=wp.uint8),
+            boundary_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             f: wp.array4d(dtype=Any),
         ):
@@ -174,7 +174,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
             index = wp.vec3i(i, j, k)
 
             # Get the boundary id and missing mask
-            _boundary_id = boundary_id_field[0, index[0], index[1], index[2]]
+            _boundary_id = boundary_mask[0, index[0], index[1], index[2]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # TODO fix vec bool
@@ -201,11 +201,11 @@ class HalfwayBounceBackBC(BoundaryCondition):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, boundary_id_field, missing_mask, f):
+    def warp_implementation(self, f_pre, f_post, boundary_mask, missing_mask, f):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f_pre, f_post, boundary_id_field, missing_mask, f],
+            inputs=[f_pre, f_post, boundary_mask, missing_mask, f],
             dim=f_pre.shape[1:],
         )
         return f

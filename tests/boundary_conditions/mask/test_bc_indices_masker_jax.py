@@ -3,8 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 import xlb
 from xlb.compute_backend import ComputeBackend
-from xlb.default_config import DefaultConfig
-
+from xlb import DefaultConfig
 from xlb.grid import grid_factory
 
 
@@ -12,7 +11,7 @@ def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.JAX,
-        velocity_set=velocity_set,
+        velocity_set=velocity_set(),
     )
 
 
@@ -37,7 +36,7 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
     )
 
-    boundary_id_field = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
 
@@ -61,32 +60,32 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
 
     assert indices.shape[0] == dim
     test_id = 5
-    boundary_id_field, missing_mask = indices_boundary_masker(
-        indices, test_id, boundary_id_field, missing_mask, start_index=None
+    boundary_mask, missing_mask = indices_boundary_masker(
+        indices, test_id, boundary_mask, missing_mask, start_index=None
     )
 
     assert missing_mask.dtype == xlb.Precision.BOOL.jax_dtype
 
-    assert boundary_id_field.dtype == xlb.Precision.UINT8.jax_dtype
+    assert boundary_mask.dtype == xlb.Precision.UINT8.jax_dtype
 
-    assert boundary_id_field.shape == (1,) + grid_shape
+    assert boundary_mask.shape == (1,) + grid_shape
 
     assert missing_mask.shape == (velocity_set.q,) + grid_shape
 
     if dim == 2:
-        assert jnp.all(boundary_id_field[0, indices[0], indices[1]] == test_id)
-        # assert that the rest of the boundary_id_field is zero
-        boundary_id_field = boundary_id_field.at[0, indices[0], indices[1]].set(0)
-        assert jnp.all(boundary_id_field == 0)
+        assert jnp.all(boundary_mask[0, indices[0], indices[1]] == test_id)
+        # assert that the rest of the boundary_mask is zero
+        boundary_mask = boundary_mask.at[0, indices[0], indices[1]].set(0)
+        assert jnp.all(boundary_mask == 0)
     if dim == 3:
         assert jnp.all(
-            boundary_id_field[0, indices[0], indices[1], indices[2]] == test_id
+            boundary_mask[0, indices[0], indices[1], indices[2]] == test_id
         )
-        # assert that the rest of the boundary_id_field is zero
-        boundary_id_field = boundary_id_field.at[
+        # assert that the rest of the boundary_mask is zero
+        boundary_mask = boundary_mask.at[
             0, indices[0], indices[1], indices[2]
         ].set(0)
-        assert jnp.all(boundary_id_field == 0)
+        assert jnp.all(boundary_mask == 0)
 
 
 if __name__ == "__main__":
