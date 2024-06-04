@@ -10,18 +10,21 @@ XLB is a fully differentiable 2D/3D Lattice Boltzmann Method (LBM) library that 
 
 ## Accompanying Paper
 
-Please refer to the [accompanying paper](https://arxiv.org/abs/2311.16080) for benchmarks, validation, and more details about the library.
+Please refer to the [accompanying paper](https://doi.org/10.1016/j.cpc.2024.109187) for benchmarks, validation, and more details about the library.
 
 ## Citing XLB
 
 If you use XLB in your research, please cite the following paper:
 
 ```
-@article{ataei2023xlb,
-      title={{XLB}: A Differentiable Massively Parallel Lattice Boltzmann Library in Python}, 
-      author={Ataei, Mohammadmehdi and Salehipour, Hesam},
-      journal={arXiv preprint arXiv:2311.16080},
-      year={2023},
+@article{ataei2024xlb,
+  title={{XLB}: A differentiable massively parallel lattice {Boltzmann} library in {Python}},
+  author={Ataei, Mohammadmehdi and Salehipour, Hesam},
+  journal={Computer Physics Communications},
+  volume={300},
+  pages={109187},
+  year={2024},
+  publisher={Elsevier}
 }
 ```
 
