@@ -15,6 +15,36 @@ import __main__
 
 
 @partial(jit, static_argnums=(1, 2))
+def resample_field(field, factor, method='bicubic'):
+    """
+    Resample a JAX array by a factor of `factor` along each axis.
+
+    Parameters
+    ----------
+    field : jax.numpy.ndarray
+        The input vector field to be resampled. This should be a 3D or 4D JAX array where the last dimension is 2 or 3 (vector components).
+    factor : int, float
+        The factor by which to resample the field. The dimensions of the field will be divided by this factor.
+    method : str, optional
+        The method to use for resampling. Default is 'bicubic'.
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        The resampled field.
+    """
+    if factor == 1:
+        return field
+    else:
+        new_shape = tuple(round(dim / factor) for dim in field.shape[:-1])
+        downsampled_components = []
+        for i in range(field.shape[-1]):  # Iterate over the last dimension (vector components)
+            resized = resize(field[..., i], new_shape, method=method)
+            downsampled_components.append(resized)
+
+        return jnp.stack(downsampled_components, axis=-1)
+
+@partial(jit, static_argnums=(1, 2))
 def downsample_field(field, factor, method='bicubic'):
     """
     Downsample a JAX array by a factor of `factor` along each axis.
@@ -23,7 +53,7 @@ def downsample_field(field, factor, method='bicubic'):
     ----------
     field : jax.numpy.ndarray
         The input vector field to be downsampled. This should be a 3D or 4D JAX array where the last dimension is 2 or 3 (vector components).
-    factor : int
+    factor : int, float
         The factor by which to downsample the field. The dimensions of the field will be divided by this factor.
     method : str, optional
         The method to use for downsampling. Default is 'bicubic'.
@@ -33,16 +63,7 @@ def downsample_field(field, factor, method='bicubic'):
     jax.numpy.ndarray
         The downsampled field.
     """
-    if factor == 1:
-        return field
-    else:
-        new_shape = tuple(dim // factor for dim in field.shape[:-1])
-        downsampled_components = []
-        for i in range(field.shape[-1]):  # Iterate over the last dimension (vector components)
-            resized = resize(field[..., i], new_shape, method=method)
-            downsampled_components.append(resized)
-
-        return jnp.stack(downsampled_components, axis=-1)
+    return resample_field(field, factor, method)
 
 def save_image(timestep, fld, prefix=None):
     """
