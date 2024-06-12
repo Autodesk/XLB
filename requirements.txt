@@ -8,4 +8,5 @@ Rtree==1.0.1
 trimesh==4.0.0
 orbax-checkpoint==0.4.1
 termcolor==2.3.0
+tqdm==4.66.4
 PhantomGaze @ git+https://github.com/loliverhennigh/PhantomGaze.git

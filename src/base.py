@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import jmp
 import numpy as np
 from termcolor import colored
+from tqdm import tqdm
 
 # JAX-related imports
 from jax import jit, lax, vmap
@@ -886,7 +887,8 @@ class LBMBase(object):
         if self.computeMLUPS:
             start = time.time()
         # Loop over all time steps
-        for timestep in range(start_step, t_max + 1):
+        pbar = tqdm(range(start_step, t_max + 1))
+        for timestep in pbar:
             io_flag = self.ioRate > 0 and (timestep % self.ioRate == 0 or timestep == t_max)
             print_iter_flag = self.printInfoRate> 0 and timestep % self.printInfoRate== 0
             checkpoint_flag = self.checkpointRate > 0 and timestep % self.checkpointRate == 0
@@ -905,11 +907,12 @@ class LBMBase(object):
             f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
             # Print the progress of the simulation
             if print_iter_flag:
-                print(colored("Timestep ", 'blue') + colored(f"{timestep}", 'green') + colored(" of ", 'blue') + colored(f"{t_max}", 'green') + colored(" completed", 'blue'))
+                pass
+                # pbar.set_description(colored("Timestep ", 'blue') + colored(f"{timestep}", 'green') + colored(" of ", 'blue') + colored(f"{t_max}", 'green') + colored(" completed", 'blue'))
 
             if io_flag:
                 # Save the simulation data
-                print(f"Saving data at timestep {timestep}/{t_max}")
+                pbar.set_description(f"Saving data at timestep {timestep}/{t_max}")
                 rho, u = self.update_macroscopic(f)
                 rho = downsample_field(rho, self.downsamplingFactor)
                 u = downsample_field(u, self.downsamplingFactor)
@@ -923,7 +926,7 @@ class LBMBase(object):
             
             if checkpoint_flag:
                 # Save the checkpoint
-                print(f"Saving checkpoint at timestep {timestep}/{t_max}")
+                pbar.set_description(f"Saving checkpoint at timestep {timestep}/{t_max}")
                 state = {'f': f}
                 self.mngr.save(timestep, state)
             
