@@ -17,20 +17,15 @@ class BGKSim(LBMBase):
         super().__init__(**kwargs)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
-    def collision(self, f):
+    def collision(self, f, feq, rho, u):
         """
         BGK collision step for lattice.
 
         The collision step is where the main physics of the LBM is applied. In the BGK approximation, 
         the distribution function is relaxed towards the equilibrium distribution function.
         """
-        f = self.precisionPolicy.cast_to_compute(f)
-        rho, u = self.update_macroscopic(f)
-        feq = self.equilibrium(rho, u, cast_output=False)
         fneq = f - feq
         fout = f - self.omega * fneq
-        if self.force is not None:
-            fout = self.apply_force(fout, feq, rho, u)
         return self.precisionPolicy.cast_to_output(fout)
 
 class KBCSim(LBMBase):
@@ -45,15 +40,12 @@ class KBCSim(LBMBase):
         super().__init__(**kwargs)
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
-    def collision(self, f):
+    def collision(self, f, feq, rho, u):
         """
         KBC collision step for lattice.
         """
-        f = self.precisionPolicy.cast_to_compute(f)
         tiny = 1e-32
         beta = self.omega * 0.5
-        rho, u = self.update_macroscopic(f)
-        feq = self.equilibrium(rho, u, cast_output=False)
         fneq = f - feq
         if self.dim == 2:
             deltaS = self.fdecompose_shear_d2q9(fneq) * rho / 4.0
@@ -64,10 +56,6 @@ class KBCSim(LBMBase):
         gamma = invBeta - (2.0 - invBeta) * self.entropic_scalar_product(deltaS, deltaH, feq) / (tiny + self.entropic_scalar_product(deltaH, deltaH, feq))
 
         fout = f - beta * (2.0 * deltaS + gamma[..., None] * deltaH)
-
-        # add external force
-        if self.force is not None:
-            fout = self.apply_force(fout, feq, rho, u)
         return self.precisionPolicy.cast_to_output(fout)
     
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
@@ -82,11 +70,10 @@ class KBCSim(LBMBase):
         Overall the following alternative collision is more reliable and may replace the original 
         implementation. The issue at the moment is that it is about 60-80% slower than the above method.
         """
-        f = self.precisionPolicy.cast_to_compute(f)
+
+
         tiny = 1e-32
         beta = self.omega * 0.5
-        rho, u = self.update_macroscopic(f)
-        feq = self.equilibrium(rho, u, castOutput=False)
 
         # Alternative KBC: only stabalizes for voxels whose entropy decreases after BGK collision.
         f_bgk = f - self.omega * (f - feq)
@@ -105,10 +92,6 @@ class KBCSim(LBMBase):
 
         f_kbc = f - beta * (2.0 * deltaS + gamma[..., None] * deltaH)
         fout = jnp.where(H_fout > H_fin, f_kbc, f_bgk)
-
-        # add external force
-        if self.force is not None:
-            fout = self.apply_force(fout, feq, rho, u)
         return self.precisionPolicy.cast_to_output(fout)
 
     @partial(jit, static_argnums=(0,), inline=True)
@@ -248,11 +231,10 @@ class AdvectionDiffusionBGK(LBMBase):
             raise ValueError("Velocity must be specified for AdvectionDiffusionBGK.")
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
-    def collision(self, f):
+    def collision(self, f, feq, rho, u):
         """
         BGK collision step for lattice.
         """
-        f = self.precisionPolicy.cast_to_compute(f)
         rho =jnp.sum(f, axis=-1, keepdims=True)
         feq = self.equilibrium(rho, self.vel, cast_output=False)
         fneq = f - feq

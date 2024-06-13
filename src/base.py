@@ -144,7 +144,6 @@ class LBMBase(object):
         self.boundingBoxIndices= self.bounding_box_indices()
         # Create boundary data for the simulation
         self._create_boundary_data()
-        self.force = self.get_force()
 
     @property
     def lattice(self):
@@ -806,7 +805,7 @@ class LBMBase(object):
                     
         return fout
 
-    @partial(jit, static_argnums=(0, 3), donate_argnums=(1,))
+    @partial(jit, static_argnums=(0, 3))
     def step(self, f_poststreaming, timestep, return_fpost=False):
         """
         This function performs a single step of the LBM simulation.
@@ -836,7 +835,11 @@ class LBMBase(object):
             The post-collision distribution functions after the simulation step, or None if 
             return_fpost is False.
         """
-        f_postcollision = self.collision(f_poststreaming)
+        f = self.precisionPolicy.cast_to_compute(f_poststreaming)
+        rho, u = self.update_macroscopic(f)
+        feq = self.equilibrium(rho, u, cast_output=False)
+
+        f_postcollision = self.collision(f_poststreaming, feq, rho, u)
         f_postcollision = self.apply_bc(f_postcollision, f_poststreaming, timestep, "PostCollision")
         f_poststreaming = self.streaming(f_postcollision)
         f_poststreaming = self.apply_bc(f_poststreaming, f_postcollision, timestep, "PostStreaming")
@@ -906,8 +909,8 @@ class LBMBase(object):
             # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
             # Print the progress of the simulation
-            if print_iter_flag:
-                pass
+            #if print_iter_flag:
+            #    pass
                 # pbar.set_description(colored("Timestep ", 'blue') + colored(f"{timestep}", 'green') + colored(" of ", 'blue') + colored(f"{t_max}", 'green') + colored(" completed", 'blue'))
 
             if io_flag:
@@ -1011,7 +1014,7 @@ class LBMBase(object):
         pass
 
     @partial(jit, static_argnums=(0,), donate_argnums=(1,))
-    def collision(self, fin):
+    def collision(self, fin, feq, rho, u):
         """
         This function performs the collision step in the Lattice Boltzmann Method.
 
@@ -1032,15 +1035,20 @@ class LBMBase(object):
             The post-collision distribution functions.
         """
         pass
+    
+class LBMExternalForce(LBMBase):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-    def get_force(self):
+    @partial(jit, static_argnums=(0,))
+    def get_force(self, f_postcollision, feq, rho, u):
         """
         This function computes the force to be applied to the fluid in the Lattice Boltzmann Method.
 
-        It is intended to be overwritten by the user to specify the force according to the specific 
+        It is intended to be overwritten by the user to specify the force according to the specific
         problem being solved.
 
-        By default, it does nothing and returns None. When overwritten, it could implement a constant 
+        By default, it does nothing and returns None. When overwritten, it could implement a constant
         force term.
 
         Returns
@@ -1066,12 +1074,12 @@ class LBMBase(object):
 
         u: jax.numpy.ndarray
             The velocity field.
-        
+
         Returns
         -------
         f_postcollision: jax.numpy.ndarray
             The post-collision distribution functions with the force applied.
-        
+
         References
         ----------
         Kupershtokh, A. (2004). New method of incorporating a body force term into the lattice Boltzmann equation. In
@@ -1080,10 +1088,54 @@ class LBMBase(object):
         Boundary conditions. Physica A, 392, 1925-1930.
         Krüger, T., et al. (2017). The lattice Boltzmann method. Springer International Publishing, 10.978-3, 4-15.
         """
-        delta_u = self.get_force()
+        delta_u = self.get_force(f_postcollision, feq, rho, u)
+        if delta_u is None:  # No force is applied
+            return f_postcollision
         feq_force = self.equilibrium(rho, u + delta_u, cast_output=False)
         f_postcollision = f_postcollision + feq_force - feq
         return f_postcollision
-    
 
-    
+    @partial(jit, static_argnums=(0, 3))
+    def step(self, f_poststreaming, timestep, return_fpost=False):
+        """
+        This function performs a single step of the LBM simulation.
+
+        It first performs the collision step, which is the relaxation of the distribution functions
+        towards their equilibrium values. It then applies the respective boundary conditions to the
+        post-collision distribution functions.
+
+        The function then performs the streaming step, which is the propagation of the distribution
+        functions in the lattice. It then applies the respective boundary conditions to the post-streaming
+        distribution functions.
+
+        Parameters
+        ----------
+        f_poststreaming: jax.numpy.ndarray
+            The post-streaming distribution functions.
+        timestep: int
+            The current timestep of the simulation.
+        return_fpost: bool, optional
+            If True, the function also returns the post-collision distribution functions.
+
+        Returns
+        -------
+        f_poststreaming: jax.numpy.ndarray
+            The post-streaming distribution functions after the simulation step.
+        f_postcollision: jax.numpy.ndarray or None
+            The post-collision distribution functions after the simulation step, or None if
+            return_fpost is False.
+        """
+        f = self.precisionPolicy.cast_to_compute(f_poststreaming)
+        rho, u = self.update_macroscopic(f)
+        feq = self.equilibrium(rho, u, castOutput=False)
+
+        f_postcollision_no_force = self.collision(f_poststreaming, feq, rho, u)
+        f_postcollision = self.apply_force(f_postcollision_no_force, feq, rho, u)
+        f_postcollision = self.apply_bc(f_postcollision, f_poststreaming, timestep, "PostCollision")
+        f_poststreaming = self.streaming(f_postcollision)
+        f_poststreaming = self.apply_bc(f_poststreaming, f_postcollision, timestep, "PostStreaming")
+
+        if return_fpost:
+            return f_poststreaming, f_postcollision
+        else:
+            return f_poststreaming, None
