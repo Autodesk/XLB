@@ -1,5 +1,6 @@
 import os
 import json
+import threading
 import jax
 from time import time
 from jax import config
@@ -57,6 +58,8 @@ class Cylinder(BGKSim):
 
     def output_data(self, **kwargs):
         self.saved_data.append(kwargs['u'])
+        if kwargs['timestep'] % 200 == 0:
+            save_image(kwargs['timestep'], kwargs['u'])
         # 1:-1 to remove boundary voxels (not needed for visualization when using bounce-back)
 
     def get_force(self):
@@ -67,11 +70,11 @@ class Cylinder(BGKSim):
 poiseuille_profile = lambda x, x0, d, umax: np.maximum(0., 4. * umax / (d ** 2) * ((x - x0) * d - (x - x0) ** 2))
 
 
-def generate_sim_dataaset(diam, t_start, t_end, output_stride):
+def generate_sim_dataaset(diam, t_start, t_end, output_stride, output_offset):
     global _diam
     global _prescribed_vel
     _diam = diam
-    precision = 'f16/f16'
+    precision = 'f64/f64'
     # diam_list = [10, 20, 30, 40, 60, 80]
     scale_factor = 80 / diam
     prescribed_vel = 0.003 * scale_factor
@@ -101,10 +104,17 @@ def generate_sim_dataaset(diam, t_start, t_end, output_stride):
     if t_end < int(100 // tc):
         print(colored("WARNING: timestep_end is too small, Karman flow may not appear", "red"))
     sim = Cylinder(**kwargs)
-    for data in sim.run(t_end, t_start, output_stride=output_stride, batch_generator=True):
+    for data in sim.run_batch_generator(t_end, t_start, output_stride=output_stride, output_offset=output_offset, generator_size=500):
          yield data
     return
 
-generated_data = generate_sim_dataaset(200, 0, 1000, 1)
+def save_data_batch(np_data, seq_number):
+    np.save("./data/ref_data_diam_80_seq_{}".format(seq_number), np_data)
+
+generated_data = generate_sim_dataaset(80, 0, 16000, 1, output_offset=15000)
+seq_number = 0
 for data in generated_data:
-    print(data)
+    np_data = np.stack(data, axis=0)
+    print("Saving ... ")
+    threading.Thread(target=save_data_batch, args=(np_data, seq_number)).start()
+    seq_number += 1

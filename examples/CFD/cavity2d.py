@@ -53,7 +53,7 @@ class Cavity(KBCSim):
         rho = np.array(kwargs["rho"][1:-1, 1:-1])
         u = np.array(kwargs["u"][1:-1, 1:-1, :])
         timestep = kwargs["timestep"]
-
+        print(u.shape)
         save_image(timestep, u)
         fields = {"rho": rho[..., 0], "u_x": u[..., 0], "u_y": u[..., 1]}
         save_fields_vtk(timestep, fields)
@@ -93,4 +93,4 @@ if __name__ == "__main__":
     }
 
     sim = Cavity(**kwargs)
-    sim.run(5000)
+    sim.run(5000, output_stride=100)
