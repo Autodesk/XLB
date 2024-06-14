@@ -144,6 +144,7 @@ class LBMBase(object):
         self.boundingBoxIndices= self.bounding_box_indices()
         # Create boundary data for the simulation
         self._create_boundary_data()
+        self.saved_data = []
 
     @property
     def lattice(self):
@@ -405,9 +406,28 @@ class LBMBase(object):
         -------
             jax.numpy.ndarray: A JAX array with the specified shape, data type, initial value, and sharding strategy.
         """
+        x = jnp.full(shape=shape, fill_value=init_val, dtype=type)        
+        return self.distributed_array(x, sharding=sharding)
+
+    @partial(jit, static_argnums=(0, 2))
+    def distributed_array(self, x, sharding=None):
+        """
+        Initialize a distributed array using JAX, with a specified shape, data type, and initial value.
+        Optionally, provide a custom sharding strategy.
+
+        Parameters
+        ----------
+            shape (tuple): The shape of the array to be created.
+            type (dtype): The data type of the array to be created.
+            init_val (scalar, optional): The initial value to fill the array with. Defaults to 0.
+            sharding (Sharding, optional): The sharding strategy to use. Defaults to `self.sharding`.
+
+        Returns
+        -------
+            jax.numpy.ndarray: A JAX array with the specified shape, data type, initial value, and sharding strategy.
+        """
         if sharding is None:
             sharding = self.sharding
-        x = jnp.full(shape=shape, fill_value=init_val, dtype=type)        
         return jax.lax.with_sharding_constraint(x, sharding)
     
     @partial(jit, static_argnums=(0,))
@@ -557,6 +577,8 @@ class LBMBase(object):
             f = self.initialize_populations(rho0, u0)
 
         return f
+
+
     
     def initialize_populations(self, rho0, u0):
         """
@@ -849,7 +871,7 @@ class LBMBase(object):
         else:
             return f_poststreaming, None
 
-    def run(self, t_max):
+    def run(self, timestep_end, timestep_start=0, output_offset=0, output_stride=1, batch_generator=False, generator_size=100, init_f=None):
         """
         This function runs the LBM simulation for a specified number of time steps.
 
@@ -858,6 +880,9 @@ class LBMBase(object):
 
         The function can also print the progress of the simulation, save the simulation data, and 
         compute the performance of the simulation in million lattice updates per second (MLUPS).
+
+        If batch_generator is True, it will generate a batch of simulation data for every time step, self.saved_data will be empty afterward.
+        Otherwise it will return self.saved_data when all steps are over.
 
         Parameters
         ----------
@@ -868,34 +893,16 @@ class LBMBase(object):
         f: jax.numpy.ndarray
             The distribution functions after the simulation.
         """
-        f = self.assign_fields_sharded()
-        start_step = 0
-        if self.restore_checkpoint:
-            latest_step = self.mngr.latest_step()
-            if latest_step is not None:  # existing checkpoint present
-                # Assert that the checkpoint manager is not None
-                assert self.mngr is not None, "Checkpoint manager does not exist."
-                state = {'f': f}
-                shardings = jax.tree_map(lambda x: x.sharding, state)
-                restore_args = orb.checkpoint_utils.construct_restore_args(state, shardings)
-                try:
-                    f = self.mngr.restore(latest_step, restore_kwargs={'restore_args': restore_args})['f']
-                    print(f"Restored checkpoint at step {latest_step}.")
-                except ValueError:
-                    raise ValueError(f"Failed to restore checkpoint at step {latest_step}.")
-                
-                start_step = latest_step + 1
-                if not (t_max > start_step):
-                    raise ValueError(f"Simulation already exceeded maximum allowable steps (t_max = {t_max}). Consider increasing t_max.")
-        if self.computeMLUPS:
-            start = time.time()
+        if init_f is None and not timestep_start == 0:
+            raise ValueError("Should specify f for timestep > 0.")
+        if timestep_start == 0:
+            f = self.assign_fields_sharded()
+        else:
+            f = self.distributed_array(init_f)
         # Loop over all time steps
-        pbar = tqdm(range(start_step, t_max + 1))
+        pbar = tqdm(range(timestep_start, timestep_end + 1))
         for timestep in pbar:
-            io_flag = self.ioRate > 0 and (timestep % self.ioRate == 0 or timestep == t_max)
-            print_iter_flag = self.printInfoRate> 0 and timestep % self.printInfoRate== 0
-            checkpoint_flag = self.checkpointRate > 0 and timestep % self.checkpointRate == 0
-
+            io_flag = output_stride > 0 and timestep >= output_offset and (timestep-output_offset) % output_stride == 0
             if io_flag:
                 # Update the macroscopic variables and save the previous values (for error computation)
                 rho_prev, u_prev = self.update_macroscopic(f)
@@ -904,18 +911,11 @@ class LBMBase(object):
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
                 rho_prev = process_allgather(rho_prev)
                 u_prev = process_allgather(u_prev)
-
-
             # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
-            # Print the progress of the simulation
-            #if print_iter_flag:
-            #    pass
-                # pbar.set_description(colored("Timestep ", 'blue') + colored(f"{timestep}", 'green') + colored(" of ", 'blue') + colored(f"{t_max}", 'green') + colored(" completed", 'blue'))
-
             if io_flag:
                 # Save the simulation data
-                pbar.set_description(f"Saving data at timestep {timestep}/{t_max}")
+                pbar.set_description(f"Saving data at timestep {timestep}/{timestep_end}")
                 rho, u = self.update_macroscopic(f)
                 rho = downsample_field(rho, self.downsamplingFactor)
                 u = downsample_field(u, self.downsamplingFactor)
@@ -926,32 +926,9 @@ class LBMBase(object):
 
                 # Save the data
                 self.handle_io_timestep(timestep, f, fstar, rho, u, rho_prev, u_prev)
-            
-            if checkpoint_flag:
-                # Save the checkpoint
-                pbar.set_description(f"Saving checkpoint at timestep {timestep}/{t_max}")
-                state = {'f': f}
-                self.mngr.save(timestep, state)
-            
-            # Start the timer for the MLUPS computation after the first timestep (to remove compilation overhead)
-            if self.computeMLUPS and timestep == 1:
-                jax.block_until_ready(f)
-                start = time.time()
-
-        if self.computeMLUPS:
-            # Compute and print the performance of the simulation in MLUPS
-            jax.block_until_ready(f)
-            end = time.time()
-            if self.dim == 2:
-                print(colored("Domain: ", 'blue') + colored(f"{self.nx} x {self.ny}", 'green') if self.dim == 2 else colored(f"{self.nx} x {self.ny} x {self.nz}", 'green'))
-                print(colored("Number of voxels: ", 'blue') + colored(f"{self.nx * self.ny}", 'green') if self.dim == 2 else colored(f"{self.nx * self.ny * self.nz}", 'green'))
-                print(colored("MLUPS: ", 'blue') + colored(f"{self.nx * self.ny * t_max / (end - start) / 1e6}", 'red'))
-
-            elif self.dim == 3:
-                print(colored("Domain: ", 'blue') + colored(f"{self.nx} x {self.ny} x {self.nz}", 'green'))
-                print(colored("Number of voxels: ", 'blue') + colored(f"{self.nx * self.ny * self.nz}", 'green'))
-                print(colored("MLUPS: ", 'blue') + colored(f"{self.nx * self.ny * self.nz * t_max / (end - start) / 1e6}", 'red'))
-
+            if batch_generator and len(self.saved_data)>generator_size:
+                yield self.saved_data
+                self.saved_data = []
         return f
 
     def handle_io_timestep(self, timestep, f, fstar, rho, u, rho_prev, u_prev):
@@ -983,15 +960,16 @@ class LBMBase(object):
             "f_poststreaming": f,
             "f_postcollision": fstar
         }
-        self.output_data(**kwargs)
+        o_data = self.output_data(**kwargs)
+        if o_data is not None:
+            self.saved_data.append(o_data)
 
     def output_data(self, **kwargs):
         """
         This function is intended to be overwritten by the user to customize the input/output (I/O) 
         operations of the simulation.
 
-        By default, it does nothing. When overwritten, it could save the simulation data to files, 
-        display the simulation results in real time, send the data to another process for analysis, etc.
+        If user specifies the output by returning a value, then this value will be added to self.saved_data. User can also operates self.saved_data and return nothing or None.
 
         Parameters
         ----------
