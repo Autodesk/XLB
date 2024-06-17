@@ -125,8 +125,8 @@ class LBMBase(object):
             self.mesh = Mesh(self.devices, axis_names=("x", "y", "value"))
             self.sharding = NamedSharding(self.mesh, P("x", "y", "value"))
 
-            self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
-                                                      in_specs=P("x", None, None), out_specs=P("x", None, None), check_rep=False))
+            self.streaming = self.streaming_p
+
 
         # Set up the sharding and streaming for 2D and 3D simulations
         elif self.dim == 3:
@@ -134,8 +134,7 @@ class LBMBase(object):
             self.mesh = Mesh(self.devices, axis_names=("x", "y", "z", "value"))
             self.sharding = NamedSharding(self.mesh, P("x", "y", "z", "value"))
 
-            self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
-                                                      in_specs=P("x", None, None, None), out_specs=P("x", None, None, None), check_rep=False))
+            self.streaming = self.streaming_p
 
         else:
             raise ValueError(f"dim = {self.dim} not supported")
@@ -636,7 +635,8 @@ class LBMBase(object):
             The data after being sent to the left neighboring process.
         """
         return lax.ppermute(x, perm=self.leftPerm, axis_name=axis_name)
-    
+
+    @partial(jit, static_argnums=(0,))
     def streaming_m(self, f):
         """
         This function performs the streaming step in the Lattice Boltzmann Method, which is 
@@ -660,8 +660,12 @@ class LBMBase(object):
             The distribution functions after the streaming operation.
         """
         f = self.streaming_p(f)
+        print("shape f:{}".format(f.shape))
         left_comm, right_comm = f[:1, ..., self.lattice.right_indices], f[-1:, ..., self.lattice.left_indices]
-
+        print("lattice.right_indices", self.lattice.right_indices)
+        print("lattice.left_indices", self.lattice.left_indices)
+        print("left_comm shape:{}".format(left_comm.shape))
+        print("right_comm shape:{}".format(right_comm.shape))
         left_comm, right_comm = self.send_right(left_comm, 'x'), self.send_left(right_comm, 'x')
         f = f.at[:1, ..., self.lattice.right_indices].set(left_comm)
         f = f.at[-1:, ..., self.lattice.left_indices].set(right_comm)
@@ -683,6 +687,7 @@ class LBMBase(object):
         -------
             The updated distribution function after streaming.
         """
+        @partial(jit, static_argnums=(1,))
         def streaming_i(f, c):
             """
             Perform individual streaming operation in a direction.
@@ -701,8 +706,8 @@ class LBMBase(object):
                 return jnp.roll(f, (c[0], c[1]), axis=(0, 1))
             elif self.dim == 3:
                 return jnp.roll(f, (c[0], c[1], c[2]), axis=(0, 1, 2))
-
-        return vmap(streaming_i, in_axes=(-1, 0), out_axes=-1)(f, self.c.T)
+        return streaming_i(f, self.c.T)
+        # return vmap(streaming_i, in_axes=(-1, 0), out_axes=-1)(f, self.c.T)
 
     @partial(jit, static_argnums=(0, 3), inline=True)
     def equilibrium(self, rho, u, cast_output=True):
@@ -833,7 +838,7 @@ class LBMBase(object):
         feq = self.equilibrium(rho, u, cast_output=False)
         return f, feq, rho, u
 
-
+    @partial(jit, static_argnums=(0, 3))
     def step(self, f_poststreaming, timestep, return_fpost=False):
         """
         This function performs a single step of the LBM simulation.
@@ -1123,6 +1128,7 @@ class LBMExternalForce(LBMBase):
         return f, feq, rho, u
 
 
+    # @partial(jit, static_argnums=(0,3))
     def step(self, f_poststreaming, timestep, return_fpost=False):
         """
         This function performs a single step of the LBM simulation.
@@ -1153,8 +1159,8 @@ class LBMExternalForce(LBMBase):
             return_fpost is False.
         """
         f, feq, rho, u = self.prepare_step(f_poststreaming)
-        f_postcollision_no_force = self.collision(f_poststreaming, feq, rho, u)
-        f_postcollision = self.apply_force(f_postcollision_no_force, feq, rho, u)
+        f_force_applied = self.apply_force(f, feq, rho, u)
+        f_postcollision = self.collision(f_force_applied, feq, rho, u)
         f_postcollision = self.apply_bc(f_postcollision, f_poststreaming, timestep, "PostCollision")
         f_poststreaming = self.streaming(f_postcollision)
         f_poststreaming = self.apply_bc(f_poststreaming, f_postcollision, timestep, "PostStreaming")
@@ -1163,4 +1169,3 @@ class LBMExternalForce(LBMBase):
             return f_poststreaming, f_postcollision
         else:
             return f_poststreaming, None
-
