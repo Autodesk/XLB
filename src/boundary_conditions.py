@@ -958,7 +958,7 @@ class ExtrapolationOutflow(BoundaryCondition):
 
         return
 
-    @partial(jit, static_argnums=(0, 3), inline=True)
+    @partial(jit, static_argnums=(0, 3))
     def prepare_populations(self, fout, fin, implementation_step):
         """
         Prepares the distribution functions for the boundary condition.

@@ -794,7 +794,7 @@ class LBMBase(object):
 
         return rho, u
     
-    @partial(jit, static_argnums=(0, 4), inline=True)
+    @partial(jit, static_argnums=(0, 4))
     def apply_bc(self, fout, fin, timestep, implementation_step):
         """
         This function applies the boundary conditions to the distribution functions.
@@ -826,8 +826,14 @@ class LBMBase(object):
                     fout = fout.at[bc.indices].set(bc.apply(fout, fin))
                     
         return fout
+    @partial(jit, static_argnums=(0,))
+    def prepare_step(self, f_poststreaming):
+        f = self.precisionPolicy.cast_to_compute(f_poststreaming)
+        rho, u = self.update_macroscopic(f)
+        feq = self.equilibrium(rho, u, cast_output=False)
+        return f, feq, rho, u
 
-    @partial(jit, static_argnums=(0, 3))
+
     def step(self, f_poststreaming, timestep, return_fpost=False):
         """
         This function performs a single step of the LBM simulation.
@@ -857,10 +863,7 @@ class LBMBase(object):
             The post-collision distribution functions after the simulation step, or None if 
             return_fpost is False.
         """
-        f = self.precisionPolicy.cast_to_compute(f_poststreaming)
-        rho, u = self.update_macroscopic(f)
-        feq = self.equilibrium(rho, u, cast_output=False)
-
+        f, feq, rho, u = self.prepare_step(f_poststreaming)
         f_postcollision = self.collision(f_poststreaming, feq, rho, u)
         f_postcollision = self.apply_bc(f_postcollision, f_poststreaming, timestep, "PostCollision")
         f_poststreaming = self.streaming(f_postcollision)
@@ -904,29 +907,25 @@ class LBMBase(object):
         pbar = tqdm(range(timestep_start, timestep_end + 1))
         for timestep in pbar:
             io_flag = output_stride > 0 and timestep >= output_offset and timestep % output_stride == 0
-            if io_flag:
-                # Update the macroscopic variables and save the previous values (for error computation)
-                rho_prev, u_prev = self.update_macroscopic(f)
-                rho_prev = downsample_field(rho_prev, self.downsamplingFactor)
-                u_prev = downsample_field(u_prev, self.downsamplingFactor)
-                # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                rho_prev = process_allgather(rho_prev)
-                u_prev = process_allgather(u_prev)
+            # if io_flag:
+            #     # Update the macroscopic variables and save the previous values (for error computation)
+            #     rho_prev, u_prev = self.update_macroscopic(f)
+            #     rho_prev = downsample_field(rho_prev, self.downsamplingFactor)
+            #     u_prev = downsample_field(u_prev, self.downsamplingFactor)
+            #     # Gather the data from all processes and convert it to numpy arrays (move to host memory)
+            #     rho_prev = process_allgather(rho_prev)
+            #     u_prev = process_allgather(u_prev)
             # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
             if io_flag:
                 # Save the simulation data
                 pbar.set_description(f"Saving data at timestep {timestep}/{timestep_end}")
                 rho, u = self.update_macroscopic(f)
-                rho = downsample_field(rho, self.downsamplingFactor)
-                u = downsample_field(u, self.downsamplingFactor)
-                
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                rho = process_allgather(rho)
-                u = process_allgather(u)
-
+                # rho = process_allgather(rho)
+                # u = process_allgather(u)
                 # Save the data
-                self.handle_io_timestep(timestep, f, fstar, rho, u, rho_prev, u_prev)
+                self.handle_io_timestep(timestep, f, fstar, rho, u, None, None)
             if len(self.saved_data)>=generator_size:
                 yield self.saved_data
                 self.saved_data = []
@@ -965,29 +964,15 @@ class LBMBase(object):
         pbar = tqdm(range(timestep_start, timestep_end + 1))
         for timestep in pbar:
             io_flag = output_stride > 0 and timestep >= output_offset and timestep % output_stride == 0
-            if io_flag:
-                # Update the macroscopic variables and save the previous values (for error computation)
-                rho_prev, u_prev = self.update_macroscopic(f)
-                rho_prev = downsample_field(rho_prev, self.downsamplingFactor)
-                u_prev = downsample_field(u_prev, self.downsamplingFactor)
-                # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                rho_prev = process_allgather(rho_prev)
-                u_prev = process_allgather(u_prev)
             # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
             if io_flag:
                 # Save the simulation data
                 pbar.set_description(f"Saving data at timestep {timestep}/{timestep_end}")
                 rho, u = self.update_macroscopic(f)
-                rho = downsample_field(rho, self.downsamplingFactor)
-                u = downsample_field(u, self.downsamplingFactor)
-
                 # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                rho = process_allgather(rho)
-                u = process_allgather(u)
-
                 # Save the data
-                self.handle_io_timestep(timestep, f, fstar, rho, u, rho_prev, u_prev)
+                self.handle_io_timestep(timestep, f, fstar, rho, u, None, None)
         return f
 
     def handle_io_timestep(self, timestep, f, fstar, rho, u, rho_prev, u_prev):
@@ -1050,7 +1035,7 @@ class LBMBase(object):
         """
         pass
 
-    @partial(jit, static_argnums=(0,), donate_argnums=(1,))
+    @partial(jit, static_argnums=(0,))
     def collision(self, fin, feq, rho, u):
         """
         This function performs the collision step in the Lattice Boltzmann Method.
@@ -1126,13 +1111,18 @@ class LBMExternalForce(LBMBase):
         Krüger, T., et al. (2017). The lattice Boltzmann method. Springer International Publishing, 10.978-3, 4-15.
         """
         delta_u = self.get_force(f_postcollision, feq, rho, u)
-        if delta_u is None:  # No force is applied
-            return f_postcollision
         feq_force = self.equilibrium(rho, u + delta_u, cast_output=False)
         f_postcollision = f_postcollision + feq_force - feq
         return f_postcollision
 
-    @partial(jit, static_argnums=(0, 3))
+    @partial(jit, static_argnums=(0,))
+    def prepare_step(self, f_poststreaming):
+        f = self.precisionPolicy.cast_to_compute(f_poststreaming)
+        rho, u = self.update_macroscopic(f)
+        feq = self.equilibrium(rho, u, cast_output=False)
+        return f, feq, rho, u
+
+
     def step(self, f_poststreaming, timestep, return_fpost=False):
         """
         This function performs a single step of the LBM simulation.
@@ -1162,10 +1152,7 @@ class LBMExternalForce(LBMBase):
             The post-collision distribution functions after the simulation step, or None if
             return_fpost is False.
         """
-        f = self.precisionPolicy.cast_to_compute(f_poststreaming)
-        rho, u = self.update_macroscopic(f)
-        feq = self.equilibrium(rho, u, castOutput=False)
-
+        f, feq, rho, u = self.prepare_step(f_poststreaming)
         f_postcollision_no_force = self.collision(f_poststreaming, feq, rho, u)
         f_postcollision = self.apply_force(f_postcollision_no_force, feq, rho, u)
         f_postcollision = self.apply_bc(f_postcollision, f_poststreaming, timestep, "PostCollision")
@@ -1176,3 +1163,4 @@ class LBMExternalForce(LBMBase):
             return f_poststreaming, f_postcollision
         else:
             return f_poststreaming, None
+

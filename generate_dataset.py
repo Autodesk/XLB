@@ -111,7 +111,7 @@ def generate_sim_dataaset(diam, t_start, t_end, output_stride, output_offset):
 def save_data_batch(np_data, seq_number):
     np.save("./data/ref_data_diam_80_seq_{}".format(seq_number), np_data)
 
-generated_data = generate_sim_dataaset(80, 0, 16000, 1, output_offset=15000)
+generated_data = generate_sim_dataaset(10, 0, 2000, 1, output_offset=1000)
 seq_number = 0
 for data in generated_data:
     np_data = np.stack(data, axis=0)
