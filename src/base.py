@@ -125,7 +125,8 @@ class LBMBase(object):
             self.mesh = Mesh(self.devices, axis_names=("x", "y", "value"))
             self.sharding = NamedSharding(self.mesh, P("x", "y", "value"))
 
-            self.streaming = self.streaming_p
+            self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
+                                           in_specs=P("x", None, None), out_specs=P("x", None, None), check_rep=False))
 
 
         # Set up the sharding and streaming for 2D and 3D simulations
@@ -134,7 +135,9 @@ class LBMBase(object):
             self.mesh = Mesh(self.devices, axis_names=("x", "y", "z", "value"))
             self.sharding = NamedSharding(self.mesh, P("x", "y", "z", "value"))
 
-            self.streaming = self.streaming_p
+            self.streaming = jit(shard_map(self.streaming_m, mesh=self.mesh,
+                                           in_specs=P("x", None, None, None), out_specs=P("x", None, None, None),
+                                           check_rep=False))
 
         else:
             raise ValueError(f"dim = {self.dim} not supported")
@@ -660,12 +663,7 @@ class LBMBase(object):
             The distribution functions after the streaming operation.
         """
         f = self.streaming_p(f)
-        print("shape f:{}".format(f.shape))
         left_comm, right_comm = f[:1, ..., self.lattice.right_indices], f[-1:, ..., self.lattice.left_indices]
-        print("lattice.right_indices", self.lattice.right_indices)
-        print("lattice.left_indices", self.lattice.left_indices)
-        print("left_comm shape:{}".format(left_comm.shape))
-        print("right_comm shape:{}".format(right_comm.shape))
         left_comm, right_comm = self.send_right(left_comm, 'x'), self.send_left(right_comm, 'x')
         f = f.at[:1, ..., self.lattice.right_indices].set(left_comm)
         f = f.at[-1:, ..., self.lattice.left_indices].set(right_comm)
@@ -706,8 +704,8 @@ class LBMBase(object):
                 return jnp.roll(f, (c[0], c[1]), axis=(0, 1))
             elif self.dim == 3:
                 return jnp.roll(f, (c[0], c[1], c[2]), axis=(0, 1, 2))
-        return streaming_i(f, self.c.T)
-        # return vmap(streaming_i, in_axes=(-1, 0), out_axes=-1)(f, self.c.T)
+        # return streaming_i(f, self.c.T)
+        return vmap(streaming_i, in_axes=(-1, 0), out_axes=-1)(f, self.c.T)
 
     @partial(jit, static_argnums=(0, 3), inline=True)
     def equilibrium(self, rho, u, cast_output=True):
