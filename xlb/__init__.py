@@ -15,7 +15,6 @@ import xlb.operator.collision
 import xlb.operator.stream
 import xlb.operator.boundary_condition
 import xlb.operator.macroscopic
-
 # Grids
 import xlb.grid
 
@@ -24,3 +23,6 @@ import xlb.helper
 
 # Utils
 import xlb.utils
+
+# Distributed computing
+import xlb.distribute

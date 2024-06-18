@@ -89,13 +89,14 @@ class BGK(Collision):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq):
+    def warp_implementation(self, f, feq, fout):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
             inputs=[
                 f,
                 feq,
+                fout,
             ],
             dim=f.shape[1:],
         )
