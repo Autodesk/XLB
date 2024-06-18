@@ -877,6 +877,17 @@ class LBMBase(object):
         else:
             return f_poststreaming, None
 
+    def run_step(self, timestep_end, timestep_start=0, init_f=None):
+        self.saved_data = []
+        f = self.distributed_array(init_f)
+        pbar = tqdm(range(timestep_start, timestep_end + 1))
+        for timestep in pbar:
+            f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
+            pbar.set_description(f"Saving data at timestep {timestep}/{timestep_end}")
+            rho, u = self.update_macroscopic(f)
+            self.handle_io_timestep(timestep, f, fstar, rho, u, None, None)
+        return f
+
     def run_batch_generator(self, timestep_end, timestep_start=0, output_offset=0, output_stride=1, generator_size=100, init_f=None):
         """
         This function runs the LBM simulation for a specified number of time steps.
@@ -899,39 +910,26 @@ class LBMBase(object):
         f: jax.numpy.ndarray
             The distribution functions after the simulation.
         """
-        # if init_f is None and not timestep_start == 0:
-        #     raise ValueError("Should specify f for timestep > 0.")
-        # if timestep_start == 0:
-        #     f = self.assign_fields_sharded()
-        # else:
-        #     f = self.distributed_array(init_f)
-        f = self.assign_fields_sharded()
-        # Loop over all time steps
+        self.saved_data=[]
+        if init_f is None and not timestep_start == 0:
+            raise ValueError("Should specify f for timestep > 0.")
+        if timestep_start == 0:
+            f = self.assign_fields_sharded()
+        else:
+            f = self.distributed_array(init_f)
         pbar = tqdm(range(timestep_start, timestep_end + 1))
         for timestep in pbar:
             io_flag = output_stride > 0 and timestep >= output_offset and timestep % output_stride == 0
-            # if io_flag:
-            #     # Update the macroscopic variables and save the previous values (for error computation)
-            #     rho_prev, u_prev = self.update_macroscopic(f)
-            #     rho_prev = downsample_field(rho_prev, self.downsamplingFactor)
-            #     u_prev = downsample_field(u_prev, self.downsamplingFactor)
-            #     # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-            #     rho_prev = process_allgather(rho_prev)
-            #     u_prev = process_allgather(u_prev)
-            # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
             if io_flag:
-                # Save the simulation data
                 pbar.set_description(f"Saving data at timestep {timestep}/{timestep_end}")
                 rho, u = self.update_macroscopic(f)
-                # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                # rho = process_allgather(rho)
-                # u = process_allgather(u)
-                # Save the data
                 self.handle_io_timestep(timestep, f, fstar, rho, u, None, None)
             if len(self.saved_data)>=generator_size:
                 yield self.saved_data
                 self.saved_data = []
+        if len(self.saved_data)>0:
+            yield self.saved_data
         return f
 
     def run(self, timestep_end, timestep_start=0, output_offset=0, output_stride=1, init_f=None):
@@ -956,25 +954,20 @@ class LBMBase(object):
         f: jax.numpy.ndarray
             The distribution functions after the simulation.
         """
-        # if init_f is None and not timestep_start == 0:
-        #     raise ValueError("Should specify f for timestep > 0.")
-        # if timestep_start == 0:
-        #     f = self.assign_fields_sharded()
-        # else:
-        #     f = self.distributed_array(init_f)
-        f = self.assign_fields_sharded()
-        # Loop over all time steps
+        self.saved_data=[]
+        if init_f is None and not timestep_start == 0:
+            raise ValueError("Should specify f for timestep > 0.")
+        if timestep_start == 0:
+            f = self.assign_fields_sharded()
+        else:
+            f = self.distributed_array(init_f)
         pbar = tqdm(range(timestep_start, timestep_end + 1))
         for timestep in pbar:
             io_flag = output_stride > 0 and timestep >= output_offset and timestep % output_stride == 0
-            # Perform one time-step (collision, streaming, and boundary conditions)
             f, fstar = self.step(f, timestep, return_fpost=self.returnFpost)
             if io_flag:
-                # Save the simulation data
                 pbar.set_description(f"Saving data at timestep {timestep}/{timestep_end}")
                 rho, u = self.update_macroscopic(f)
-                # Gather the data from all processes and convert it to numpy arrays (move to host memory)
-                # Save the data
                 self.handle_io_timestep(timestep, f, fstar, rho, u, None, None)
         return f
 
