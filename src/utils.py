@@ -14,8 +14,8 @@ import os
 import __main__
 
 
-@partial(jit, static_argnums=(1, 2))
-def resample_field(field, factor, method='bicubic'):
+@partial(jit, static_argnums=(1, 2, 3))
+def resample_field(field, factor, method='bicubic', shape=None):
     """
     Resample a JAX array by a factor of `factor` along each axis.
 
@@ -27,7 +27,8 @@ def resample_field(field, factor, method='bicubic'):
         The factor by which to resample the field. The dimensions of the field will be divided by this factor.
     method : str, optional
         The method to use for resampling. Default is 'bicubic'.
-
+    shape : tuple, optional
+        The shape of the resampled field. If not provided, it will be inferred from the field.
     Returns
     -------
     jax.numpy.ndarray
@@ -35,7 +36,7 @@ def resample_field(field, factor, method='bicubic'):
     """
     if factor == 1:
         return field
-    else:
+    elif shape is None:
         new_shape = tuple(round(dim / factor) for dim in field.shape[:-1])
         downsampled_components = []
         for i in range(field.shape[-1]):  # Iterate over the last dimension (vector components)
@@ -43,6 +44,8 @@ def resample_field(field, factor, method='bicubic'):
             downsampled_components.append(resized)
 
         return jnp.stack(downsampled_components, axis=-1)
+    else:
+        return resize(field, shape, method=method)
 
 @partial(jit, static_argnums=(1, 2))
 def downsample_field(field, factor, method='bicubic'):
