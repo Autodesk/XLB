@@ -1,1 +1,1 @@
-from .distribute import distribute
+from xlb.distribute.distribute import distribute

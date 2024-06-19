@@ -7,7 +7,7 @@ from typing import Tuple
 
 
 def create_nse_fields(
-    grid_shape: Tuple[int, int, int], velocity_set=None, compute_backend=None, precision_policy=None
+    grid_shape: Tuple[int, int, int], distribute=False, velocity_set=None, compute_backend=None, precision_policy=None
 ):
     velocity_set = velocity_set if velocity_set else DefaultConfig.velocity_set
     compute_backend = (
@@ -16,7 +16,7 @@ def create_nse_fields(
     precision_policy = (
         precision_policy if precision_policy else DefaultConfig.default_precision_policy
     )
-    grid = grid_factory(grid_shape, compute_backend=compute_backend)
+    grid = grid_factory(grid_shape, distribute=distribute, compute_backend=compute_backend)
 
     # Create fields
     f_0 = grid.create_field(cardinality=velocity_set.q, dtype=precision_policy.store_precision)

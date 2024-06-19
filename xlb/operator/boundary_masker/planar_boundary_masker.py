@@ -57,8 +57,8 @@ class PlanarBoundaryMasker(Operator):
         slices = [slice(None)]
         slices.extend(slice(lb, ub) for lb, ub in indices)
         boundary_mask = boundary_mask.at[tuple(slices)].set(id_number)
-
-        return boundary_mask, None
+        # TODO: Fix the mask
+        return boundary_mask, mask
 
     def _construct_warp(self):
         # Make constants for warp

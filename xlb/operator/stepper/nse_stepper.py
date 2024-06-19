@@ -104,10 +104,9 @@ class IncompressibleNavierStokesStepper(Stepper):
         @wp.kernel
         def kernel2d(
             f_0: wp.array3d(dtype=Any),
-            f_1: wp.array3d(dtype=Any),
             boundary_mask: wp.array3d(dtype=Any),
             missing_mask: wp.array3d(dtype=Any),
-            timestep: int,
+            f_1: wp.array3d(dtype=Any),
         ):
             # Get the global index
             i, j = wp.tid()
@@ -172,10 +171,9 @@ class IncompressibleNavierStokesStepper(Stepper):
         @wp.kernel
         def kernel3d(
             f_0: wp.array4d(dtype=Any),
-            f_1: wp.array4d(dtype=Any),
             boundary_mask: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
-            timestep: int,
+            f_1: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -245,10 +243,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             self.warp_kernel,
             inputs=[
                 f_0,
-                f_1,
                 boundary_mask,
                 missing_mask,
-                timestep,
+                f_1,
             ],
             dim=f_0.shape[1:],
         )
