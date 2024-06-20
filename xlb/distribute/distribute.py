@@ -24,10 +24,10 @@ def distribute(
 
     # Define the sharded operator
     def _sharded_operator(*args):
-        results = operator(*args[:-1])
+        results = operator(*args[:-2])
 
-        if not isinstance(results, tuple):
-            results = (results,)
+        # if not isinstance(results, tuple):
+        #     results = (results,)
 
         if ops == "permute":
             # Define permutation rules for right and left communication

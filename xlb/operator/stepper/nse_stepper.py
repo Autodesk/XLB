@@ -103,10 +103,10 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         @wp.kernel
         def kernel2d(
-            f_0: wp.array3d(dtype=Any),
-            boundary_mask: wp.array3d(dtype=Any),
-            missing_mask: wp.array3d(dtype=Any),
-            f_1: wp.array3d(dtype=Any),
+            f_0: wp.array3d(dtype=wp.float32),
+            boundary_mask: wp.array3d(dtype=wp.uint8),
+            missing_mask: wp.array3d(dtype=wp.uint8),
+            f_1: wp.array3d(dtype=wp.float32),
         ):
             # Get the global index
             i, j = wp.tid()

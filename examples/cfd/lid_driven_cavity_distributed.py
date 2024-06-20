@@ -66,7 +66,7 @@ stepper = IncompressibleNavierStokesStepper(
 distributed_stepper = distribute(
     stepper, grid, velocity_set, sharding_flags=(True, True, True, True, False)
 )
-for i in range(50000):
+for i in range(10):
     f_1 = distributed_stepper(f_0, boundary_mask, missing_mask, f_1, i)
     f_0, f_1 = f_1, f_0
 
