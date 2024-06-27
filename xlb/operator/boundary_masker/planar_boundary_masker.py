@@ -39,7 +39,7 @@ class PlanarBoundaryMasker(Operator):
         direction,
         id_number,
         boundary_mask,
-        mask,
+        missing_mask,
         start_index=None,
     ):
         if start_index is None:
@@ -58,7 +58,7 @@ class PlanarBoundaryMasker(Operator):
         slices.extend(slice(lb, ub) for lb, ub in indices)
         boundary_mask = boundary_mask.at[tuple(slices)].set(id_number)
 
-        return boundary_mask, None
+        return boundary_mask, missing_mask
 
     def _construct_warp(self):
         # Make constants for warp
@@ -72,7 +72,7 @@ class PlanarBoundaryMasker(Operator):
             direction: wp.vec2i,
             id_number: wp.uint8,
             boundary_mask: wp.array3d(dtype=wp.uint8),
-            mask: wp.array3d(dtype=wp.bool),
+            missing_mask: wp.array3d(dtype=wp.bool),
             start_index: wp.vec2i,
         ):
             i, j = wp.tid()
@@ -89,7 +89,7 @@ class PlanarBoundaryMasker(Operator):
             direction: wp.vec3i,
             id_number: wp.uint8,
             boundary_mask: wp.array4d(dtype=wp.uint8),
-            mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
             i, j, k = wp.tid()
@@ -119,7 +119,7 @@ class PlanarBoundaryMasker(Operator):
         direction,
         id_number,
         boundary_mask,
-        mask,
+        missing_mask,
         start_index=None,
     ):
         if start_index is None:
@@ -134,10 +134,10 @@ class PlanarBoundaryMasker(Operator):
                 direction,
                 id_number,
                 boundary_mask,
-                mask,
+                missing_mask,
                 start_index,
             ],
-            dim=mask.shape[1:],
+            dim=missing_mask.shape[1:],
         )
 
-        return boundary_mask, mask
+        return boundary_mask, missing_mask

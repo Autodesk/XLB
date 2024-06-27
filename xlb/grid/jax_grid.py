@@ -24,20 +24,20 @@ class JaxGrid(Grid):
     def _initialize_backend(self):
         self.nDevices = jax.device_count()
         self.backend = jax.default_backend()
-        device_mesh = (
+        self.device_mesh = (
             mesh_utils.create_device_mesh((1, self.nDevices, 1))
             if self.dim == 2
             else mesh_utils.create_device_mesh((1, self.nDevices, 1, 1))
         )
-        global_mesh = (
-            Mesh(device_mesh, axis_names=("cardinality", "x", "y"))
+        self.global_mesh = (
+            Mesh(self.device_mesh, axis_names=("cardinality", "x", "y"))
             if self.dim == 2
-            else Mesh(device_mesh, axis_names=("cardinality", "x", "y", "z"))
+            else Mesh(self.device_mesh, axis_names=("cardinality", "x", "y", "z"))
         )
         self.sharding = (
-            NamedSharding(global_mesh, P("cardinality", "x", "y"))
+            NamedSharding(self.global_mesh, P("cardinality", "x", "y"))
             if self.dim == 2
-            else NamedSharding(global_mesh, P("cardinality", "x", "y", "z"))
+            else NamedSharding(self.global_mesh, P("cardinality", "x", "y", "z"))
         )
 
     def create_field(

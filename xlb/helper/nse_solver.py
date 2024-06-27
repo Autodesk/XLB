@@ -26,4 +26,3 @@ def create_nse_fields(
 
     return grid, f_0, f_1, missing_mask, boundary_mask
 
-

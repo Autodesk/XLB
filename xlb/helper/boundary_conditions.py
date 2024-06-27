@@ -1,7 +1,7 @@
 from xlb.operator.boundary_masker import PlanarBoundaryMasker
 
 
-def assign_bc_id_box_faces(boundary_mask, missing_mask, shape, bc_id, sides):
+def assign_bc_id_box_faces(boundary_mask, missing_mask, shape, bc_id, sides, backend=None):
     """
     Assign boundary conditions for specified sides of 2D and 3D boxes using planar_boundary_masker function.
 
@@ -19,7 +19,7 @@ def assign_bc_id_box_faces(boundary_mask, missing_mask, shape, bc_id, sides):
         Valid values for 3D are 'bottom', 'top', 'front', 'back', 'left', 'right'.
     """
 
-    planar_boundary_masker = PlanarBoundaryMasker()
+    planar_boundary_masker = PlanarBoundaryMasker(compute_backend=backend)
 
     def apply(lower_bound, upper_bound, direction, reference=(0, 0, 0)):
         nonlocal boundary_mask, missing_mask, planar_boundary_masker
