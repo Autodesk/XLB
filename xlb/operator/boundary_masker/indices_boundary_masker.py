@@ -47,7 +47,7 @@ class IndicesBoundaryMasker(Operator):
         if start_index is None:
             start_index = (0,) * dim
 
-        local_indices = indices - np.array(start_index)[:, np.newaxis].T
+        local_indices = indices - np.array(start_index)[:, np.newaxis]
 
         @jit
         def compute_boundary_id_and_mask(boundary_mask, mask):
