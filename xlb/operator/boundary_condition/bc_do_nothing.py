@@ -33,9 +33,9 @@ class DoNothingBC(BoundaryCondition):
 
     def __init__(
         self,
-        velocity_set: VelocitySet,
-        precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend,
+        velocity_set: VelocitySet = None,
+        precision_policy: PrecisionPolicy = None,
+        compute_backend: ComputeBackend = None,
     ):
         super().__init__(
             ImplementationStep.STREAMING,
@@ -48,7 +48,6 @@ class DoNothingBC(BoundaryCondition):
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, f_pre, f_post, boundary_mask, missing_mask):
         boundary = boundary_mask == self.id
-        boundary = boundary[:, None, None, None]
         return jnp.where(boundary, f_pre, f_post)
 
     def _construct_warp(self):

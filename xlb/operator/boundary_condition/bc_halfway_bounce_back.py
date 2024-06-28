@@ -34,9 +34,9 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
     def __init__(
         self,
-        velocity_set: VelocitySet,
-        precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend,
+        velocity_set: VelocitySet = None,
+        precision_policy: PrecisionPolicy = None,
+        compute_backend: ComputeBackend = None,
     ):
         # Call the parent constructor
         super().__init__(

@@ -69,10 +69,12 @@ def save_image(fld, timestep, prefix=None):
     This function saves the field as an image in the PNG format. The filename is based on the name of the main script file, the provided prefix, and the timestep number.
     If the field is 3D, the magnitude of the field is calculated and saved. The image is saved with the 'nipy_spectral' colormap and the origin set to 'lower'.
     """
-    fname = os.path.basename(__main__.__file__)
-    fname = os.path.splitext(fname)[0]
-    if prefix is not None:
-        fname = prefix + fname
+    if prefix is None:
+        fname = os.path.basename(__main__.__file__)
+        fname = os.path.splitext(fname)[0]
+    else:
+        fname = prefix
+
     fname = fname + "_" + str(timestep).zfill(4)
 
     if len(fld.shape) > 3:

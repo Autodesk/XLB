@@ -4,7 +4,7 @@ matplotlib==3.8.0
 numpy==1.26.1
 pyvista==0.43.4
 Rtree==1.0.1
-trimesh==4.2.4
+trimesh==4.4.1
 orbax-checkpoint==0.4.1
 termcolor==2.3.0
 PhantomGaze @ git+https://github.com/loliverhennigh/PhantomGaze.git

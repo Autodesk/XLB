@@ -47,13 +47,7 @@ class IndicesBoundaryMasker(Operator):
         if start_index is None:
             start_index = (0,) * dim
 
-        local_indices = indices - np.array(start_index)[:, np.newaxis]
-
-        indices_mask = [
-            (local_indices[i, :] >= 0) & (local_indices[i, :] < mask.shape[i + 1])
-            for i in range(mask.ndim - 1)
-        ]
-        indices_mask = np.logical_and.reduce(indices_mask)
+        local_indices = indices - np.array(start_index)[:, np.newaxis].T
 
         @jit
         def compute_boundary_id_and_mask(boundary_mask, mask):
@@ -113,8 +107,9 @@ class IndicesBoundaryMasker(Operator):
                         push_index[d] = index[d] + _c[d, l]
 
                     # Set the boundary id and mask
-                    boundary_mask[0, index[0], index[1]] = wp.uint8(id_number)
                     mask[l, push_index[0], push_index[1]] = True
+
+                boundary_mask[0, index[0], index[1]] = wp.uint8(id_number)
 
         # Construct the warp 3D kernel
         @wp.kernel
@@ -150,11 +145,10 @@ class IndicesBoundaryMasker(Operator):
                     for d in range(self.velocity_set.d):
                         push_index[d] = index[d] + _c[d, l]
 
-                    # Set the boundary id and mask
-                    boundary_mask[0, index[0], index[1], index[2]] = wp.uint8(
-                        id_number
-                    )
+                    # Set the mask
                     mask[l, push_index[0], push_index[1], push_index[2]] = True
+
+                boundary_mask[0, index[0], index[1], index[2]] = wp.uint8(id_number)
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
@@ -166,6 +160,8 @@ class IndicesBoundaryMasker(Operator):
     ):
         if start_index is None:
             start_index = (0,) * self.velocity_set.d
+
+        indices = wp.array(indices, dtype=wp.int32)
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
