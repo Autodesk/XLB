@@ -58,7 +58,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         feq = self.equilibrium(rho, u)
 
         # Apply collision
-        f_post_collision = self.collision(f_0, feq)
+        f_post_collision = self.collision(f_0, feq, rho, u)
 
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:
@@ -153,6 +153,8 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_post_collision = self.collision.warp_functional(
                 f_post_stream,
                 feq,
+                rho,
+                u,
             )
 
             # Apply collision type boundary conditions
@@ -218,7 +220,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             feq = self.equilibrium.warp_functional(rho, u)
 
             # Apply collision
-            f_post_collision = self.collision.warp_functional(f_post_stream, feq)
+            f_post_collision = self.collision.warp_functional(f_post_stream, feq, rho, u)
 
             # Apply collision type boundary conditions
             if _boundary_id == _fullway_bounce_back_bc:

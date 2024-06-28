@@ -1,5 +1,6 @@
 import xlb
 import trimesh
+import time
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
 from xlb.helper import create_nse_fields, initialize_eq, assign_bc_id_box_faces
@@ -16,15 +17,33 @@ import warp as wp
 import numpy as np
 import jax.numpy as jnp
 
+# Configuration
 backend = ComputeBackend.WARP
-velocity_set = xlb.velocity_set.D3Q19()
+velocity_set = xlb.velocity_set.D3Q27()
 precision_policy = PrecisionPolicy.FP32FP32
+grid_size_x, grid_size_y, grid_size_z = 512, 128, 128
+prescribed_vel = 0.02
+Re = 50000.0
+max_iterations = 100000
+print_interval = 1000
 
 xlb.init(
     velocity_set=velocity_set,
     default_backend=backend,
     default_precision_policy=precision_policy,
 )
+
+# Print simulation info
+print("Simulation Configuration:")
+print(f"Grid size: {grid_size_x} x {grid_size_y} x {grid_size_z}")
+print(f"Backend: {backend}")
+print(f"Velocity set: {velocity_set}")
+print(f"Precision policy: {precision_policy}")
+print(f"Prescribed velocity: {prescribed_vel}")
+print(f"Reynolds number: {Re}")
+print(f"Max iterations: {max_iterations}")
+print("\n" + "=" * 50 + "\n")
+
 
 grid_size_x, grid_size_y, grid_size_z = 512, 128, 128
 grid_shape = (grid_size_x, grid_size_y, grid_size_z)
@@ -51,7 +70,6 @@ boundary_mask, missing_mask = assign_bc_id_box_faces(
     boundary_mask, missing_mask, grid_shape, DoNothingBC.id, ["right"]
 )
 
-prescribed_vel = 0.02
 bc_eq = QuadraticEquilibrium()
 bc_left = EquilibriumBC(
     rho=1.0, u=(prescribed_vel, 0.0, 0.0), equilibrium_operator=bc_eq
@@ -95,18 +113,22 @@ f_0 = initialize_eq(f_0, grid, velocity_set, backend)
 boundary_conditions = [bc_left, bc_walls, bc_do_nothing]
 
 clength = grid_size_x - 1
-Re = 10000.0
 
 visc = prescribed_vel * clength / Re
 omega = 1.0 / (3.0 * visc + 0.5)
 
 stepper = IncompressibleNavierStokesStepper(
-    omega, boundary_conditions=boundary_conditions
+    omega, boundary_conditions=boundary_conditions, collision_type="KBC"
 )
 
-for i in range(100000):
+start_time = time.time()
+for i in range(max_iterations):
     f_1 = stepper(f_0, f_1, boundary_mask, missing_mask, i)
     f_0, f_1 = f_1, f_0
+
+    if (i + 1) % print_interval == 0:
+        elapsed_time = time.time() - start_time
+        print(f"Iteration: {i+1}/{max_iterations} | Time elapsed: {elapsed_time:.2f}s")
 
 
 # Write the results. We'll use JAX backend for the post-processing

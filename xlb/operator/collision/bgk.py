@@ -16,7 +16,7 @@ class BGK(Collision):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
-    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray):
+    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray, rho, u):
         fneq = f - feq
         fout = f - self.compute_dtype(self.omega) * fneq
         return fout
@@ -29,7 +29,7 @@ class BGK(Collision):
 
         # Construct the functional
         @wp.func
-        def functional(f: Any, feq: Any):
+        def functional(f: Any, feq: Any, rho: Any, u: Any):
             fneq = f - feq
             fout = f - _omega * fneq
             return fout
@@ -40,6 +40,8 @@ class BGK(Collision):
             f: wp.array3d(dtype=Any),
             feq: wp.array3d(dtype=Any),
             fout: wp.array3d(dtype=Any),
+            rho: wp.array3d(dtype=Any),
+            u: wp.array3d(dtype=Any),
         ):
             # Get the global index
             i, j = wp.tid()
@@ -65,6 +67,8 @@ class BGK(Collision):
             f: wp.array4d(dtype=Any),
             feq: wp.array4d(dtype=Any),
             fout: wp.array4d(dtype=Any),
+            rho: wp.array4d(dtype=Any),
+            u: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -78,7 +82,7 @@ class BGK(Collision):
                 _feq[l] = feq[l, index[0], index[1], index[2]]
 
             # Compute the collision
-            _fout = functional(_f, _feq)
+            _fout = functional(_f, _feq, rho, u)
 
             # Write the result
             for l in range(self.velocity_set.q):
@@ -89,7 +93,7 @@ class BGK(Collision):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq, fout):
+    def warp_implementation(self, f, feq, fout, rho, u):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
@@ -97,6 +101,8 @@ class BGK(Collision):
                 f,
                 feq,
                 fout,
+                rho,
+                u,
             ],
             dim=f.shape[1:],
         )

@@ -217,8 +217,9 @@ class KBC(Collision):
         _cc = self.velocity_set.wp_cc
         _omega = wp.constant(self.compute_dtype(self.omega))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _pi_dim = self.velocity_set.d * (self.velocity_set.d + 1) // 2
         _pi_vec = wp.vec(
-            self.velocity_set.d * (self.velocity_set.d + 1) // 2,
+            _pi_dim,
             dtype=self.compute_dtype,
         )
         _epsilon = wp.constant(self.compute_dtype(self.epsilon))
@@ -227,16 +228,31 @@ class KBC(Collision):
 
         # Construct functional for computing momentum flux
         @wp.func
-        def momentum_flux(
+        def momentum_flux_warp(
             fneq: Any,
         ):
             # Get momentum flux
             pi = _pi_vec()
-            for d in range(6):
+            for d in range(_pi_dim):
                 pi[d] = 0.0
                 for q in range(self.velocity_set.q):
                     pi[d] += _cc[q, d] * fneq[q]
             return pi
+
+        @wp.func
+        def decompose_shear_d2q9(fneq: Any):
+            pi = momentum_flux_warp(fneq)
+            N = pi[0] - pi[1]
+            s = wp.vec9(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+            s[3] = N
+            s[6] = N
+            s[2] = -N
+            s[1] = -N
+            s[8] = pi[2]
+            s[4] = -pi[2]
+            s[5] = -pi[2]
+            s[7] = pi[2]
+            return s
 
         # Construct functional for decomposing shear
         @wp.func
@@ -244,7 +260,7 @@ class KBC(Collision):
             fneq: Any,
         ):
             # Get momentum flux
-            pi = momentum_flux(fneq)
+            pi = momentum_flux_warp(fneq)
             nxz = pi[0] - pi[5]
             nyz = pi[3] - pi[5]
 
@@ -294,7 +310,29 @@ class KBC(Collision):
 
         # Construct the functional
         @wp.func
-        def functional(
+        def functional2d(
+            f: Any,
+            feq: Any,
+            rho: Any,
+            u: Any,
+        ):
+            # Compute shear and delta_s
+            fneq = f - feq
+            shear = decompose_shear_d2q9(fneq)
+            delta_s = shear * rho  # TODO: Check this
+
+            # Perform collision
+            delta_h = fneq - delta_s
+            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(
+                delta_s, delta_h, feq
+            ) / (_epsilon + entropic_scalar_product(delta_h, delta_h, feq))
+            fout = f - _beta * (2.0 * delta_s + gamma * delta_h)
+
+            return fout
+
+        # Construct the functional
+        @wp.func
+        def functional3d(
             f: Any,
             feq: Any,
             rho: Any,
@@ -316,7 +354,38 @@ class KBC(Collision):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel(
+        def kernel2d(
+            f: wp.array3d(dtype=Any),
+            feq: wp.array3d(dtype=Any),
+            rho: wp.array3d(dtype=Any),
+            u: wp.array3d(dtype=Any),
+            fout: wp.array3d(dtype=Any),
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j)  # TODO: Warp needs to fix this
+
+            # Load needed values
+            _f = _f_vec()
+            _feq = _f_vec()
+            for l in range(self.velocity_set.q):
+                _f[l] = f[l, index[0], index[1]]
+                _feq[l] = feq[l, index[0], index[1]]
+            _u = self._warp_u_vec()
+            for l in range(_d):
+                _u[l] = u[l, index[0], index[1]]
+            _rho = rho[0, index[0], index[1]]
+
+            # Compute the collision
+            _fout = functional(_f, _feq, _rho, _u)
+
+            # Write the result
+            for l in range(self.velocity_set.q):
+                fout[l, index[0], index[1]] = _fout[l]
+
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel3d(
             f: wp.array4d(dtype=Any),
             feq: wp.array4d(dtype=Any),
             rho: wp.array4d(dtype=Any),
@@ -345,14 +414,23 @@ class KBC(Collision):
             for l in range(self.velocity_set.q):
                 fout[l, index[0], index[1], index[2]] = _fout[l]
 
+        functional = functional3d if self.velocity_set.d == 3 else functional2d
+        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
+
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    @partial(jit, static_argnums=(0,), donate_argnums=(1, 2, 3))
-    def warp_implementation(
-        self,
-        f: jnp.ndarray,
-        feq: jnp.ndarray,
-        rho: jnp.ndarray,
-    ):
-        raise NotImplementedError("Warp implementation not yet implemented")
+    def warp_implementation(self, f, feq, fout, rho, u):
+        # Launch the warp kernel
+        wp.launch(
+            self.warp_kernel,
+            inputs=[
+                f,
+                feq,
+                fout,
+                rho,
+                u,
+            ],
+            dim=f.shape[1:],
+        )
+        return fout
