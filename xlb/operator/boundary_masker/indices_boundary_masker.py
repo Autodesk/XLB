@@ -41,14 +41,9 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     def jax_implementation(
-        self, indices, id_number, boundary_mask, mask, start_index=None
+        self, bclist, boundary_mask, mask, start_index=None
     ):
-        dim = mask.ndim - 1
-        if start_index is None:
-            start_index = (0,) * dim
-
-        local_indices = indices - np.array(start_index)[:, np.newaxis]
-
+        # define a helper function
         @jit
         def compute_boundary_id_and_mask(boundary_mask, mask):
             if dim == 2:
@@ -64,11 +59,19 @@ class IndicesBoundaryMasker(Operator):
                 mask = mask.at[
                     :, local_indices[0], local_indices[1], local_indices[2]
                 ].set(True)
-
-            mask = self.stream(mask)
             return boundary_mask, mask
+    
+        dim = mask.ndim - 1
+        if start_index is None:
+            start_index = (0,) * dim
 
-        return compute_boundary_id_and_mask(boundary_mask, mask)
+        for bc in bclist:
+            id_number = bc.id
+            local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
+            boundary_mask, mask = compute_boundary_id_and_mask(boundary_mask, mask)
+
+        mask = self.stream(mask)
+        return boundary_mask, mask
 
     def _construct_warp(self):
         # Make constants for warp

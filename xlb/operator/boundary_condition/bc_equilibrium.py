@@ -3,12 +3,11 @@ Base class for boundary conditions in a LBM simulation.
 """
 
 import jax.numpy as jnp
-from jax import jit, device_count
+from jax import jit
 import jax.lax as lax
 from functools import partial
-import numpy as np
 import warp as wp
-from typing import Tuple, Any
+from typing import Tuple, Any, List
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -33,6 +32,7 @@ class EquilibriumBC(BoundaryCondition):
 
     def __init__(
         self,
+        indices: List[int],
         rho: float,
         u: Tuple[float, float, float],
         equilibrium_operator: Operator,
@@ -50,6 +50,7 @@ class EquilibriumBC(BoundaryCondition):
 
         # Call the parent constructor
         super().__init__(
+            indices,
             ImplementationStep.STREAMING,
             velocity_set,
             precision_policy,

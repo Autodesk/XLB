@@ -1,7 +1,7 @@
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq, assign_bc_id_box_faces
+from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
@@ -10,12 +10,14 @@ from xlb.operator.boundary_condition import (
 )
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
+from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
 import numpy as np
 import jax.numpy as jnp
 
-backend = ComputeBackend.WARP
+# Initial setup and backend configuration
+backend = ComputeBackend.JAX
 velocity_set = xlb.velocity_set.D3Q19()
 precision_policy = PrecisionPolicy.FP32FP32
 
@@ -25,37 +27,26 @@ xlb.init(
     default_precision_policy=precision_policy,
 )
 
+#TODO HS: check inconsistency between grid_shape and velocity_set
+#TODO HS: why is boundary_mask and missing_mask in the same function?! they should be separated
+#TODO HS: missing_mask needs to be created based on ALL boundary indices and a SINGLE streaming operation not one streaming call per bc!
+#TODO HS: why bc operatores need to be stated twice: once in making boundary_mask and missing_mask and one in making bc list.
+#TODO HS: proposal: we should include indices as part of the construction of the bc operators and then have a single call to construcut boundary_mask and missing_mask fields based on bc_list.
+
+# Define grid
 grid_size_x, grid_size_y, grid_size_z = 512, 128, 128
 grid_shape = (grid_size_x, grid_size_y, grid_size_z)
 
+# Define fields on the grid
 grid, f_0, f_1, missing_mask, boundary_mask = create_nse_fields(grid_shape)
 
-# Velocity on left face (3D)
-boundary_mask, missing_mask = assign_bc_id_box_faces(
-    boundary_mask, missing_mask, grid_shape, EquilibriumBC.id, ["left"]
-)
+# Specify BC indices
+inlet = grid.boundingBoxIndices['left']
+outlet = grid.boundingBoxIndices['right']
+walls = [grid.boundingBoxIndices['bottom'][i] + grid.boundingBoxIndices['top'][i] + 
+         grid.boundingBoxIndices['front'][i] + grid.boundingBoxIndices['back'][i] for i in range(velocity_set.d)]
 
-
-# Wall on all other faces (3D) except right
-boundary_mask, missing_mask = assign_bc_id_box_faces(
-    boundary_mask,
-    missing_mask,
-    grid_shape,
-    FullwayBounceBackBC.id,
-    ["bottom", "right", "front", "back"],
-)
-
-# Do nothing on right face
-boundary_mask, missing_mask = assign_bc_id_box_faces(
-    boundary_mask, missing_mask, grid_shape, DoNothingBC.id, ["right"]
-)
-
-bc_eq = QuadraticEquilibrium()
-bc_left = EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), equilibrium_operator=bc_eq)
-bc_walls = FullwayBounceBackBC()
-bc_do_nothing = DoNothingBC()
-
-
+# indices for sphere
 sphere_radius = grid_size_y // 12
 x = np.arange(grid_size_x)
 y = np.arange(grid_size_y)
@@ -67,25 +58,36 @@ indices = np.where(
     + (Z - grid_size_z // 2) ** 2
     < sphere_radius**2
 )
-indices = np.array(indices)
+sphere = [tuple(indices[i]) for i in range(velocity_set.d)]
 
-# Set boundary conditions on the indices
-indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker(
+# Instantiate BC objects
+bc_left = EquilibriumBC(inlet, rho=1.0, u=(0.02, 0.0, 0.0), equilibrium_operator=QuadraticEquilibrium())
+bc_walls = FullwayBounceBackBC(walls)
+bc_do_nothing = DoNothingBC(outlet)
+bc_sphere = FullwayBounceBackBC(sphere)
+
+# Set boundary_id and missing_mask for all BCs in boundary_conditions list
+boundary_condition_list = [bc_left, bc_walls, bc_do_nothing, bc_sphere]
+indices_boundary_masker = IndicesBoundaryMasker(
     velocity_set=velocity_set,
     precision_policy=precision_policy,
     compute_backend=backend,
 )
 
 boundary_mask, missing_mask = indices_boundary_masker(
-    indices, FullwayBounceBackBC.id, boundary_mask, missing_mask, (0, 0, 0)
+    boundary_condition_list, boundary_mask, missing_mask, (0, 0, 0)
 )
+# Note: In case we want to remove indices from BC objects
+# for bc in boundary_condition_list:
+#    bc.__dict__.pop('indices', None)
 
+
+# Initialize fields to start the run
 f_0 = initialize_eq(f_0, grid, velocity_set, backend)
-boundary_conditions = [bc_left, bc_walls, bc_do_nothing]
 omega = 1.8
 
 stepper = IncompressibleNavierStokesStepper(
-    omega, boundary_conditions=boundary_conditions
+    omega, boundary_conditions=boundary_condition_list
 )
 
 for i in range(10000):
