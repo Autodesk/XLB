@@ -88,36 +88,36 @@ class Stepper(Operator):
             elif isinstance(bc, FullwayBounceBackBC):
                 self.fullway_bounce_back_bc = bc
 
-        if self.equilibrium_bc is None:
-            # Select the equilibrium operator based on its type
-            self.equilibrium_bc = EquilibriumBC(
-                rho=1.0,
-                u=(0.0, 0.0, 0.0),
-                equilibrium_operator=next(
-                    (op for op in self.operators if isinstance(op, Equilibrium)), None
-                ),
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
-        if self.do_nothing_bc is None:
-            self.do_nothing_bc = DoNothingBC(
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
-        if self.halfway_bounce_back_bc is None:
-            self.halfway_bounce_back_bc = HalfwayBounceBackBC(
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
-        if self.fullway_bounce_back_bc is None:
-            self.fullway_bounce_back_bc = FullwayBounceBackBC(
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
+        # if self.equilibrium_bc is None:
+        #     # Select the equilibrium operator based on its type
+        #     self.equilibrium_bc = EquilibriumBC(
+        #         rho=1.0,
+        #         u=(0.0, 0.0, 0.0),
+        #         equilibrium_operator=next(
+        #             (op for op in self.operators if isinstance(op, Equilibrium)), None
+        #         ),
+        #         velocity_set=velocity_set,
+        #         precision_policy=precision_policy,
+        #         compute_backend=compute_backend,
+        #     )
+        # if self.do_nothing_bc is None:
+        #     self.do_nothing_bc = DoNothingBC(
+        #         velocity_set=velocity_set,
+        #         precision_policy=precision_policy,
+        #         compute_backend=compute_backend,
+        #     )
+        # if self.halfway_bounce_back_bc is None:
+        #     self.halfway_bounce_back_bc = HalfwayBounceBackBC(
+        #         velocity_set=velocity_set,
+        #         precision_policy=precision_policy,
+        #         compute_backend=compute_backend,
+        #     )
+        # if self.fullway_bounce_back_bc is None:
+        #     self.fullway_bounce_back_bc = FullwayBounceBackBC(
+        #         velocity_set=velocity_set,
+        #         precision_policy=precision_policy,
+        #         compute_backend=compute_backend,
+            # )
         ############################################
 
         # Initialize operator

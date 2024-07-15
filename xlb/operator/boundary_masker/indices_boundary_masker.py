@@ -44,7 +44,6 @@ class IndicesBoundaryMasker(Operator):
         self, bclist, boundary_mask, mask, start_index=None
     ):
         # define a helper function
-        @jit
         def compute_boundary_id_and_mask(boundary_mask, mask):
             if dim == 2:
                 boundary_mask = boundary_mask.at[
