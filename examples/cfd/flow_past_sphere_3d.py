@@ -17,7 +17,7 @@ import numpy as np
 import jax.numpy as jnp
 
 # Initial setup and backend configuration
-backend = ComputeBackend.JAX
+backend = ComputeBackend.WARP
 velocity_set = xlb.velocity_set.D3Q19()
 precision_policy = PrecisionPolicy.FP32FP32
 
@@ -34,7 +34,7 @@ xlb.init(
 #TODO HS: proposal: we should include indices as part of the construction of the bc operators and then have a single call to construcut boundary_mask and missing_mask fields based on bc_list.
 
 # Define grid
-grid_size_x, grid_size_y, grid_size_z = 512//4, 128//4, 128//4
+grid_size_x, grid_size_y, grid_size_z = 512, 128, 128
 grid_shape = (grid_size_x, grid_size_y, grid_size_z)
 
 # Define fields on the grid

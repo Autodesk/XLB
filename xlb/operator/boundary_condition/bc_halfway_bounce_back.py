@@ -8,7 +8,7 @@ import jax.lax as lax
 from functools import partial
 import numpy as np
 import warp as wp
-from typing import Tuple, Any
+from typing import Tuple, Any, List
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -34,12 +34,14 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
     def __init__(
         self,
+        indices: List[int],
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
     ):
         # Call the parent constructor
         super().__init__(
+            indices,
             ImplementationStep.STREAMING,
             velocity_set,
             precision_policy,
