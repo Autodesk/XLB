@@ -3,7 +3,7 @@ import trimesh
 import time
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq, assign_bc_id_box_faces
+from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
@@ -12,138 +12,148 @@ from xlb.operator.boundary_condition import (
 )
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
+from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
 import numpy as np
 import jax.numpy as jnp
 
-# Configuration
-backend = ComputeBackend.WARP
-velocity_set = xlb.velocity_set.D3Q27()
-precision_policy = PrecisionPolicy.FP32FP32
-grid_size_x, grid_size_y, grid_size_z = 512, 128, 128
-prescribed_vel = 0.02
-Re = 50000.0
-max_iterations = 100000
-print_interval = 1000
 
-xlb.init(
-    velocity_set=velocity_set,
-    default_backend=backend,
-    default_precision_policy=precision_policy,
-)
+class WindTunnel3D:
+    def __init__(self, grid_shape, velocity_set, backend, precision_policy):
 
-# Print simulation info
-print("Simulation Configuration:")
-print(f"Grid size: {grid_size_x} x {grid_size_y} x {grid_size_z}")
-print(f"Backend: {backend}")
-print(f"Velocity set: {velocity_set}")
-print(f"Precision policy: {precision_policy}")
-print(f"Prescribed velocity: {prescribed_vel}")
-print(f"Reynolds number: {Re}")
-print(f"Max iterations: {max_iterations}")
-print("\n" + "=" * 50 + "\n")
+        # initialize backend
+        xlb.init(
+            velocity_set=velocity_set,
+            default_backend=backend,
+            default_precision_policy=precision_policy,
+        )
+                
+        self.grid_shape = grid_shape
+        self.velocity_set = velocity_set
+        self.backend = backend
+        self.precision_policy = precision_policy
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
+        self.stepper = None
+        self.boundary_conditions = []
+    
+    def voxelize_stl(self, stl_filename, length_lbm_unit):
+        mesh = trimesh.load_mesh(stl_filename, process=False)
+        length_phys_unit = mesh.extents.max()
+        pitch = length_phys_unit / length_lbm_unit
+        mesh_voxelized = mesh.voxelized(pitch=pitch)
+        mesh_matrix = mesh_voxelized.matrix
+        return mesh_matrix, pitch
 
+    def define_boundary_indices(self):
+        inlet = self.grid.boundingBoxIndices['left']
+        outlet = self.grid.boundingBoxIndices['right']
+        walls = [self.grid.boundingBoxIndices['bottom'][i] + self.grid.boundingBoxIndices['top'][i] + 
+                 self.grid.boundingBoxIndices['front'][i] + self.grid.boundingBoxIndices['back'][i] for i in range(self.velocity_set.d)]
+        
+        stl_filename = "examples/cfd/stl-files/DrivAer-Notchback.stl"
+        grid_size_x = self.grid_shape[0]
+        car_length_lbm_unit = grid_size_x / 4
+        car_voxelized, pitch = self.voxelize_stl(stl_filename, car_length_lbm_unit)
 
-grid_size_x, grid_size_y, grid_size_z = 512, 128, 128
-grid_shape = (grid_size_x, grid_size_y, grid_size_z)
+        car_area = np.prod(car_voxelized.shape[1:])
+        tx, ty, tz = np.array([grid_size_x, grid_size_y, grid_size_z]) - car_voxelized.shape
+        shift = [tx // 4, ty // 2, 0]
+        car = np.argwhere(car_voxelized) + shift
+        car = np.array(car).T
+        car = [tuple(car[i]) for i in range(self.velocity_set.d)]
 
-grid, f_0, f_1, missing_mask, boundary_mask = create_nse_fields(grid_shape)
+        return inlet, outlet, walls, car
+    
+    def setup_boundary_conditions(self, wind_speed):
+        inlet, outlet, walls, car = self.define_boundary_indices()
+        bc_left = EquilibriumBC(inlet, rho=1.0, u=(wind_speed, 0.0, 0.0), equilibrium_operator=QuadraticEquilibrium())
+        bc_walls = FullwayBounceBackBC(walls)
+        bc_do_nothing = DoNothingBC(outlet)
+        bc_car= FullwayBounceBackBC(car)
+        self.boundary_conditions = [bc_left, bc_walls, bc_do_nothing, bc_car]
 
-# Velocity on left face (3D)
-boundary_mask, missing_mask = assign_bc_id_box_faces(
-    boundary_mask, missing_mask, grid_shape, EquilibriumBC.id, ["left"]
-)
+    def set_boundary_masks(self):
+        indices_boundary_masker = IndicesBoundaryMasker(
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=self.backend,
+        )
+        self.boundary_mask, self.missing_mask = indices_boundary_masker(
+            self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0)
+        )
 
+    def initialize_fields(self):
+        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
+    
+    def setup_stepper(self, omega):
+        self.stepper = IncompressibleNavierStokesStepper(
+            omega, boundary_conditions=self.boundary_conditions, collision_type="KBC"
+        )
 
-# Wall on all other faces (3D) except right
-boundary_mask, missing_mask = assign_bc_id_box_faces(
-    boundary_mask,
-    missing_mask,
-    grid_shape,
-    FullwayBounceBackBC.id,
-    ["bottom", "right", "front", "back"],
-)
+    def run_simulation(self, num_steps, print_interval):
+        start_time = time.time()
+        for i in range(num_steps):
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
+            self.f_0, self.f_1 = self.f_1, self.f_0
 
-# Do nothing on right face
-boundary_mask, missing_mask = assign_bc_id_box_faces(
-    boundary_mask, missing_mask, grid_shape, DoNothingBC.id, ["right"]
-)
+            if (i + 1) % print_interval == 0:
+                elapsed_time = time.time() - start_time
+                print(f"Iteration: {i+1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
 
-bc_eq = QuadraticEquilibrium()
-bc_left = EquilibriumBC(
-    rho=1.0, u=(prescribed_vel, 0.0, 0.0), equilibrium_operator=bc_eq
-)
-bc_walls = FullwayBounceBackBC()
-bc_do_nothing = DoNothingBC()
+    def post_process(self, i):
+        # Write the results. We'll use JAX backend for the post-processing
+        if not isinstance(self.f_0, jnp.ndarray):
+            f_0 = wp.to_jax(self.f_0)
 
+        macro = Macroscopic(compute_backend=ComputeBackend.JAX)
 
-def voxelize_stl(stl_filename, length_lbm_unit):
-    mesh = trimesh.load_mesh(stl_filename, process=False)
-    length_phys_unit = mesh.extents.max()
-    pitch = length_phys_unit / length_lbm_unit
-    mesh_voxelized = mesh.voxelized(pitch=pitch)
-    mesh_matrix = mesh_voxelized.matrix
-    return mesh_matrix, pitch
+        rho, u = macro(f_0)
 
+        # remove boundary cells
+        u = u[:, 1:-1, 1:-1, 1:-1]
+        u_magnitude = (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5
 
-stl_filename = "../stl-files/DrivAer-Notchback.stl"
-car_length_lbm_unit = grid_size_x / 4
-car_voxelized, pitch = voxelize_stl(stl_filename, car_length_lbm_unit)
+        fields = {"u_magnitude": u_magnitude}
 
-car_area = np.prod(car_voxelized.shape[1:])
-tx, ty, tz = np.array([grid_size_x, grid_size_y, grid_size_z]) - car_voxelized.shape
-shift = [tx // 4, ty // 2, 0]
-indices = np.argwhere(car_voxelized) + shift
-
-indices = np.array(indices).T
-
-# Set boundary conditions on the indices
-indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker(
-    velocity_set=velocity_set,
-    precision_policy=precision_policy,
-    compute_backend=backend,
-)
-
-boundary_mask, missing_mask = indices_boundary_masker(
-    indices, FullwayBounceBackBC.id, boundary_mask, missing_mask, (0, 0, 0)
-)
-
-f_0 = initialize_eq(f_0, grid, velocity_set, backend)
-boundary_conditions = [bc_left, bc_walls, bc_do_nothing]
-
-clength = grid_size_x - 1
-
-visc = prescribed_vel * clength / Re
-omega = 1.0 / (3.0 * visc + 0.5)
-
-stepper = IncompressibleNavierStokesStepper(
-    omega, boundary_conditions=boundary_conditions, collision_type="KBC"
-)
-
-start_time = time.time()
-for i in range(max_iterations):
-    f_1 = stepper(f_0, f_1, boundary_mask, missing_mask, i)
-    f_0, f_1 = f_1, f_0
-
-    if (i + 1) % print_interval == 0:
-        elapsed_time = time.time() - start_time
-        print(f"Iteration: {i+1}/{max_iterations} | Time elapsed: {elapsed_time:.2f}s")
+        save_fields_vtk(fields, timestep=i)
+        save_image(fields["u_magnitude"][:, grid_size_y // 2, :], timestep=i)
 
 
-# Write the results. We'll use JAX backend for the post-processing
-if not isinstance(f_0, jnp.ndarray):
-    f_0 = wp.to_jax(f_0)
+if __name__ == "__main__":
+    # Grid parameters
+    grid_size_x, grid_size_y, grid_size_z = 512, 128, 128
+    grid_shape = (grid_size_x, grid_size_y, grid_size_z)
 
-macro = Macroscopic(compute_backend=ComputeBackend.JAX)
+    # Configuration
+    backend = ComputeBackend.WARP
+    velocity_set = xlb.velocity_set.D3Q27()
+    precision_policy = PrecisionPolicy.FP32FP32
+    wind_speed = 0.02
+    num_steps = 100000
+    print_interval = 1000
 
-rho, u = macro(f_0)
+    # Set up Reynolds number and deduce relaxation time (omega)
+    Re = 50000.0
+    clength = grid_size_x - 1
+    visc = wind_speed * clength / Re
+    omega = 1.0 / (3.0 * visc + 0.5)
 
-# remove boundary cells
-u = u[:, 1:-1, 1:-1, 1:-1]
-u_magnitude = (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5
+    # Print simulation info
+    print("Simulation Configuration:")
+    print(f"Grid size: {grid_size_x} x {grid_size_y} x {grid_size_z}")
+    print(f"Backend: {backend}")
+    print(f"Velocity set: {velocity_set}")
+    print(f"Precision policy: {precision_policy}")
+    print(f"Prescribed velocity: {wind_speed}")
+    print(f"Reynolds number: {Re}")
+    print(f"Max iterations: {num_steps}")
+    print("\n" + "=" * 50 + "\n")
 
-fields = {"u_magnitude": u_magnitude}
-
-save_fields_vtk(fields, timestep=i)
-save_image(fields["u_magnitude"][:, grid_size_y // 2, :], timestep=i)
+    simulation = WindTunnel3D(grid_shape, velocity_set, backend, precision_policy)
+    simulation.setup_boundary_conditions(wind_speed)
+    simulation.set_boundary_masks()
+    simulation.initialize_fields()
+    simulation.setup_stepper(omega)
+    simulation.run_simulation(num_steps, print_interval)
+    simulation.post_process(i=num_steps)

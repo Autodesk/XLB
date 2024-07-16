@@ -1,11 +1,10 @@
-from turtle import back
 import xlb
 import argparse
 import time
 import warp as wp
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq, assign_bc_id_box_faces
+from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 from xlb.operator.equilibrium import QuadraticEquilibrium
@@ -45,32 +44,26 @@ def create_grid_and_fields(cube_edge):
     grid_shape = (cube_edge, cube_edge, cube_edge)
     grid, f_0, f_1, missing_mask, boundary_mask = create_nse_fields(grid_shape)
 
-    # Velocity on top face (3D)
-    boundary_mask, missing_mask = assign_bc_id_box_faces(
-        boundary_mask, missing_mask, grid_shape, EquilibriumBC.id, ["top"]
-    )
-
-    # Wall on all other faces (3D)
-    boundary_mask, missing_mask = assign_bc_id_box_faces(
-        boundary_mask,
-        missing_mask,
-        grid_shape,
-        FullwayBounceBackBC.id,
-        ["bottom", "left", "right", "front", "back"],
-    )
-
     return grid, f_0, f_1, missing_mask, boundary_mask
 
-def setup_boundary_conditions():
+def define_boundary_indices(grid):
+    lid = grid.boundingBoxIndices['top']
+    walls = [grid.boundingBoxIndices['bottom'][i] + grid.boundingBoxIndices['left'][i] + 
+            grid.boundingBoxIndices['right'][i] + grid.boundingBoxIndices['front'][i] +
+            grid.boundingBoxIndices['back'][i] for i in range(xlb.velocity_set.D3Q19().d)]
+    return lid, walls
+    
+def setup_boundary_conditions(grid):
+    lid, walls = define_boundary_indices(grid)
     bc_eq = QuadraticEquilibrium()
-    bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), equilibrium_operator=bc_eq)
-    bc_walls = FullwayBounceBackBC()
+    bc_top = EquilibriumBC(lid, rho=1.0, u=(0.02, 0.0, 0.0), equilibrium_operator=bc_eq)
+    bc_walls = FullwayBounceBackBC(walls)
     return [bc_top, bc_walls]
 
 def run_simulation(f_0, f_1, backend, grid, boundary_mask, missing_mask, num_steps):
     omega = 1.0
     stepper = IncompressibleNavierStokesStepper(
-        omega, boundary_conditions=setup_boundary_conditions()
+        omega, boundary_conditions=setup_boundary_conditions(grid)
     )
 
     if backend == ComputeBackend.JAX:

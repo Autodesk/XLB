@@ -55,7 +55,8 @@ class FlowOverSphere:
 
         return inlet, outlet, walls, sphere
     
-    def instantiate_boundary_conditions(self, inlet, outlet, walls, sphere):
+    def setup_boundary_conditions(self):
+        inlet, outlet, walls, sphere = self.define_boundary_indices()
         bc_left = EquilibriumBC(inlet, rho=1.0, u=(0.02, 0.0, 0.0), equilibrium_operator=QuadraticEquilibrium())
         bc_walls = FullwayBounceBackBC(walls)
         bc_do_nothing = DoNothingBC(outlet)
@@ -103,17 +104,17 @@ class FlowOverSphere:
         save_image(fields["u_magnitude"][:, self.grid_shape[1] // 2, :], timestep=i)
 
 
-# Running the simulation
-grid_shape = (512, 128, 128)
-velocity_set = xlb.velocity_set.D3Q19()
-backend = ComputeBackend.WARP
-precision_policy = PrecisionPolicy.FP32FP32
+if __name__ == "__main__":
+    # Running the simulation
+    grid_shape = (512, 128, 128)
+    velocity_set = xlb.velocity_set.D3Q19()
+    backend = ComputeBackend.WARP
+    precision_policy = PrecisionPolicy.FP32FP32
 
-simulation = FlowOverSphere(grid_shape, velocity_set, backend, precision_policy)
-inlet, outlet, walls, sphere = simulation.define_boundary_indices()
-simulation.instantiate_boundary_conditions(inlet, outlet, walls, sphere)
-simulation.set_boundary_masks()
-simulation.initialize_fields()
-simulation.setup_stepper(omega=1.8)
-simulation.run_simulation(num_steps=10000)
-simulation.post_process(i=10000)
+    simulation = FlowOverSphere(grid_shape, velocity_set, backend, precision_policy)
+    simulation.setup_boundary_conditions()
+    simulation.set_boundary_masks()
+    simulation.initialize_fields()
+    simulation.setup_stepper(omega=1.8)
+    simulation.run_simulation(num_steps=10000)
+    simulation.post_process(i=10000)
