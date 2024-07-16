@@ -5,6 +5,7 @@ import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
 from xlb import DefaultConfig
+from xlb.operator.boundary_masker import IndicesBoundaryMasker
 
 def init_xlb_env(velocity_set):
     xlb.init(
@@ -34,7 +35,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
 
     boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
-    indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
+    indices_boundary_masker = IndicesBoundaryMasker()
 
     # Make indices for boundary conditions (sphere)
     sphere_radius = grid_shape[0] // 4
@@ -52,18 +53,18 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
             < sphere_radius**2
         )
 
-    indices = wp.array(indices, dtype=wp.int32)
-
+    indices = [tuple(indices[i]) for i in range(velocity_set.d)]
     equilibrium = xlb.operator.equilibrium.QuadraticEquilibrium()
 
     equilibrium_bc = xlb.operator.boundary_condition.EquilibriumBC(
+        indices,
         rho=1.0,
         u=(0.0, 0.0, 0.0) if dim == 3 else (0.0, 0.0),
         equilibrium_operator=equilibrium,
     )
 
     boundary_mask, missing_mask = indices_boundary_masker(
-        indices, equilibrium_bc.id, boundary_mask, missing_mask, start_index=None
+        [equilibrium_bc], boundary_mask, missing_mask, start_index=None
     )
 
     f = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.FP32)
@@ -76,7 +77,6 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
 
     f = f.numpy()
     f_post = f_post.numpy()
-    indices = indices.numpy()
 
     assert f.shape == (velocity_set.q,) + grid_shape
 

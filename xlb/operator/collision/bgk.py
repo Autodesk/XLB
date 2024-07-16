@@ -55,7 +55,7 @@ class BGK(Collision):
                 _feq[l] = feq[l, index[0], index[1]]
 
             # Compute the collision
-            _fout = functional(_f, _feq)
+            _fout = functional(_f, _feq, rho, u)
 
             # Write the result
             for l in range(self.velocity_set.q):
