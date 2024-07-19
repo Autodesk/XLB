@@ -51,9 +51,12 @@ class IndicesBoundaryMasker(Operator):
             start_index = (0,) * dim
 
         for bc in bclist:
+            assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC!'
             id_number = bc.id
             local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
             boundary_mask, mask = compute_boundary_id_and_mask(boundary_mask, mask)
+            # We are done with bc.indices. Remove them from BC objects
+            bc.__dict__.pop('indices', None)
 
         mask = self.stream(mask)
         return boundary_mask, mask
@@ -151,9 +154,12 @@ class IndicesBoundaryMasker(Operator):
         index_list = [[] for _ in range(dim)]
         id_list = []
         for bc in bclist:
+            assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC using keyword "indices"!'
             for d in range(dim):
                 index_list[d] += bc.indices[d]
             id_list += [bc.id] * len(bc.indices[0])
+            # We are done with bc.indices. Remove them from BC objects
+            bc.__dict__.pop('indices', None)
       
         indices = wp.array2d(index_list, dtype = wp.int32)
         id_number = wp.array1d(id_list, dtype = wp.uint8)

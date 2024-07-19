@@ -5,7 +5,6 @@ from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
-from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
@@ -13,7 +12,7 @@ import jax.numpy as jnp
 
 
 class LidDrivenCavity2D:
-    def __init__(self, grid_shape, velocity_set, backend, precision_policy):
+    def __init__(self, omega, grid_shape, velocity_set, backend, precision_policy):
 
         # initialize backend
         xlb.init(
@@ -30,6 +29,15 @@ class LidDrivenCavity2D:
         self.stepper = None
         self.boundary_conditions = []
     
+        # Setup the simulation BC, its initial conditions, and the stepper
+        self._setup(omega)
+
+    def _setup(self, omega):
+        self.setup_boundary_conditions()
+        self.setup_boundary_masks()
+        self.initialize_fields()
+        self.setup_stepper(omega)
+
     def define_boundary_indices(self):
         lid = self.grid.boundingBoxIndices['top']
         walls = [self.grid.boundingBoxIndices['bottom'][i] + self.grid.boundingBoxIndices['left'][i] + 
@@ -38,11 +46,11 @@ class LidDrivenCavity2D:
     
     def setup_boundary_conditions(self):
         lid, walls = self.define_boundary_indices()
-        bc_top = EquilibriumBC(lid, rho=1.0, u=(0.02, 0.0), equilibrium_operator=QuadraticEquilibrium())
-        bc_walls = FullwayBounceBackBC(walls)
+        bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0), indices=lid)
+        bc_walls = FullwayBounceBackBC(indices=walls)
         self.boundary_conditions = [bc_top, bc_walls]
 
-    def set_boundary_masks(self):
+    def setup_boundary_masks(self):
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
@@ -60,7 +68,7 @@ class LidDrivenCavity2D:
             omega, boundary_conditions=self.boundary_conditions
         )
 
-    def run_simulation(self, num_steps):
+    def run(self, num_steps):
         for i in range(num_steps):
             self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
@@ -92,11 +100,8 @@ if __name__ == "__main__":
     backend = ComputeBackend.JAX
     velocity_set = xlb.velocity_set.D2Q9()
     precision_policy = PrecisionPolicy.FP32FP32
+    omega = 1.6
 
-    simulation = LidDrivenCavity2D(grid_shape, velocity_set, backend, precision_policy)
-    simulation.setup_boundary_conditions()
-    simulation.set_boundary_masks()
-    simulation.initialize_fields()
-    simulation.setup_stepper(omega=1.6)
-    simulation.run_simulation(num_steps=500)
+    simulation = LidDrivenCavity2D(omega, grid_shape, velocity_set, backend, precision_policy)
+    simulation.run(num_steps=500)
     simulation.post_process(i=500)

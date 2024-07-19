@@ -57,10 +57,10 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
     equilibrium = xlb.operator.equilibrium.QuadraticEquilibrium()
 
     equilibrium_bc = xlb.operator.boundary_condition.EquilibriumBC(
-        indices,
         rho=1.0,
         u=(0.0, 0.0, 0.0) if dim == 3 else (0.0, 0.0),
         equilibrium_operator=equilibrium,
+        indices=indices,
     )
 
     boundary_mask, missing_mask = indices_boundary_masker(

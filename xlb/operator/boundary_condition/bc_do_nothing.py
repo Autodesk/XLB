@@ -31,17 +31,17 @@ class DoNothingBC(BoundaryCondition):
 
     def __init__(
         self,
-        indices: List[int],
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
+        indices = None,
     ):
         super().__init__(
-            indices,
             ImplementationStep.STREAMING,
             velocity_set,
             precision_policy,
             compute_backend,
+            indices,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)

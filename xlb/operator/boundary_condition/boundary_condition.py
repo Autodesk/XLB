@@ -28,11 +28,11 @@ class BoundaryCondition(Operator):
 
     def __init__(
         self,
-        indices: List[int],
         implementation_step: ImplementationStep,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
+        indices = None,
     ):
         velocity_set = velocity_set or DefaultConfig.velocity_set
         precision_policy = precision_policy or DefaultConfig.default_precision_policy

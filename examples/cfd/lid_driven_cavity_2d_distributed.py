@@ -7,8 +7,8 @@ from lid_driven_cavity_2d import LidDrivenCavity2D
 
 
 class LidDrivenCavity2D_distributed(LidDrivenCavity2D):
-    def __init__(self, grid_shape, velocity_set, backend, precision_policy):
-        super().__init__(grid_shape, velocity_set, backend, precision_policy)
+    def __init__(self, omega, grid_shape, velocity_set, backend, precision_policy):
+        super().__init__(omega, grid_shape, velocity_set, backend, precision_policy)
 
     def setup_stepper(self, omega):
         stepper = IncompressibleNavierStokesStepper(
@@ -28,11 +28,8 @@ if __name__ == "__main__":
     backend = ComputeBackend.JAX            # Must be JAX for distributed multi-GPU computations. Distributed computations on WARP are not supported yet!
     velocity_set = xlb.velocity_set.D2Q9()
     precision_policy = PrecisionPolicy.FP32FP32
+    omega=1.6
 
-    simulation = LidDrivenCavity2D_distributed(grid_shape, velocity_set, backend, precision_policy)
-    simulation.setup_boundary_conditions()
-    simulation.set_boundary_masks()
-    simulation.initialize_fields()
-    simulation.setup_stepper(omega=1.6)
-    simulation.run_simulation(num_steps=5000)
+    simulation = LidDrivenCavity2D_distributed(omega, grid_shape, velocity_set, backend, precision_policy)
+    simulation.run(num_steps=5000)
     simulation.post_process(i=5000)

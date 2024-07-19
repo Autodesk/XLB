@@ -59,7 +59,7 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
 
     assert len(indices) == dim
-    test_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices)
+    test_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
     test_bc.id = 5
     boundary_mask, missing_mask = indices_boundary_masker(
         [test_bc], boundary_mask, missing_mask, start_index=None

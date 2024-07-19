@@ -10,7 +10,6 @@ from xlb.operator.boundary_condition import (
     EquilibriumBC,
     DoNothingBC,
 )
-from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
@@ -20,7 +19,7 @@ import jax.numpy as jnp
 
 
 class WindTunnel3D:
-    def __init__(self, grid_shape, velocity_set, backend, precision_policy):
+    def __init__(self, omega, wind_speed, grid_shape, velocity_set, backend, precision_policy):
 
         # initialize backend
         xlb.init(
@@ -37,6 +36,15 @@ class WindTunnel3D:
         self.stepper = None
         self.boundary_conditions = []
     
+        # Setup the simulation BC, its initial conditions, and the stepper
+        self._setup(omega, wind_speed)
+
+    def _setup(self, omega, wind_speed):
+        self.setup_boundary_conditions(wind_speed)
+        self.setup_boundary_masks()
+        self.initialize_fields()
+        self.setup_stepper(omega)
+
     def voxelize_stl(self, stl_filename, length_lbm_unit):
         mesh = trimesh.load_mesh(stl_filename, process=False)
         length_phys_unit = mesh.extents.max()
@@ -67,13 +75,13 @@ class WindTunnel3D:
     
     def setup_boundary_conditions(self, wind_speed):
         inlet, outlet, walls, car = self.define_boundary_indices()
-        bc_left = EquilibriumBC(inlet, rho=1.0, u=(wind_speed, 0.0, 0.0), equilibrium_operator=QuadraticEquilibrium())
-        bc_walls = FullwayBounceBackBC(walls)
-        bc_do_nothing = DoNothingBC(outlet)
-        bc_car= FullwayBounceBackBC(car)
+        bc_left = EquilibriumBC(rho=1.0, u=(wind_speed, 0.0, 0.0), indices=inlet)
+        bc_walls = FullwayBounceBackBC(indices=walls)
+        bc_do_nothing = DoNothingBC(indices=outlet)
+        bc_car= FullwayBounceBackBC(indices=car)
         self.boundary_conditions = [bc_left, bc_walls, bc_do_nothing, bc_car]
 
-    def set_boundary_masks(self):
+    def setup_boundary_masks(self):
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
@@ -91,7 +99,7 @@ class WindTunnel3D:
             omega, boundary_conditions=self.boundary_conditions, collision_type="KBC"
         )
 
-    def run_simulation(self, num_steps, print_interval):
+    def run(self, num_steps, print_interval):
         start_time = time.time()
         for i in range(num_steps):
             self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
@@ -140,6 +148,7 @@ if __name__ == "__main__":
     omega = 1.0 / (3.0 * visc + 0.5)
 
     # Print simulation info
+    print("\n" + "=" * 50 + "\n")
     print("Simulation Configuration:")
     print(f"Grid size: {grid_size_x} x {grid_size_y} x {grid_size_z}")
     print(f"Backend: {backend}")
@@ -150,10 +159,6 @@ if __name__ == "__main__":
     print(f"Max iterations: {num_steps}")
     print("\n" + "=" * 50 + "\n")
 
-    simulation = WindTunnel3D(grid_shape, velocity_set, backend, precision_policy)
-    simulation.setup_boundary_conditions(wind_speed)
-    simulation.set_boundary_masks()
-    simulation.initialize_fields()
-    simulation.setup_stepper(omega)
-    simulation.run_simulation(num_steps, print_interval)
+    simulation = WindTunnel3D(omega, wind_speed, grid_shape, velocity_set, backend, precision_policy)
+    simulation.run(num_steps, print_interval)
     simulation.post_process(i=num_steps)

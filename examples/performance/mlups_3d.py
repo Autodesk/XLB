@@ -7,7 +7,6 @@ from xlb.precision_policy import PrecisionPolicy
 from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
-from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.distribute import distribute
 
 def parse_arguments():
@@ -55,12 +54,11 @@ def define_boundary_indices(grid):
     
 def setup_boundary_conditions(grid):
     lid, walls = define_boundary_indices(grid)
-    bc_eq = QuadraticEquilibrium()
-    bc_top = EquilibriumBC(lid, rho=1.0, u=(0.02, 0.0, 0.0), equilibrium_operator=bc_eq)
-    bc_walls = FullwayBounceBackBC(walls)
+    bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=lid)
+    bc_walls = FullwayBounceBackBC(indices=walls)
     return [bc_top, bc_walls]
 
-def run_simulation(f_0, f_1, backend, grid, boundary_mask, missing_mask, num_steps):
+def run(f_0, f_1, backend, grid, boundary_mask, missing_mask, num_steps):
     omega = 1.0
     stepper = IncompressibleNavierStokesStepper(
         omega, boundary_conditions=setup_boundary_conditions(grid)
@@ -92,7 +90,7 @@ def main():
     grid, f_0, f_1, missing_mask, boundary_mask = create_grid_and_fields(args.cube_edge)
     f_0 = initialize_eq(f_0, grid, xlb.velocity_set.D3Q19(), backend)
 
-    elapsed_time = run_simulation(f_0, f_1, backend, grid, boundary_mask, missing_mask, args.num_steps)
+    elapsed_time = run(f_0, f_1, backend, grid, boundary_mask, missing_mask, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
 
     print(f"Simulation completed in {elapsed_time:.2f} seconds")

@@ -8,7 +8,6 @@ from xlb.operator.boundary_condition import (
     EquilibriumBC,
     DoNothingBC,
 )
-from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
@@ -17,7 +16,7 @@ import numpy as np
 import jax.numpy as jnp
 
 class FlowOverSphere:
-    def __init__(self, grid_shape, velocity_set, backend, precision_policy):
+    def __init__(self, omega, grid_shape, velocity_set, backend, precision_policy):
 
         # initialize backend
         xlb.init(
@@ -33,6 +32,15 @@ class FlowOverSphere:
         self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
+
+        # Setup the simulation BC, its initial conditions, and the stepper
+        self._setup(omega)
+    
+    def _setup(self, omega):
+        self.setup_boundary_conditions()
+        self.setup_boundary_masks()
+        self.initialize_fields()
+        self.setup_stepper(omega)
     
     def define_boundary_indices(self):
         inlet = self.grid.boundingBoxIndices['left']
@@ -57,13 +65,13 @@ class FlowOverSphere:
     
     def setup_boundary_conditions(self):
         inlet, outlet, walls, sphere = self.define_boundary_indices()
-        bc_left = EquilibriumBC(inlet, rho=1.0, u=(0.02, 0.0, 0.0), equilibrium_operator=QuadraticEquilibrium())
-        bc_walls = FullwayBounceBackBC(walls)
-        bc_do_nothing = DoNothingBC(outlet)
-        bc_sphere = FullwayBounceBackBC(sphere)
+        bc_left = EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=inlet)
+        bc_walls = FullwayBounceBackBC(indices=walls)
+        bc_do_nothing = DoNothingBC(indices=outlet)
+        bc_sphere = FullwayBounceBackBC(indices=sphere)
         self.boundary_conditions = [bc_left, bc_walls, bc_do_nothing, bc_sphere]
 
-    def set_boundary_masks(self):
+    def setup_boundary_masks(self):
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
@@ -81,7 +89,7 @@ class FlowOverSphere:
             omega, boundary_conditions=self.boundary_conditions
         )
 
-    def run_simulation(self, num_steps):
+    def run(self, num_steps):
         for i in range(num_steps):
             self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
@@ -110,11 +118,8 @@ if __name__ == "__main__":
     velocity_set = xlb.velocity_set.D3Q19()
     backend = ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
+    omega = 1.6
 
-    simulation = FlowOverSphere(grid_shape, velocity_set, backend, precision_policy)
-    simulation.setup_boundary_conditions()
-    simulation.set_boundary_masks()
-    simulation.initialize_fields()
-    simulation.setup_stepper(omega=1.8)
-    simulation.run_simulation(num_steps=10000)
+    simulation = FlowOverSphere(omega, grid_shape, velocity_set, backend, precision_policy)
+    simulation.run(num_steps=10000)
     simulation.post_process(i=10000)

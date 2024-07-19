@@ -56,7 +56,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
         )
 
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
-    fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices)
+    fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
 
     boundary_mask, missing_mask = indices_boundary_masker(
         [fullway_bc], boundary_mask, missing_mask, start_index=None

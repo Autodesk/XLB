@@ -56,10 +56,10 @@ def test_bc_equilibrium_jax(dim, velocity_set, grid_shape):
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
 
     equilibrium_bc = xlb.operator.boundary_condition.EquilibriumBC(
-        indices,
         rho=1.0,
         u=(0.0, 0.0, 0.0) if dim == 3 else (0.0, 0.0),
         equilibrium_operator=xlb.operator.equilibrium.QuadraticEquilibrium(),
+        indices=indices,
     )
 
     boundary_mask, missing_mask = indices_boundary_masker(

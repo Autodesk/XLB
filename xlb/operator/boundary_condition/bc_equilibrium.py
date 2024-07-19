@@ -7,12 +7,13 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
-from typing import Tuple, Any, List
+from typing import Tuple, Any
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium.equilibrium import Equilibrium
+from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,
@@ -32,29 +33,29 @@ class EquilibriumBC(BoundaryCondition):
 
     def __init__(
         self,
-        indices: List[int],
         rho: float,
         u: Tuple[float, float, float],
-        equilibrium_operator: Operator,
+        equilibrium_operator : Operator = None,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
+        indices = None,
     ):
         # Store the equilibrium information
         self.rho = rho
         self.u = u
-        self.equilibrium_operator = equilibrium_operator
+        self.equilibrium_operator = QuadraticEquilibrium() if equilibrium_operator is None else equilibrium_operator
         # Raise error if equilibrium operator is not a subclass of Equilibrium
         if not issubclass(type(self.equilibrium_operator), Equilibrium):
             raise ValueError("Equilibrium operator must be a subclass of Equilibrium")
 
         # Call the parent constructor
         super().__init__(
-            indices,
             ImplementationStep.STREAMING,
             velocity_set,
             precision_policy,
             compute_backend,
+            indices,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)
