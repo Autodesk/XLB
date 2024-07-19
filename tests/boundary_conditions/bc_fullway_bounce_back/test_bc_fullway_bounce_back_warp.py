@@ -35,8 +35,6 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
     )
 
-    fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC()
-
     boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
@@ -57,10 +55,11 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
             < sphere_radius**2
         )
 
-    indices = wp.array(indices, dtype=wp.int32)
-
+    indices = [tuple(indices[i]) for i in range(velocity_set.d)]
+    fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
+    
     boundary_mask, missing_mask = indices_boundary_masker(
-        indices, fullway_bc.id, boundary_mask, missing_mask, start_index=None
+        [fullway_bc], boundary_mask, missing_mask, start_index=None
     )
 
     # Generate a random field with the same shape
@@ -76,7 +75,6 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
 
     f = f_pre.numpy()
     f_post = f_post.numpy()
-    indices = indices.numpy()
 
     assert f.shape == (velocity_set.q,) + grid_shape
 

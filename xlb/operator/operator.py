@@ -50,8 +50,6 @@ class Operator:
 
         return decorator
 
-        return decorator
-
     def __call__(self, *args, callback=None, **kwargs):
         method_candidates = [
             (key, method)

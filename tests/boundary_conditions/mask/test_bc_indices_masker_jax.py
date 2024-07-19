@@ -56,12 +56,13 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
             < sphere_radius**2
         )
 
-    indices = jnp.array(indices)
+    indices = [tuple(indices[i]) for i in range(velocity_set.d)]
 
-    assert indices.shape[0] == dim
-    test_id = 5
+    assert len(indices) == dim
+    test_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
+    test_bc.id = 5
     boundary_mask, missing_mask = indices_boundary_masker(
-        indices, test_id, boundary_mask, missing_mask, start_index=None
+        [test_bc], boundary_mask, missing_mask, start_index=None
     )
 
     assert missing_mask.dtype == xlb.Precision.BOOL.jax_dtype
@@ -73,13 +74,13 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
     assert missing_mask.shape == (velocity_set.q,) + grid_shape
 
     if dim == 2:
-        assert jnp.all(boundary_mask[0, indices[0], indices[1]] == test_id)
+        assert jnp.all(boundary_mask[0, indices[0], indices[1]] == test_bc.id)
         # assert that the rest of the boundary_mask is zero
         boundary_mask = boundary_mask.at[0, indices[0], indices[1]].set(0)
         assert jnp.all(boundary_mask == 0)
     if dim == 3:
         assert jnp.all(
-            boundary_mask[0, indices[0], indices[1], indices[2]] == test_id
+            boundary_mask[0, indices[0], indices[1], indices[2]] == test_bc.id
         )
         # assert that the rest of the boundary_mask is zero
         boundary_mask = boundary_mask.at[

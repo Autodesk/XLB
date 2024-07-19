@@ -63,7 +63,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:
             if bc.implementation_step == ImplementationStep.COLLISION:
-                f_0 = bc(
+                f_post_collision = bc(
                     f_0,
                     f_post_collision,
                     boundary_mask,
@@ -71,7 +71,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 )
 
         # Apply streaming
-        f_1 = self.stream(f_0)
+        f_1 = self.stream(f_post_collision)
 
         # Apply boundary conditions
         for bc in self.boundary_conditions:

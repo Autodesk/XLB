@@ -3,12 +3,10 @@ Base class for boundary conditions in a LBM simulation.
 """
 
 import jax.numpy as jnp
-from jax import jit, device_count
-import jax.lax as lax
+from jax import jit
 from functools import partial
-import numpy as np
 import warp as wp
-from typing import Any
+from typing import Any, List
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -35,12 +33,14 @@ class FullwayBounceBackBC(BoundaryCondition):
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
+        indices = None,
     ):
         super().__init__(
             ImplementationStep.COLLISION,
             velocity_set,
             precision_policy,
             compute_backend,
+            indices,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)
