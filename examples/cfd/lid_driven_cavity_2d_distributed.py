@@ -15,7 +15,7 @@ class LidDrivenCavity2D_distributed(LidDrivenCavity2D):
             omega, boundary_conditions=self.boundary_conditions
             )
         distributed_stepper = distribute(
-            stepper, self.grid, self.velocity_set, sharding_flags=(True, True, True, True, False)
+            stepper, self.grid, self.velocity_set,
             )
         self.stepper = distributed_stepper
         return
