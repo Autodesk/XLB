@@ -128,11 +128,11 @@ class IncompressibleNavierStokesStepper(Stepper):
                 else:
                     _missing_mask[l] = wp.uint8(0)
 
-            # Apply streaming boundary conditions
-            if (_boundary_id == wp.uint8(0)) or _boundary_id == bc_struct.id_FullwayBounceBackBC:
-                # Regular streaming
-                f_post_stream = self.stream.warp_functional(f_0, index)
-            elif _boundary_id == bc_struct.id_EquilibriumBC:
+            # Apply streaming (pull method)
+            f_post_stream = self.stream.warp_functional(f_0, index)
+            
+            # Apply post-streaming type boundary conditions 
+            if _boundary_id == bc_struct.id_EquilibriumBC:
                 # Equilibrium boundary condition
                 f_post_stream = self.equilibrium_bc.warp_functional(
                     f_0, _missing_mask, index
@@ -162,7 +162,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 u,
             )
 
-            # Apply collision type boundary conditions
+            # Apply post-collision type boundary conditions
             if _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Full way boundary condition
                 f_post_collision = self.fullway_bounce_back_bc.warp_functional(
@@ -199,11 +199,11 @@ class IncompressibleNavierStokesStepper(Stepper):
                 else:
                     _missing_mask[l] = wp.uint8(0)
 
-            # Apply streaming boundary conditions
-            if (_boundary_id == wp.uint8(0)) or _boundary_id == bc_struct.id_FullwayBounceBackBC:
-                # Regular streaming
-                f_post_stream = self.stream.warp_functional(f_0, index)
-            elif _boundary_id == bc_struct.id_EquilibriumBC:
+            # Apply streaming (pull method)
+            f_post_stream = self.stream.warp_functional(f_0, index)
+
+            # Apply post-streaming boundary conditions
+            if _boundary_id == bc_struct.id_EquilibriumBC:
                 # Equilibrium boundary condition
                 f_post_stream = self.equilibrium_bc.warp_functional(
                     f_0, _missing_mask, index
