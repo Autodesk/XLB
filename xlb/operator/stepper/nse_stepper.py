@@ -95,11 +95,15 @@ class IncompressibleNavierStokesStepper(Stepper):
             self.velocity_set.q, dtype=wp.uint8
         )  # TODO fix vec bool
 
-        # Get the boundary condition ids
-        _equilibrium_bc = wp.uint8(self.equilibrium_bc.id)
-        _do_nothing_bc = wp.uint8(self.do_nothing_bc.id)
-        _halfway_bounce_back_bc = wp.uint8(self.halfway_bounce_back_bc.id)
-        _fullway_bounce_back_bc = wp.uint8(self.fullway_bounce_back_bc.id)
+        @wp.struct
+        class BoundaryConditionIDStruct:
+            # Note the names are hardcoded here based on various BC operator names with "id_" at the beginning
+            # One needs to manually add the names of additional BC's as they are added.
+            # TODO: Anyway to improve this
+            id_EquilibriumBC: wp.uint8
+            id_DoNothingBC: wp.uint8
+            id_HalfwayBounceBackBC: wp.uint8
+            id_FullwayBounceBackBC: wp.uint8
 
         @wp.kernel
         def kernel2d(
@@ -107,6 +111,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: wp.array3d(dtype=Any),
             boundary_mask: wp.array3d(dtype=Any),
             missing_mask: wp.array3d(dtype=Any),
+            bc_struct: BoundaryConditionIDStruct,
             timestep: int,
         ):
             # Get the global index
@@ -124,20 +129,20 @@ class IncompressibleNavierStokesStepper(Stepper):
                     _missing_mask[l] = wp.uint8(0)
 
             # Apply streaming boundary conditions
-            if (_boundary_id == wp.uint8(0)) or _boundary_id == _fullway_bounce_back_bc:
+            if (_boundary_id == wp.uint8(0)) or _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Regular streaming
                 f_post_stream = self.stream.warp_functional(f_0, index)
-            elif _boundary_id == _equilibrium_bc:
+            elif _boundary_id == bc_struct.id_EquilibriumBC:
                 # Equilibrium boundary condition
                 f_post_stream = self.equilibrium_bc.warp_functional(
                     f_0, _missing_mask, index
                 )
-            elif _boundary_id == _do_nothing_bc:
+            elif _boundary_id == bc_struct.id_DoNothingBC:
                 # Do nothing boundary condition
                 f_post_stream = self.do_nothing_bc.warp_functional(
                     f_0, _missing_mask, index
                 )
-            elif _boundary_id == _halfway_bounce_back_bc:
+            elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
                 # Half way boundary condition
                 f_post_stream = self.halfway_bounce_back_bc.warp_functional(
                     f_0, _missing_mask, index
@@ -158,7 +163,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             )
 
             # Apply collision type boundary conditions
-            if _boundary_id == _fullway_bounce_back_bc:
+            if _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Full way boundary condition
                 f_post_collision = self.fullway_bounce_back_bc.warp_functional(
                     f_post_stream,
@@ -177,6 +182,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: wp.array4d(dtype=Any),
             boundary_mask: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
+            bc_struct: BoundaryConditionIDStruct,
             timestep: int,
         ):
             # Get the global index
@@ -194,20 +200,20 @@ class IncompressibleNavierStokesStepper(Stepper):
                     _missing_mask[l] = wp.uint8(0)
 
             # Apply streaming boundary conditions
-            if (_boundary_id == wp.uint8(0)) or _boundary_id == _fullway_bounce_back_bc:
+            if (_boundary_id == wp.uint8(0)) or _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Regular streaming
                 f_post_stream = self.stream.warp_functional(f_0, index)
-            elif _boundary_id == _equilibrium_bc:
+            elif _boundary_id == bc_struct.id_EquilibriumBC:
                 # Equilibrium boundary condition
                 f_post_stream = self.equilibrium_bc.warp_functional(
                     f_0, _missing_mask, index
                 )
-            elif _boundary_id == _do_nothing_bc:
+            elif _boundary_id == bc_struct.id_DoNothingBC:
                 # Do nothing boundary condition
                 f_post_stream = self.do_nothing_bc.warp_functional(
                     f_0, _missing_mask, index
                 )
-            elif _boundary_id == _halfway_bounce_back_bc:
+            elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
                 # Half way boundary condition
                 f_post_stream = self.halfway_bounce_back_bc.warp_functional(
                     f_0, _missing_mask, index
@@ -223,7 +229,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_post_collision = self.collision.warp_functional(f_post_stream, feq, rho, u)
 
             # Apply collision type boundary conditions
-            if _boundary_id == _fullway_bounce_back_bc:
+            if _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Full way boundary condition
                 f_post_collision = self.fullway_bounce_back_bc.warp_functional(
                     f_post_stream,
@@ -238,10 +244,32 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Return the correct kernel
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
-        return None, kernel
+        return BoundaryConditionIDStruct, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f_0, f_1, boundary_mask, missing_mask, timestep):
+
+        # Get the boundary condition ids
+        from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
+        bc_to_id = boundary_condition_registry.bc_to_id
+    
+        bc_struct = self.warp_functional()
+        bc_attribute_list = []
+        for bc in self.boundary_conditions:
+            # Setting the Struct attributes based on the BC class names
+            attribute_str = bc.__class__.__name__
+            setattr(bc_struct,  'id_' + attribute_str,  bc_to_id[attribute_str]) 
+            bc_attribute_list.append('id_' + attribute_str)
+
+        # Unused attributes of the struct are set to inernal (id=0)
+        ll = vars(bc_struct)
+        for var in ll:
+            if var not in bc_attribute_list and not var.startswith('_'):
+                # set unassigned boundaries to the maximum integer in uint8
+                attribute_str = bc.__class__.__name__
+                setattr(bc_struct,  var,  255) 
+
+
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
@@ -250,6 +278,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_1,
                 boundary_mask,
                 missing_mask,
+                bc_struct,
                 timestep,
             ],
             dim=f_0.shape[1:],
