@@ -54,13 +54,13 @@ class PrecisionPolicy(Enum):
         if self == PrecisionPolicy.FP64FP64:
             return Precision.FP64
         elif self == PrecisionPolicy.FP64FP32:
-            return Precision.FP32
+            return Precision.FP64
         elif self == PrecisionPolicy.FP64FP16:
-            return Precision.FP16
+            return Precision.FP64
         elif self == PrecisionPolicy.FP32FP32:
             return Precision.FP32
         elif self == PrecisionPolicy.FP32FP16:
-            return Precision.FP16
+            return Precision.FP32
         else:
             raise ValueError("Invalid precision policy")
 
