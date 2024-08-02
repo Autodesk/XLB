@@ -34,7 +34,6 @@ class Stepper(Operator):
         from xlb.operator.boundary_condition.bc_halfway_bounce_back import HalfwayBounceBackBC
         from xlb.operator.boundary_condition.bc_fullway_bounce_back import FullwayBounceBackBC
 
-
         # Define a list of tuples with attribute names and their corresponding classes
         conditions = [
             ("equilibrium_bc", EquilibriumBC),
@@ -54,7 +53,6 @@ class Stepper(Operator):
                     break
                 elif not hasattr(self, attr_name):
                     setattr(self, attr_name, bc_fallback)
-
 
         ############################################
 
