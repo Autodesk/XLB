@@ -47,36 +47,23 @@ class IndicesBoundaryMasker(Operator):
         # shift indices
         shift_tup = (pad_x, pad_y) if dim == 2 else (pad_x, pad_y, pad_z)
         if start_index is None:
-            start_index = shift_tup
-        else:
-            start_index = tuple( a + b for a, b in zip(start_index, shift_tup))
+            start_index = (0,) * dim     
 
-        # define a helper function
-        def compute_boundary_id_and_mask(boundary_mask, mask):
-            if dim == 2:
-                boundary_mask = boundary_mask.at[
-                    0, local_indices[0], local_indices[1]
-                ].set(id_number)
-                mask = mask.at[:, local_indices[0], local_indices[1]].set(True)
-
-            if dim == 3:
-                boundary_mask = boundary_mask.at[
-                    0, local_indices[0], local_indices[1], local_indices[2]
-                ].set(id_number)
-                mask = mask.at[
-                    :, local_indices[0], local_indices[1], local_indices[2]
-                ].set(True)
-            return boundary_mask, mask
-    
-
+        bid = boundary_mask[0]
         for bc in bclist:
             assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC!'
             id_number = bc.id
             local_indices = np.array(bc.indices) + np.array(start_index)[:, np.newaxis]
-            boundary_mask, grid_mask = compute_boundary_id_and_mask(boundary_mask, grid_mask)
+            global_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
+            bid = bid.at[tuple(local_indices)].set(id_number)
+            if dim == 2:
+                grid_mask = grid_mask.at[:, global_indices[0], global_indices[1]].set(True)
+            if dim == 3:
+                grid_mask = grid_mask.at[:, global_indices[0], global_indices[1], global_indices[2]].set(True)
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop('indices', None)
 
+        boundary_mask = boundary_mask.at[0].set(bid)
         grid_mask = self.stream(grid_mask)
         if dim == 2: 
             missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y]
