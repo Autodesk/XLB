@@ -1,6 +1,5 @@
 # Base class for all stepper operators
 from xlb.operator import Operator
-from xlb.operator.equilibrium import Equilibrium
 from xlb import DefaultConfig
 
 
@@ -26,63 +25,35 @@ class Stepper(Operator):
         compute_backend = DefaultConfig.default_backend if not compute_backends else compute_backends.pop()
 
         # Add boundary conditions
-        # Warp cannot handle lists of functions currently
-        # Because of this we manually unpack the boundary conditions
         ############################################
+        # Warp cannot handle lists of functions currently
         # TODO: Fix this later
         ############################################
         from xlb.operator.boundary_condition.bc_equilibrium import EquilibriumBC
         from xlb.operator.boundary_condition.bc_do_nothing import DoNothingBC
-        from xlb.operator.boundary_condition.bc_halfway_bounce_back import (
-            HalfwayBounceBackBC,
-        )
-        from xlb.operator.boundary_condition.bc_fullway_bounce_back import (
-            FullwayBounceBackBC,
-        )
+        from xlb.operator.boundary_condition.bc_halfway_bounce_back import HalfwayBounceBackBC
+        from xlb.operator.boundary_condition.bc_fullway_bounce_back import FullwayBounceBackBC
 
-        self.equilibrium_bc = None
-        self.do_nothing_bc = None
-        self.halfway_bounce_back_bc = None
-        self.fullway_bounce_back_bc = None
+        # Define a list of tuples with attribute names and their corresponding classes
+        conditions = [
+            ("equilibrium_bc", EquilibriumBC),
+            ("do_nothing_bc", DoNothingBC),
+            ("halfway_bounce_back_bc", HalfwayBounceBackBC),
+            ("fullway_bounce_back_bc", FullwayBounceBackBC),
+        ]
 
-        for bc in boundary_conditions:
-            if isinstance(bc, EquilibriumBC):
-                self.equilibrium_bc = bc
-            elif isinstance(bc, DoNothingBC):
-                self.do_nothing_bc = bc
-            elif isinstance(bc, HalfwayBounceBackBC):
-                self.halfway_bounce_back_bc = bc
-            elif isinstance(bc, FullwayBounceBackBC):
-                self.fullway_bounce_back_bc = bc
+        # this fall-back BC is just to ensure Warp codegen does not produce error when a particular BC is not used in an example.
+        bc_fallback = boundary_conditions[0]
 
-        if self.equilibrium_bc is None:
-            # Select the equilibrium operator based on its type
-            self.equilibrium_bc = EquilibriumBC(
-                rho=1.0,
-                u=(0.0, 0.0, 0.0),
-                equilibrium_operator=next((op for op in self.operators if isinstance(op, Equilibrium)), None),
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
-        if self.do_nothing_bc is None:
-            self.do_nothing_bc = DoNothingBC(
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
-        if self.halfway_bounce_back_bc is None:
-            self.halfway_bounce_back_bc = HalfwayBounceBackBC(
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
-        if self.fullway_bounce_back_bc is None:
-            self.fullway_bounce_back_bc = FullwayBounceBackBC(
-                velocity_set=velocity_set,
-                precision_policy=precision_policy,
-                compute_backend=compute_backend,
-            )
+        # Iterate over each boundary condition
+        for attr_name, bc_class in conditions:
+            for bc in boundary_conditions:
+                if isinstance(bc, bc_class):
+                    setattr(self, attr_name, bc)
+                    break
+                elif not hasattr(self, attr_name):
+                    setattr(self, attr_name, bc_fallback)
+
         ############################################
 
         # Initialize operator
