@@ -1,17 +1,11 @@
 # Out-of-core decorator for functions that take a lot of memory
 
-import functools
-import warp as wp
 import cupy as cp
-import jax.dlpack as jdlpack
-import jax
-import numpy as np
 
 from xlb.experimental.ooc.ooc_array import OOCArray
 from xlb.experimental.ooc.utils import (
     _cupy_to_backend,
     _backend_to_cupy,
-    _stream_to_backend,
 )
 
 
@@ -47,9 +41,7 @@ def OOCmap(comm, ref_args, add_index=False, backend="jax"):
             # TODO: Add better checks
             for ooc_array in ooc_array_args:
                 if ooc_array_args[0].tile_dims != ooc_array.tile_dims:
-                    raise ValueError(
-                        f"Tile dimensions of ooc arrays do not match. {ooc_array_args[0].tile_dims} != {ooc_array.tile_dims}"
-                    )
+                    raise ValueError(f"Tile dimensions of ooc arrays do not match. {ooc_array_args[0].tile_dims} != {ooc_array.tile_dims}")
 
             # Apply the function to each of the ooc arrays
             for tile_index in ooc_array_args[0].tiles.keys():
@@ -79,9 +71,7 @@ def OOCmap(comm, ref_args, add_index=False, backend="jax"):
                     results = (results,)
 
                 # Convert the results back to cupy arrays
-                results = tuple(
-                    [_backend_to_cupy(result, backend) for result in results]
-                )
+                results = tuple([_backend_to_cupy(result, backend) for result in results])
 
                 # Write the results back to the ooc array
                 for arg_index, result in zip(ref_args, results):

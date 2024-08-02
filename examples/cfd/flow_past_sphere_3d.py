@@ -29,9 +29,7 @@ class FlowOverSphere:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = (
-            create_nse_fields(grid_shape)
-        )
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -61,10 +59,7 @@ class FlowOverSphere:
         z = np.arange(self.grid_shape[2])
         X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
         indices = np.where(
-            (X - self.grid_shape[0] // 6) ** 2
-            + (Y - self.grid_shape[1] // 2) ** 2
-            + (Z - self.grid_shape[2] // 2) ** 2
-            < sphere_radius**2
+            (X - self.grid_shape[0] // 6) ** 2 + (Y - self.grid_shape[1] // 2) ** 2 + (Z - self.grid_shape[2] // 2) ** 2 < sphere_radius**2
         )
         sphere = [tuple(indices[i]) for i in range(self.velocity_set.d)]
 
@@ -84,23 +79,17 @@ class FlowOverSphere:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(
-            self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0)
-        )
+        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0))
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
 
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(
-            omega, boundary_conditions=self.boundary_conditions
-        )
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):
-            self.f_1 = self.stepper(
-                self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i
-            )
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if i % post_process_interval == 0 or i == num_steps - 1:
@@ -134,7 +123,5 @@ if __name__ == "__main__":
     precision_policy = PrecisionPolicy.FP32FP32
     omega = 1.6
 
-    simulation = FlowOverSphere(
-        omega, grid_shape, velocity_set, backend, precision_policy
-    )
+    simulation = FlowOverSphere(omega, grid_shape, velocity_set, backend, precision_policy)
     simulation.run(num_steps=10000, post_process_interval=1000)

@@ -5,7 +5,6 @@ setup(
     version="0.0.1",
     author="",
     packages=find_packages(),
-    install_requires=[
-    ],
+    install_requires=[],
     include_package_data=True,
 )

@@ -32,9 +32,7 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
     my_grid = grid_factory(grid_shape)
     velocity_set = DefaultConfig.velocity_set
 
-    missing_mask = my_grid.create_field(
-        cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
-    )
+    missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
     boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
@@ -51,19 +49,14 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
         indices = np.where((X - nr // 2) ** 2 + (Y - nr // 2) ** 2 < sphere_radius**2)
     else:
         X, Y, Z = np.meshgrid(x, y, z)
-        indices = np.where(
-            (X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2
-            < sphere_radius**2
-        )
+        indices = np.where((X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2 < sphere_radius**2)
 
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
 
     assert len(indices) == dim
     test_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
     test_bc.id = 5
-    boundary_mask, missing_mask = indices_boundary_masker(
-        [test_bc], boundary_mask, missing_mask, start_index=None
-    )
+    boundary_mask, missing_mask = indices_boundary_masker([test_bc], boundary_mask, missing_mask, start_index=None)
 
     assert missing_mask.dtype == xlb.Precision.BOOL.jax_dtype
 
@@ -79,13 +72,9 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
         boundary_mask = boundary_mask.at[0, indices[0], indices[1]].set(0)
         assert jnp.all(boundary_mask == 0)
     if dim == 3:
-        assert jnp.all(
-            boundary_mask[0, indices[0], indices[1], indices[2]] == test_bc.id
-        )
+        assert jnp.all(boundary_mask[0, indices[0], indices[1], indices[2]] == test_bc.id)
         # assert that the rest of the boundary_mask is zero
-        boundary_mask = boundary_mask.at[
-            0, indices[0], indices[1], indices[2]
-        ].set(0)
+        boundary_mask = boundary_mask.at[0, indices[0], indices[1], indices[2]].set(0)
         assert jnp.all(boundary_mask == 0)
 
 

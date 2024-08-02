@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from jax import jit
 from functools import partial
 import warp as wp
-from typing import Any, List
+from typing import Any
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -33,7 +33,7 @@ class FullwayBounceBackBC(BoundaryCondition):
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
-        indices = None,
+        indices=None,
     ):
         super().__init__(
             ImplementationStep.COLLISION,
@@ -48,16 +48,14 @@ class FullwayBounceBackBC(BoundaryCondition):
     def apply_jax(self, f_pre, f_post, boundary_mask, missing_mask):
         boundary = boundary_mask == self.id
         boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
-        return jnp.where(boundary, f_pre[self.velocity_set.opp_indices,...], f_post)
+        return jnp.where(boundary, f_pre[self.velocity_set.opp_indices, ...], f_post)
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _opp_indices = self.velocity_set.wp_opp_indices
         _q = wp.constant(self.velocity_set.q)
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(
-            self.velocity_set.q, dtype=wp.uint8
-        )  # TODO fix vec bool
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         # Construct the funcional to get streamed indices
         @wp.func

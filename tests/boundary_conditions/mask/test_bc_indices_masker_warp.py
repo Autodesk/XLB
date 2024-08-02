@@ -1,5 +1,4 @@
 import pytest
-import warp as wp
 import numpy as np
 import xlb
 from xlb.compute_backend import ComputeBackend
@@ -31,9 +30,7 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
     my_grid = grid_factory(grid_shape)
     velocity_set = DefaultConfig.velocity_set
 
-    missing_mask = my_grid.create_field(
-        cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
-    )
+    missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
     boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
@@ -50,10 +47,7 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
         indices = np.where((X - nr // 2) ** 2 + (Y - nr // 2) ** 2 < sphere_radius**2)
     else:
         X, Y, Z = np.meshgrid(x, y, z)
-        indices = np.where(
-            (X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2
-            < sphere_radius**2
-        )
+        indices = np.where((X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2 < sphere_radius**2)
 
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
 
@@ -80,15 +74,14 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
     if dim == 2:
         assert np.all(boundary_mask[0, indices[0], indices[1]] == test_bc.id)
         # assert that the rest of the boundary_mask is zero
-        boundary_mask[0, indices[0], indices[1]]= 0
+        boundary_mask[0, indices[0], indices[1]] = 0
         assert np.all(boundary_mask == 0)
     if dim == 3:
-        assert np.all(
-            boundary_mask[0, indices[0], indices[1], indices[2]] == test_bc.id
-        )
+        assert np.all(boundary_mask[0, indices[0], indices[1], indices[2]] == test_bc.id)
         # assert that the rest of the boundary_mask is zero
         boundary_mask[0, indices[0], indices[1], indices[2]] = 0
         assert np.all(boundary_mask == 0)
+
 
 if __name__ == "__main__":
     pytest.main()

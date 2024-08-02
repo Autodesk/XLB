@@ -7,6 +7,7 @@ from xlb.operator.collision import BGK
 from xlb.grid import grid_factory
 from xlb import DefaultConfig
 
+
 def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,

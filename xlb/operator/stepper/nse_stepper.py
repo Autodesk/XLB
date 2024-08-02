@@ -1,13 +1,11 @@
 # Base class for all stepper operators
 
-from logging import warning
 from functools import partial
 from jax import jit
 import warp as wp
 from typing import Any
 
 from xlb import DefaultConfig
-from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
 from xlb.operator.stream import Stream
@@ -32,9 +30,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Construct the operators
         self.stream = Stream(velocity_set, precision_policy, compute_backend)
-        self.equilibrium = QuadraticEquilibrium(
-            velocity_set, precision_policy, compute_backend
-        )
+        self.equilibrium = QuadraticEquilibrium(velocity_set, precision_policy, compute_backend)
         self.macroscopic = Macroscopic(velocity_set, precision_policy, compute_backend)
 
         operators = [self.macroscopic, self.equilibrium, self.collision, self.stream]
@@ -91,9 +87,7 @@ class IncompressibleNavierStokesStepper(Stepper):
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(
-            self.velocity_set.q, dtype=wp.uint8
-        )  # TODO fix vec bool
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         # Get the boundary condition ids
         _equilibrium_bc = wp.uint8(self.equilibrium_bc.id)
@@ -129,19 +123,13 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post_stream = self.stream.warp_functional(f_0, index)
             elif _boundary_id == _equilibrium_bc:
                 # Equilibrium boundary condition
-                f_post_stream = self.equilibrium_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.equilibrium_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == _do_nothing_bc:
                 # Do nothing boundary condition
-                f_post_stream = self.do_nothing_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.do_nothing_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == _halfway_bounce_back_bc:
                 # Half way boundary condition
-                f_post_stream = self.halfway_bounce_back_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.halfway_bounce_back_bc.warp_functional(f_0, _missing_mask, index)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -199,19 +187,13 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post_stream = self.stream.warp_functional(f_0, index)
             elif _boundary_id == _equilibrium_bc:
                 # Equilibrium boundary condition
-                f_post_stream = self.equilibrium_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.equilibrium_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == _do_nothing_bc:
                 # Do nothing boundary condition
-                f_post_stream = self.do_nothing_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.do_nothing_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == _halfway_bounce_back_bc:
                 # Half way boundary condition
-                f_post_stream = self.halfway_bounce_back_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.halfway_bounce_back_bc.warp_functional(f_0, _missing_mask, index)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -220,9 +202,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             feq = self.equilibrium.warp_functional(rho, u)
 
             # Apply collision
-            f_post_collision = self.collision.warp_functional(
-                f_post_stream, feq, rho, u
-            )
+            f_post_collision = self.collision.warp_functional(f_post_stream, feq, rho, u)
 
             # Apply collision type boundary conditions
             if _boundary_id == _fullway_bounce_back_bc:

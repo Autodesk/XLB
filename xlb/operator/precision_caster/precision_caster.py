@@ -3,10 +3,9 @@ Base class for casting precision of the input data to the desired precision
 """
 
 import jax.numpy as jnp
-from jax import jit, device_count
+from jax import jit
+import warp as wp
 from functools import partial
-import numpy as np
-from enum import Enum
 
 from xlb.operator.operator import Operator
 from xlb.velocity_set import VelocitySet

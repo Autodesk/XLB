@@ -5,7 +5,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.grid import grid_factory
-from xlb import DefaultConfig
+
 
 def init_xlb_env(velocity_set):
     xlb.init(

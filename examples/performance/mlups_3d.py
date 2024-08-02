@@ -11,19 +11,11 @@ from xlb.distribute import distribute
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)"
-    )
-    parser.add_argument(
-        "cube_edge", type=int, help="Length of the edge of the cubic grid"
-    )
+    parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
+    parser.add_argument("cube_edge", type=int, help="Length of the edge of the cubic grid")
     parser.add_argument("num_steps", type=int, help="Timestep for the simulation")
-    parser.add_argument(
-        "backend", type=str, help="Backend for the simulation (jax or warp)"
-    )
-    parser.add_argument(
-        "precision", type=str, help="Precision for the simulation (e.g., fp32/fp32)"
-    )
+    parser.add_argument("backend", type=str, help="Backend for the simulation (jax or warp)")
+    parser.add_argument("precision", type=str, help="Precision for the simulation (e.g., fp32/fp32)")
     return parser.parse_args()
 
 
@@ -77,9 +69,7 @@ def setup_boundary_conditions(grid):
 
 def run(f_0, f_1, backend, grid, boundary_mask, missing_mask, num_steps):
     omega = 1.0
-    stepper = IncompressibleNavierStokesStepper(
-        omega, boundary_conditions=setup_boundary_conditions(grid)
-    )
+    stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=setup_boundary_conditions(grid))
 
     if backend == ComputeBackend.JAX:
         stepper = distribute(
@@ -111,9 +101,7 @@ def main():
     grid, f_0, f_1, missing_mask, boundary_mask = create_grid_and_fields(args.cube_edge)
     f_0 = initialize_eq(f_0, grid, xlb.velocity_set.D3Q19(), backend)
 
-    elapsed_time = run(
-        f_0, f_1, backend, grid, boundary_mask, missing_mask, args.num_steps
-    )
+    elapsed_time = run(f_0, f_1, backend, grid, boundary_mask, missing_mask, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
 
     print(f"Simulation completed in {elapsed_time:.2f} seconds")

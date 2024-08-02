@@ -1,11 +1,11 @@
 import pytest
 import numpy as np
-import warp as wp
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
 from xlb import DefaultConfig
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
+
 
 def init_xlb_env(velocity_set):
     xlb.init(
@@ -29,9 +29,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
     my_grid = grid_factory(grid_shape)
     velocity_set = DefaultConfig.velocity_set
 
-    missing_mask = my_grid.create_field(
-        cardinality=velocity_set.q, dtype=xlb.Precision.BOOL
-    )
+    missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
     boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
@@ -48,10 +46,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
         indices = np.where((X - nr // 2) ** 2 + (Y - nr // 2) ** 2 < sphere_radius**2)
     else:
         X, Y, Z = np.meshgrid(x, y, z)
-        indices = np.where(
-            (X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2
-            < sphere_radius**2
-        )
+        indices = np.where((X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2 < sphere_radius**2)
 
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
     equilibrium = xlb.operator.equilibrium.QuadraticEquilibrium()
@@ -63,9 +58,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
         indices=indices,
     )
 
-    boundary_mask, missing_mask = indices_boundary_masker(
-        [equilibrium_bc], boundary_mask, missing_mask, start_index=None
-    )
+    boundary_mask, missing_mask = indices_boundary_masker([equilibrium_bc], boundary_mask, missing_mask, start_index=None)
 
     f = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.FP32)
     f_pre = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.FP32)
@@ -84,13 +77,9 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
     weights = velocity_set.w
     for i, weight in enumerate(weights):
         if dim == 2:
-            assert np.allclose(
-                f[i, indices[0], indices[1]], weight
-            ), f"Direction {i} in f does not match the expected weight"
+            assert np.allclose(f[i, indices[0], indices[1]], weight), f"Direction {i} in f does not match the expected weight"
         else:
-            assert np.allclose(
-                f[i, indices[0], indices[1], indices[2]], weight
-            ), f"Direction {i} in f does not match the expected weight"
+            assert np.allclose(f[i, indices[0], indices[1], indices[2]], weight), f"Direction {i} in f does not match the expected weight"
 
     # Make sure that everywhere else the values are the same as f_post. Note that indices are just int values
     mask_outside = np.ones(grid_shape, dtype=bool)

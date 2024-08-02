@@ -2,18 +2,14 @@
 Base class for boundary conditions in a LBM simulation.
 """
 
-import jax.numpy as jnp
-from jax import jit, device_count
-from functools import partial
-import numpy as np
 from enum import Enum, auto
-from typing import List
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb import DefaultConfig
+
 
 # Enum for implementation step
 class ImplementationStep(Enum):
@@ -32,7 +28,7 @@ class BoundaryCondition(Operator):
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
-        indices = None,
+        indices=None,
     ):
         velocity_set = velocity_set or DefaultConfig.velocity_set
         precision_policy = precision_policy or DefaultConfig.default_precision_policy

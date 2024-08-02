@@ -3,7 +3,6 @@
 import math
 import cupy as cp
 import numpy as np
-import time
 
 
 class DynamicArray:
@@ -46,17 +45,12 @@ class DynamicPinnedArray(DynamicArray):
         self.nbytes = nbytes
 
         # Check if the number of bytes requested is less than 2xbytes_resize or if the number of bytes requested exceeds the allocated number of bytes
-        if (
-            nbytes < (self.allocated_bytes - 2 * self.bytes_resize)
-            or nbytes > self.allocated_bytes
-        ):
+        if nbytes < (self.allocated_bytes - 2 * self.bytes_resize) or nbytes > self.allocated_bytes:
             ## Free the memory
             # del self.mem
 
             # Set the new number of allocated bytes
-            self.allocated_bytes = (
-                math.ceil(nbytes / self.bytes_resize) * self.bytes_resize
-            )
+            self.allocated_bytes = math.ceil(nbytes / self.bytes_resize) * self.bytes_resize
 
             # Allocate the memory
             self.mem = cp.cuda.alloc_pinned_memory(self.allocated_bytes)

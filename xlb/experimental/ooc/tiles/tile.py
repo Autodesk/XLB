@@ -1,7 +1,5 @@
-import numpy as np
 import cupy as cp
 import itertools
-from dataclasses import dataclass
 
 
 class Tile:
@@ -25,9 +23,7 @@ class Tile:
         self.padding = padding
         self.dtype_itemsize = cp.dtype(self.dtype).itemsize
         self.nbytes = 0  # Updated when array is allocated
-        self.codec = (
-            codec  # Codec to use for compression TODO: Find better abstraction for this
-        )
+        self.codec = codec  # Codec to use for compression TODO: Find better abstraction for this
 
         # Make center array
         self._array = self.allocate_array(self.shape)
@@ -59,9 +55,7 @@ class Tile:
             self._buf_padding[ind] = self.allocate_array(shape)
 
         # Get slicing for array copies
-        self._slice_center = tuple(
-            [slice(pad, pad + shape) for (pad, shape) in zip(self.padding, self.shape)]
-        )
+        self._slice_center = tuple([slice(pad, pad + shape) for (pad, shape) in zip(self.padding, self.shape)])
         self._slice_padding_to_array = {}
         self._slice_array_to_padding = {}
         self._padding_shape = {}

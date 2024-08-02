@@ -19,9 +19,7 @@ import jax.numpy as jnp
 
 
 class WindTunnel3D:
-    def __init__(
-        self, omega, wind_speed, grid_shape, velocity_set, backend, precision_policy
-    ):
+    def __init__(self, omega, wind_speed, grid_shape, velocity_set, backend, precision_policy):
         # initialize backend
         xlb.init(
             velocity_set=velocity_set,
@@ -33,9 +31,7 @@ class WindTunnel3D:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = (
-            create_nse_fields(grid_shape)
-        )
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -72,10 +68,8 @@ class WindTunnel3D:
         car_length_lbm_unit = grid_size_x / 4
         car_voxelized, pitch = self.voxelize_stl(stl_filename, car_length_lbm_unit)
 
-        car_area = np.prod(car_voxelized.shape[1:])
-        tx, ty, tz = (
-            np.array([grid_size_x, grid_size_y, grid_size_z]) - car_voxelized.shape
-        )
+        # car_area = np.prod(car_voxelized.shape[1:])
+        tx, ty, _ = np.array([grid_size_x, grid_size_y, grid_size_z]) - car_voxelized.shape
         shift = [tx // 4, ty // 2, 0]
         car = np.argwhere(car_voxelized) + shift
         car = np.array(car).T
@@ -97,31 +91,23 @@ class WindTunnel3D:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(
-            self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0)
-        )
+        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0))
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
 
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(
-            omega, boundary_conditions=self.boundary_conditions, collision_type="KBC"
-        )
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions, collision_type="KBC")
 
     def run(self, num_steps, print_interval, post_process_interval=100):
         start_time = time.time()
         for i in range(num_steps):
-            self.f_1 = self.stepper(
-                self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i
-            )
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if (i + 1) % print_interval == 0:
                 elapsed_time = time.time() - start_time
-                print(
-                    f"Iteration: {i+1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s"
-                )
+                print(f"Iteration: {i + 1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
 
                 if i % post_process_interval == 0 or i == num_steps - 1:
                     self.post_process(i)
@@ -178,7 +164,5 @@ if __name__ == "__main__":
     print(f"Max iterations: {num_steps}")
     print("\n" + "=" * 50 + "\n")
 
-    simulation = WindTunnel3D(
-        omega, wind_speed, grid_shape, velocity_set, backend, precision_policy
-    )
+    simulation = WindTunnel3D(omega, wind_speed, grid_shape, velocity_set, backend, precision_policy)
     simulation.run(num_steps, print_interval, post_process_interval=1000)
