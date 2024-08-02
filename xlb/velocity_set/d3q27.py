@@ -13,6 +13,7 @@ class D3Q27(VelocitySet):
     D3Q27 stands for three-dimensional twenty-seven-velocity model. It is a common model used in the
     Lattice Boltzmann Method for simulating fluid flows in three dimensions.
     """
+
     def __init__(self):
         # Construct the velocity vectors and weights
         c = np.array(list(itertools.product([0, -1, 1], repeat=3))).T

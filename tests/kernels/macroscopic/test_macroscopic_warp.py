@@ -6,7 +6,6 @@ from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.grid import grid_factory
 from xlb import DefaultConfig
-import warp as wp
 
 
 def init_xlb_env(velocity_set):
@@ -25,8 +24,8 @@ def init_xlb_env(velocity_set):
         (2, xlb.velocity_set.D2Q9, (100, 100), 1.1, 2.0),
         (2, xlb.velocity_set.D2Q9, (50, 50), 1.1, 2.0),
         (3, xlb.velocity_set.D3Q19, (50, 50, 50), 1.0, 0.0),
-        (3, xlb.velocity_set.D3Q19, (50, 50, 50), 1.1, 1.0), #TODO: Uncommenting will cause a Warp error. Needs investigation.
-        (3, xlb.velocity_set.D3Q19, (50, 50, 50), 1.1, 2.0), #TODO: Uncommenting will cause a Warp error. Needs investigation.
+        (3, xlb.velocity_set.D3Q19, (50, 50, 50), 1.1, 1.0),  # TODO: Uncommenting will cause a Warp error. Needs investigation.
+        (3, xlb.velocity_set.D3Q19, (50, 50, 50), 1.1, 2.0),  # TODO: Uncommenting will cause a Warp error. Needs investigation.
     ],
 )
 def test_macroscopic_warp(dim, velocity_set, grid_shape, rho, velocity):
@@ -45,12 +44,8 @@ def test_macroscopic_warp(dim, velocity_set, grid_shape, rho, velocity):
 
     rho_calc, u_calc = compute_macro(f_eq, rho_calc, u_calc)
 
-    assert np.allclose(
-        rho_calc.numpy(), rho
-    ), f"Computed density should be close to initialized density {rho}"
-    assert np.allclose(
-        u_calc.numpy(), velocity
-    ), f"Computed velocity should be close to initialized velocity {velocity}"
+    assert np.allclose(rho_calc.numpy(), rho), f"Computed density should be close to initialized density {rho}"
+    assert np.allclose(u_calc.numpy(), velocity), f"Computed velocity should be close to initialized velocity {velocity}"
 
 
 if __name__ == "__main__":

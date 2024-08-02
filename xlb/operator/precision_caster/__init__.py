@@ -1,1 +1,1 @@
-from xlb.operator.precision_caster.precision_caster import PrecisionCaster
+from xlb.operator.precision_caster.precision_caster import PrecisionCaster as PrecisionCaster

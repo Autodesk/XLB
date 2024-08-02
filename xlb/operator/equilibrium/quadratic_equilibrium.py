@@ -4,11 +4,10 @@ from jax import jit
 import warp as wp
 from typing import Any
 
-from xlb.velocity_set import VelocitySet
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium.equilibrium import Equilibrium
 from xlb.operator import Operator
-from xlb import DefaultConfig
+
 
 class QuadraticEquilibrium(Equilibrium):
     """

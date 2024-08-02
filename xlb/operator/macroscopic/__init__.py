@@ -1,1 +1,1 @@
-from xlb.operator.macroscopic.macroscopic import Macroscopic
+from xlb.operator.macroscopic.macroscopic import Macroscopic as Macroscopic

@@ -1,19 +1,16 @@
-from typing import Any, Literal, Optional, Tuple
+from typing import Literal
 from jax.sharding import PartitionSpec as P
 from jax.sharding import NamedSharding, Mesh
 from jax.experimental import mesh_utils
-from jax.experimental.shard_map import shard_map
 from xlb.compute_backend import ComputeBackend
 
 import jax.numpy as jnp
-from jax import lax
 import jax
 
 from xlb import DefaultConfig
 
 
 from .grid import Grid
-from xlb.operator import Operator
 from xlb.precision_policy import Precision
 
 
@@ -25,9 +22,7 @@ class JaxGrid(Grid):
         self.nDevices = jax.device_count()
         self.backend = jax.default_backend()
         self.device_mesh = (
-            mesh_utils.create_device_mesh((1, self.nDevices, 1))
-            if self.dim == 2
-            else mesh_utils.create_device_mesh((1, self.nDevices, 1, 1))
+            mesh_utils.create_device_mesh((1, self.nDevices, 1)) if self.dim == 2 else mesh_utils.create_device_mesh((1, self.nDevices, 1, 1))
         )
         self.global_mesh = (
             Mesh(self.device_mesh, axis_names=("cardinality", "x", "y"))
@@ -53,9 +48,7 @@ class JaxGrid(Grid):
 
         dtype = dtype.jax_dtype if dtype else DefaultConfig.default_precision_policy.store_precision.jax_dtype
 
-        for d, index in self.sharding.addressable_devices_indices_map(
-            full_shape
-        ).items():
+        for d, index in self.sharding.addressable_devices_indices_map(full_shape).items():
             jax.default_device = d
             if fill_value:
                 x = jnp.full(device_shape, fill_value, dtype=dtype)
@@ -63,6 +56,4 @@ class JaxGrid(Grid):
                 x = jnp.zeros(shape=device_shape, dtype=dtype)
             arrays += [jax.device_put(x, d)]
         jax.default_device = jax.devices()[0]
-        return jax.make_array_from_single_device_arrays(
-            full_shape, self.sharding, arrays
-        )
+        return jax.make_array_from_single_device_arrays(full_shape, self.sharding, arrays)

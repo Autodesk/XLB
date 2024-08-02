@@ -1,16 +1,13 @@
 from jax.sharding import PartitionSpec as P
 from xlb.operator import Operator
-from xlb import DefaultConfig
-from xlb import ComputeBackend
+from xlb.operator.stepper import IncompressibleNavierStokesStepper
+from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from jax import lax
 from jax.experimental.shard_map import shard_map
 from jax import jit
-import jax.numpy as jnp
-import warp as wp
-from typing import Tuple
 
 
-def distribute(
+def distribute_operator(
     operator: Operator,
     grid,
     velocity_set,
@@ -60,13 +57,8 @@ def distribute(
             else:
                 sharding_flags.append(False)
 
-        in_specs = tuple(
-            P(*((None, "x") + (grid.dim - 1) * (None,))) if flag else P()
-            for flag in sharding_flags
-        )
-        out_specs = tuple(
-            P(*((None, "x") + (grid.dim - 1) * (None,))) for _ in range(num_results)
-        )
+        in_specs = tuple(P(*((None, "x") + (grid.dim - 1) * (None,))) if flag else P() for flag in sharding_flags)
+        out_specs = tuple(P(*((None, "x") + (grid.dim - 1) * (None,))) for _ in range(num_results))
         return tuple(sharding_flags), in_specs, out_specs
 
     def _wrapped_operator(*args):
@@ -85,3 +77,29 @@ def distribute(
         return distributed_operator(*args)
 
     return jit(_wrapped_operator)
+
+
+def distribute(operator, grid, velocity_set, num_results=1, ops="permute"):
+    """
+    Distribute an operator or a stepper.
+    If the operator is a stepper, check for post-streaming boundary conditions
+    before deciding how to distribute.
+    """
+    if isinstance(operator, IncompressibleNavierStokesStepper):
+        # Check for post-streaming boundary conditions
+        has_post_streaming_bc = any(bc.implementation_step == ImplementationStep.STREAMING for bc in operator.boundary_conditions)
+
+        if has_post_streaming_bc:
+            # If there are post-streaming BCs, only distribute the stream operator
+            distributed_stream = distribute_operator(operator.stream, grid, velocity_set)
+            operator.stream = distributed_stream
+        else:
+            # If no post-streaming BCs, distribute the whole operator
+            distributed_op = distribute_operator(operator, grid, velocity_set, num_results=num_results, ops=ops)
+            return distributed_op
+
+        return operator
+    else:
+        # For other operators, apply the original distribution logic
+        distributed_op = distribute_operator(operator, grid, velocity_set, num_results=num_results, ops=ops)
+        return distributed_op
