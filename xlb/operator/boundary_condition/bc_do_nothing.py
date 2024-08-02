@@ -61,24 +61,24 @@ class DoNothingBC(BoundaryCondition):
 
         @wp.func
         def functional2d(
-            f: wp.array3d(dtype=Any),
+            f_pre: wp.array3d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
             _f = _f_vec()
             for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1]]
+                _f[l] = f_pre[l, index[0], index[1]]
             return _f
 
         @wp.func
         def functional3d(
-            f: wp.array4d(dtype=Any),
+            f_pre: wp.array4d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
             _f = _f_vec()
             for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1], index[2]]
+                _f[l] = f_pre[l, index[0], index[1], index[2]]
             return _f
 
         @wp.kernel
@@ -104,7 +104,7 @@ class DoNothingBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(DoNothingBC.id):
-                _f = functional3d(f_pre, _missing_mask, index)
+                _f = functional2d(f_pre, _missing_mask, index)
             else:
                 _f = _f_vec()
                 for l in range(self.velocity_set.q):

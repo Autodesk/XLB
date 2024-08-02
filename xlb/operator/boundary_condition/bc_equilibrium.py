@@ -85,7 +85,7 @@ class EquilibriumBC(BoundaryCondition):
         # Construct the funcional to get streamed indices
         @wp.func
         def functional2d(
-            f: wp.array3d(dtype=Any),
+            f_pre: wp.array3d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
@@ -116,7 +116,7 @@ class EquilibriumBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):
-                _f = functional2d(f_post, _missing_mask, index)
+                _f = functional2d(f_pre, _missing_mask, index)
             else:
                 _f = _f_vec()
                 for l in range(self.velocity_set.q):
@@ -128,7 +128,7 @@ class EquilibriumBC(BoundaryCondition):
 
         @wp.func
         def functional3d(
-            f: wp.array4d(dtype=Any),
+            f_pre: wp.array4d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
@@ -159,7 +159,7 @@ class EquilibriumBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):
-                _f = functional3d(f_post, _missing_mask, index)
+                _f = functional3d(f_pre, _missing_mask, index)
             else:
                 _f = _f_vec()
                 for l in range(self.velocity_set.q):

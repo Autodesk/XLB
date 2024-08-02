@@ -70,7 +70,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
         @wp.func
         def functional2d(
-            f: wp.array3d(dtype=Any),
+            f_pre: wp.array3d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
@@ -93,14 +93,14 @@ class HalfwayBounceBackBC(BoundaryCondition):
                         pull_index[d] = index[d] - _c[d, l]
 
                 # Get the distribution function
-                _f[l] = f[use_l, pull_index[0], pull_index[1]]
+                _f[l] = f_pre[use_l, pull_index[0], pull_index[1]]
 
             return _f
 
         # Construct the funcional to get streamed indices
         @wp.func
         def functional3d(
-            f: wp.array4d(dtype=Any),
+            f_pre: wp.array4d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
@@ -123,7 +123,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
                         pull_index[d] = index[d] - _c[d, l]
 
                 # Get the distribution function
-                _f[l] = f[use_l, pull_index[0], pull_index[1], pull_index[2]]
+                _f[l] = f_pre[use_l, pull_index[0], pull_index[1], pull_index[2]]
 
             return _f
 

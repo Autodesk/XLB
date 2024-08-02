@@ -63,8 +63,8 @@ class FullwayBounceBackBC(BoundaryCondition):
         @wp.func
         def functional(
             f_pre: Any,
-            f_post: Any,
             missing_mask: Any,
+            index: Any,
         ):
             fliped_f = _f_vec()
             for l in range(_q):
@@ -100,7 +100,7 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f = functional(_f_pre, _f_post, _mask)
+                _f = functional(_f_pre, _mask, index)
             else:
                 _f = _f_post
 
@@ -139,7 +139,7 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f = functional(_f_pre, _f_post, _mask)
+                _f = functional(_f_pre, _mask, index)
             else:
                 _f = _f_post
 
