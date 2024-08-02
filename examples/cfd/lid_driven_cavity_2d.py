@@ -13,14 +13,13 @@ import jax.numpy as jnp
 
 class LidDrivenCavity2D:
     def __init__(self, omega, grid_shape, velocity_set, backend, precision_policy):
-
         # initialize backend
         xlb.init(
             velocity_set=velocity_set,
             default_backend=backend,
             default_precision_policy=precision_policy,
         )
-                
+
         self.grid_shape = grid_shape
         self.velocity_set = velocity_set
         self.backend = backend
@@ -28,7 +27,7 @@ class LidDrivenCavity2D:
         self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
-    
+
         # Setup the simulation BC, its initial conditions, and the stepper
         self._setup(omega)
 
@@ -39,11 +38,13 @@ class LidDrivenCavity2D:
         self.setup_stepper(omega)
 
     def define_boundary_indices(self):
-        lid = self.grid.boundingBoxIndices['top']
-        walls = [self.grid.boundingBoxIndices['bottom'][i] + self.grid.boundingBoxIndices['left'][i] + 
-                 self.grid.boundingBoxIndices['right'][i] for i in range(self.velocity_set.d)]
+        lid = self.grid.boundingBoxIndices["top"]
+        walls = [
+            self.grid.boundingBoxIndices["bottom"][i] + self.grid.boundingBoxIndices["left"][i] + self.grid.boundingBoxIndices["right"][i]
+            for i in range(self.velocity_set.d)
+        ]
         return lid, walls
-    
+
     def setup_boundary_conditions(self):
         lid, walls = self.define_boundary_indices()
         bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0), indices=lid)
@@ -56,17 +57,13 @@ class LidDrivenCavity2D:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(
-            self.boundary_conditions, self.boundary_mask, self.missing_mask
-        )
+        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask)
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
-    
+
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(
-            omega, boundary_conditions=self.boundary_conditions
-        )
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
 
     def run(self, num_steps):
         for i in range(num_steps):

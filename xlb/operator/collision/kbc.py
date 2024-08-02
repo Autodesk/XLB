@@ -70,15 +70,13 @@ class KBC(Collision):
             shear = self.decompose_shear_d3q27_jax(fneq)
             delta_s = shear * rho
         else:
-            raise NotImplementedError(
-                "Velocity set not supported: {}".format(type(self.velocity_set))
-            )
+            raise NotImplementedError("Velocity set not supported: {}".format(type(self.velocity_set)))
 
         # Perform collision
         delta_h = fneq - delta_s
-        gamma = self.inv_beta - (2.0 - self.inv_beta) * self.entropic_scalar_product(
-            delta_s, delta_h, feq
-        ) / (self.epsilon + self.entropic_scalar_product(delta_h, delta_h, feq))
+        gamma = self.inv_beta - (2.0 - self.inv_beta) * self.entropic_scalar_product(delta_s, delta_h, feq) / (
+            self.epsilon + self.entropic_scalar_product(delta_h, delta_h, feq)
+        )
 
         fout = f - self.beta * (2.0 * delta_s + gamma[None, ...] * delta_h)
 
@@ -206,11 +204,7 @@ class KBC(Collision):
     def _construct_warp(self):
         # Raise error if velocity set is not supported
         if not isinstance(self.velocity_set, D3Q27):
-            raise NotImplementedError(
-                "Velocity set not supported for warp backend: {}".format(
-                    type(self.velocity_set)
-                )
-            )
+            raise NotImplementedError("Velocity set not supported for warp backend: {}".format(type(self.velocity_set)))
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _w = self.velocity_set.wp_w
@@ -323,9 +317,9 @@ class KBC(Collision):
 
             # Perform collision
             delta_h = fneq - delta_s
-            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(
-                delta_s, delta_h, feq
-            ) / (_epsilon + entropic_scalar_product(delta_h, delta_h, feq))
+            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
+                _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
+            )
             fout = f - _beta * (2.0 * delta_s + gamma * delta_h)
 
             return fout
@@ -345,9 +339,9 @@ class KBC(Collision):
 
             # Perform collision
             delta_h = fneq - delta_s
-            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(
-                delta_s, delta_h, feq
-            ) / (_epsilon + entropic_scalar_product(delta_h, delta_h, feq))
+            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
+                _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
+            )
             fout = f - _beta * (2.0 * delta_s + gamma * delta_h)
 
             return fout

@@ -15,9 +15,7 @@ class Fp64Fp64:
         if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp64Fp64()
         else:
-            raise ValueError(
-                f"Unsupported compute backend: {DefaultConfig.compute_backend}"
-            )
+            raise ValueError(f"Unsupported compute backend: {DefaultConfig.compute_backend}")
 
 
 class Fp64Fp32:
@@ -25,9 +23,7 @@ class Fp64Fp32:
         if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp64Fp32()
         else:
-            raise ValueError(
-                f"Unsupported compute backend: {DefaultConfig.compute_backend}"
-            )
+            raise ValueError(f"Unsupported compute backend: {DefaultConfig.compute_backend}")
 
 
 class Fp32Fp32:
@@ -35,9 +31,7 @@ class Fp32Fp32:
         if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp32Fp32()
         else:
-            raise ValueError(
-                f"Unsupported compute backend: {DefaultConfig.compute_backend}"
-            )
+            raise ValueError(f"Unsupported compute backend: {DefaultConfig.compute_backend}")
 
 
 class Fp64Fp16:
@@ -45,9 +39,7 @@ class Fp64Fp16:
         if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp64Fp16()
         else:
-            raise ValueError(
-                f"Unsupported compute backend: {DefaultConfig.compute_backend}"
-            )
+            raise ValueError(f"Unsupported compute backend: {DefaultConfig.compute_backend}")
 
 
 class Fp32Fp16:
@@ -55,6 +47,4 @@ class Fp32Fp16:
         if DefaultConfig.compute_backend == ComputeBackend.JAX:
             return JaxFp32Fp16()
         else:
-            raise ValueError(
-                f"Unsupported compute backend: {DefaultConfig.compute_backend}"
-            )
+            raise ValueError(f"Unsupported compute backend: {DefaultConfig.compute_backend}")

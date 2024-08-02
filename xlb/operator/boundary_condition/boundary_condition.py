@@ -15,6 +15,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb import DefaultConfig
 
+
 # Enum for implementation step
 class ImplementationStep(Enum):
     COLLISION = auto()
@@ -32,7 +33,7 @@ class BoundaryCondition(Operator):
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
-        indices = None,
+        indices=None,
     ):
         velocity_set = velocity_set or DefaultConfig.velocity_set
         precision_policy = precision_policy or DefaultConfig.default_precision_policy

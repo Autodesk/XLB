@@ -38,9 +38,7 @@ def downsample_field(field, factor, method="bicubic"):
     else:
         new_shape = tuple(dim // factor for dim in field.shape[:-1])
         downsampled_components = []
-        for i in range(
-            field.shape[-1]
-        ):  # Iterate over the last dimension (vector components)
+        for i in range(field.shape[-1]):  # Iterate over the last dimension (vector components)
             resized = resize(field[..., i], new_shape, method=method)
             downsampled_components.append(resized)
 
@@ -118,9 +116,7 @@ def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
         if key == list(fields.keys())[0]:
             dimensions = value.shape
         else:
-            assert (
-                value.shape == dimensions
-            ), "All fields must have the same dimensions!"
+            assert value.shape == dimensions, "All fields must have the same dimensions!"
 
     output_filename = os.path.join(output_dir, prefix + "_" + f"{timestep:07d}.vtk")
 
@@ -231,15 +227,11 @@ def rotate_geometry(indices, origin, axis, angle):
     This function rotates the mesh by applying a rotation matrix to the voxel indices. The rotation matrix is calculated
     using the axis-angle representation of rotations. The origin of the rotation axis is assumed to be at (0, 0, 0).
     """
-    indices_rotated = (jnp.array(indices).T - origin) @ axangle2mat(
-        axis, angle
-    ) + origin
+    indices_rotated = (jnp.array(indices).T - origin) @ axangle2mat(axis, angle) + origin
     return tuple(jnp.rint(indices_rotated).astype("int32").T)
 
 
-def voxelize_stl(
-    stl_filename, length_lbm_unit=None, tranformation_matrix=None, pitch=None
-):
+def voxelize_stl(stl_filename, length_lbm_unit=None, tranformation_matrix=None, pitch=None):
     """
     Converts an STL file to a voxelized mesh.
 
@@ -314,10 +306,8 @@ def axangle2mat(axis, angle, is_normalized=False):
     xyC = x * yC
     yzC = y * zC
     zxC = z * xC
-    return jnp.array(
-        [
-            [x * xC + c, xyC - zs, zxC + ys],
-            [xyC + zs, y * yC + c, yzC - xs],
-            [zxC - ys, yzC + xs, z * zC + c],
-        ]
-    )
+    return jnp.array([
+        [x * xC + c, xyC - zs, zxC + ys],
+        [xyC + zs, y * yC + c, yzC - xs],
+        [zxC - ys, yzC + xs, z * zC + c],
+    ])

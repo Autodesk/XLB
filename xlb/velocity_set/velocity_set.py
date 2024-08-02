@@ -48,15 +48,9 @@ class VelocitySet(object):
         # Make warp constants for these vectors
         # TODO: Following warp updates these may not be necessary
         self.wp_c = wp.constant(wp.mat((self.d, self.q), dtype=wp.int32)(self.c))
-        self.wp_w = wp.constant(
-            wp.vec(self.q, dtype=wp.float32)(self.w)
-        )  # TODO: Make type optional somehow
-        self.wp_opp_indices = wp.constant(
-            wp.vec(self.q, dtype=wp.int32)(self.opp_indices)
-        )
-        self.wp_cc = wp.constant(
-            wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.cc)
-        )
+        self.wp_w = wp.constant(wp.vec(self.q, dtype=wp.float32)(self.w))  # TODO: Make type optional somehow
+        self.wp_opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self.opp_indices))
+        self.wp_cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.cc))
 
     def warp_lattice_vec(self, dtype):
         return wp.vec(len(self.c), dtype=dtype)
@@ -127,9 +121,7 @@ class VelocitySet(object):
             return np.nonzero((np.abs(c[:, 0]) + np.abs(c[:, 1]) == 1))[0]
 
         elif self.d == 3:
-            return np.nonzero(
-                (np.abs(c[:, 0]) + np.abs(c[:, 1]) + np.abs(c[:, 2]) == 1)
-            )[0]
+            return np.nonzero((np.abs(c[:, 0]) + np.abs(c[:, 1]) + np.abs(c[:, 2]) == 1))[0]
 
     def _construct_right_indices(self):
         """

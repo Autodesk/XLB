@@ -20,14 +20,13 @@ import jax.numpy as jnp
 
 class WindTunnel3D:
     def __init__(self, omega, wind_speed, grid_shape, velocity_set, backend, precision_policy):
-
         # initialize backend
         xlb.init(
             velocity_set=velocity_set,
             default_backend=backend,
             default_precision_policy=precision_policy,
         )
-                
+
         self.grid_shape = grid_shape
         self.velocity_set = velocity_set
         self.backend = backend
@@ -35,7 +34,7 @@ class WindTunnel3D:
         self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
-    
+
         # Setup the simulation BC, its initial conditions, and the stepper
         self._setup(omega, wind_speed)
 
@@ -54,11 +53,16 @@ class WindTunnel3D:
         return mesh_matrix, pitch
 
     def define_boundary_indices(self):
-        inlet = self.grid.boundingBoxIndices['left']
-        outlet = self.grid.boundingBoxIndices['right']
-        walls = [self.grid.boundingBoxIndices['bottom'][i] + self.grid.boundingBoxIndices['top'][i] + 
-                 self.grid.boundingBoxIndices['front'][i] + self.grid.boundingBoxIndices['back'][i] for i in range(self.velocity_set.d)]
-        
+        inlet = self.grid.boundingBoxIndices["left"]
+        outlet = self.grid.boundingBoxIndices["right"]
+        walls = [
+            self.grid.boundingBoxIndices["bottom"][i]
+            + self.grid.boundingBoxIndices["top"][i]
+            + self.grid.boundingBoxIndices["front"][i]
+            + self.grid.boundingBoxIndices["back"][i]
+            for i in range(self.velocity_set.d)
+        ]
+
         stl_filename = "examples/cfd/stl-files/DrivAer-Notchback.stl"
         grid_size_x = self.grid_shape[0]
         car_length_lbm_unit = grid_size_x / 4
@@ -72,13 +76,13 @@ class WindTunnel3D:
         car = [tuple(car[i]) for i in range(self.velocity_set.d)]
 
         return inlet, outlet, walls, car
-    
+
     def setup_boundary_conditions(self, wind_speed):
         inlet, outlet, walls, car = self.define_boundary_indices()
         bc_left = EquilibriumBC(rho=1.0, u=(wind_speed, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
         bc_do_nothing = DoNothingBC(indices=outlet)
-        bc_car= FullwayBounceBackBC(indices=car)
+        bc_car = FullwayBounceBackBC(indices=car)
         self.boundary_conditions = [bc_left, bc_walls, bc_do_nothing, bc_car]
 
     def setup_boundary_masks(self):
@@ -87,17 +91,13 @@ class WindTunnel3D:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(
-            self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0)
-        )
+        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0))
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
-    
+
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(
-            omega, boundary_conditions=self.boundary_conditions, collision_type="KBC"
-        )
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions, collision_type="KBC")
 
     def run(self, num_steps, print_interval):
         start_time = time.time()
@@ -107,7 +107,7 @@ class WindTunnel3D:
 
             if (i + 1) % print_interval == 0:
                 elapsed_time = time.time() - start_time
-                print(f"Iteration: {i+1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
+                print(f"Iteration: {i + 1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
 
     def post_process(self, i):
         # Write the results. We'll use JAX backend for the post-processing

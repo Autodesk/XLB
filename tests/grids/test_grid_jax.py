@@ -7,6 +7,7 @@ from jax.sharding import Mesh
 from jax.experimental import mesh_utils
 import jax.numpy as jnp
 
+
 def init_xlb_env():
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
@@ -51,6 +52,7 @@ def test_jax_3d_grid_initialization(grid_size):
         "z",
     ), "PartitionSpec is incorrect"
 
+
 def test_jax_grid_create_field_fill_value():
     init_xlb_env()
     grid_shape = (100, 100)
@@ -60,7 +62,6 @@ def test_jax_grid_create_field_fill_value():
     f = my_grid.create_field(cardinality=9, fill_value=fill_value)
     assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
     assert jnp.allclose(f, fill_value), "Field not properly initialized with fill_value"
-
 
 
 @pytest.fixture(autouse=True)

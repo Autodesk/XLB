@@ -10,12 +10,14 @@ from xlb.grid import grid_factory
 from xlb import DefaultConfig
 from xlb.precision_policy import Precision
 
+
 def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
         velocity_set=velocity_set(),
     )
+
 
 @pytest.mark.parametrize(
     "dim,velocity_set,grid_shape,omega",
@@ -40,7 +42,6 @@ def test_bgk_collision_warp(dim, velocity_set, grid_shape, omega):
     f_eq = my_grid.create_field(cardinality=DefaultConfig.velocity_set.q)
     f_eq = compute_macro(rho, u, f_eq)
 
-
     compute_collision = BGK(omega=omega)
     f_orig = my_grid.create_field(cardinality=DefaultConfig.velocity_set.q)
 
@@ -52,6 +53,7 @@ def test_bgk_collision_warp(dim, velocity_set, grid_shape, omega):
     f_orig = f_orig.numpy()
 
     assert np.allclose(f_out, f_orig - omega * (f_orig - f_eq), atol=1e-5)
+
 
 if __name__ == "__main__":
     pytest.main()

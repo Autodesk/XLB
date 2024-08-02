@@ -70,9 +70,7 @@ def test_stream_operator_warp(dim, velocity_set, grid_shape):
     f_streamed = my_grid_warp.create_field(cardinality=velocity_set.q)
     f_streamed = stream_op(f_initial_warp, f_streamed)
 
-    assert jnp.allclose(
-        f_streamed.numpy(), np.array(expected)
-    ), "Streaming did not occur as expected"
+    assert jnp.allclose(f_streamed.numpy(), np.array(expected)), "Streaming did not occur as expected"
 
 
 if __name__ == "__main__":

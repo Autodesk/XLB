@@ -15,16 +15,16 @@ import warp as wp
 import numpy as np
 import jax.numpy as jnp
 
+
 class FlowOverSphere:
     def __init__(self, omega, grid_shape, velocity_set, backend, precision_policy):
-
         # initialize backend
         xlb.init(
             velocity_set=velocity_set,
             default_backend=backend,
             default_precision_policy=precision_policy,
         )
-                
+
         self.grid_shape = grid_shape
         self.velocity_set = velocity_set
         self.backend = backend
@@ -35,34 +35,36 @@ class FlowOverSphere:
 
         # Setup the simulation BC, its initial conditions, and the stepper
         self._setup(omega)
-    
+
     def _setup(self, omega):
         self.setup_boundary_conditions()
         self.setup_boundary_masks()
         self.initialize_fields()
         self.setup_stepper(omega)
-    
+
     def define_boundary_indices(self):
-        inlet = self.grid.boundingBoxIndices['left']
-        outlet = self.grid.boundingBoxIndices['right']
-        walls = [self.grid.boundingBoxIndices['bottom'][i] + self.grid.boundingBoxIndices['top'][i] + 
-                 self.grid.boundingBoxIndices['front'][i] + self.grid.boundingBoxIndices['back'][i] for i in range(self.velocity_set.d)]
-        
+        inlet = self.grid.boundingBoxIndices["left"]
+        outlet = self.grid.boundingBoxIndices["right"]
+        walls = [
+            self.grid.boundingBoxIndices["bottom"][i]
+            + self.grid.boundingBoxIndices["top"][i]
+            + self.grid.boundingBoxIndices["front"][i]
+            + self.grid.boundingBoxIndices["back"][i]
+            for i in range(self.velocity_set.d)
+        ]
+
         sphere_radius = self.grid_shape[1] // 12
         x = np.arange(self.grid_shape[0])
         y = np.arange(self.grid_shape[1])
         z = np.arange(self.grid_shape[2])
-        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+        X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
         indices = np.where(
-            (X - self.grid_shape[0] // 6) ** 2
-            + (Y - self.grid_shape[1] // 2) ** 2
-            + (Z - self.grid_shape[2] // 2) ** 2
-            < sphere_radius**2
+            (X - self.grid_shape[0] // 6) ** 2 + (Y - self.grid_shape[1] // 2) ** 2 + (Z - self.grid_shape[2] // 2) ** 2 < sphere_radius**2
         )
         sphere = [tuple(indices[i]) for i in range(self.velocity_set.d)]
 
         return inlet, outlet, walls, sphere
-    
+
     def setup_boundary_conditions(self):
         inlet, outlet, walls, sphere = self.define_boundary_indices()
         bc_left = EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=inlet)
@@ -77,17 +79,13 @@ class FlowOverSphere:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(
-            self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0)
-        )
+        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0))
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
-    
+
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(
-            omega, boundary_conditions=self.boundary_conditions
-        )
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
 
     def run(self, num_steps):
         for i in range(num_steps):

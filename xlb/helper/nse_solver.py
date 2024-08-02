@@ -6,16 +6,10 @@ from xlb.precision_policy import Precision
 from typing import Tuple
 
 
-def create_nse_fields(
-    grid_shape: Tuple[int, int, int], velocity_set=None, compute_backend=None, precision_policy=None
-):
+def create_nse_fields(grid_shape: Tuple[int, int, int], velocity_set=None, compute_backend=None, precision_policy=None):
     velocity_set = velocity_set if velocity_set else DefaultConfig.velocity_set
-    compute_backend = (
-        compute_backend if compute_backend else DefaultConfig.default_backend
-    )
-    precision_policy = (
-        precision_policy if precision_policy else DefaultConfig.default_precision_policy
-    )
+    compute_backend = compute_backend if compute_backend else DefaultConfig.default_backend
+    precision_policy = precision_policy if precision_policy else DefaultConfig.default_precision_policy
     grid = grid_factory(grid_shape, compute_backend=compute_backend)
 
     # Create fields
@@ -25,4 +19,3 @@ def create_nse_fields(
     boundary_mask = grid.create_field(cardinality=1, dtype=Precision.UINT8)
 
     return grid, f_0, f_1, missing_mask, boundary_mask
-

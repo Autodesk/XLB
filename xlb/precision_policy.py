@@ -5,6 +5,7 @@ from enum import Enum, auto
 import jax.numpy as jnp
 import warp as wp
 
+
 class Precision(Enum):
     FP64 = auto()
     FP32 = auto()
@@ -41,6 +42,7 @@ class Precision(Enum):
             return jnp.bool_
         else:
             raise ValueError("Invalid precision")
+
 
 class PrecisionPolicy(Enum):
     FP64FP64 = auto()

@@ -56,9 +56,7 @@ class STLBoundaryMasker(Operator):
             index[2] = k - start_index[2]
 
             # position of the point
-            ijk = wp.vec3(
-                wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2])
-            )
+            ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
             ijk = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
             pos = wp.cw_mul(ijk, spacing) + origin
 
@@ -74,9 +72,7 @@ class STLBoundaryMasker(Operator):
             face_u = float(0.0)
             face_v = float(0.0)
             sign = float(0.0)
-            if wp.mesh_query_point_sign_winding_number(
-                mesh, pos, max_length, sign, face_index, face_u, face_v
-            ):
+            if wp.mesh_query_point_sign_winding_number(mesh, pos, max_length, sign, face_index, face_u, face_v):
                 # set point to be solid
                 if sign <= 0:  # TODO: fix this
                     # Stream indices
@@ -87,9 +83,7 @@ class STLBoundaryMasker(Operator):
                             push_index[d] = index[d] + _c[d, l]
 
                         # Set the boundary id and mask
-                        boundary_mask[
-                            0, push_index[0], push_index[1], push_index[2]
-                        ] = wp.uint8(id_number)
+                        boundary_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
                         mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel

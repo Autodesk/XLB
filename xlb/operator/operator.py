@@ -22,9 +22,7 @@ class Operator:
     def __init__(self, velocity_set=None, precision_policy=None, compute_backend=None):
         # Set the default values from the global config
         self.velocity_set = velocity_set or DefaultConfig.velocity_set
-        self.precision_policy = (
-            precision_policy or DefaultConfig.default_precision_policy
-        )
+        self.precision_policy = precision_policy or DefaultConfig.default_precision_policy
         self.compute_backend = compute_backend or DefaultConfig.default_backend
 
         # Check if the compute backend is supported
@@ -52,17 +50,13 @@ class Operator:
 
     def __call__(self, *args, callback=None, **kwargs):
         method_candidates = [
-            (key, method)
-            for key, method in self._backends.items()
-            if key[0] == self.__class__.__name__ and key[1] == self.compute_backend
+            (key, method) for key, method in self._backends.items() if key[0] == self.__class__.__name__ and key[1] == self.compute_backend
         ]
         bound_arguments = None
         for key, backend_method in method_candidates:
             try:
                 # This attempts to bind the provided args and kwargs to the backend method's signature
-                bound_arguments = inspect.signature(backend_method).bind(
-                    self, *args, **kwargs
-                )
+                bound_arguments = inspect.signature(backend_method).bind(self, *args, **kwargs)
                 bound_arguments.apply_defaults()  # This fills in any default values
                 result = backend_method(self, *args, **kwargs)
                 callback_arg = result if result is not None else (args, kwargs)
@@ -74,9 +68,7 @@ class Operator:
                 traceback_str = traceback.format_exc()
                 continue  # This skips to the next candidate if binding fails
 
-        raise Exception(
-            f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}\n {traceback_str}"
-        )
+        raise Exception(f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}\n {traceback_str}")
 
     @property
     def supported_compute_backend(self):

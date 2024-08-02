@@ -60,13 +60,8 @@ def distribute(
             else:
                 sharding_flags.append(False)
 
-        in_specs = tuple(
-            P(*((None, "x") + (grid.dim - 1) * (None,))) if flag else P()
-            for flag in sharding_flags
-        )
-        out_specs = tuple(
-            P(*((None, "x") + (grid.dim - 1) * (None,))) for _ in range(num_results)
-        )
+        in_specs = tuple(P(*((None, "x") + (grid.dim - 1) * (None,))) if flag else P() for flag in sharding_flags)
+        out_specs = tuple(P(*((None, "x") + (grid.dim - 1) * (None,))) for _ in range(num_results))
         return tuple(sharding_flags), in_specs, out_specs
 
     def _wrapped_operator(*args):

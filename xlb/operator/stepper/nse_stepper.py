@@ -32,9 +32,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Construct the operators
         self.stream = Stream(velocity_set, precision_policy, compute_backend)
-        self.equilibrium = QuadraticEquilibrium(
-            velocity_set, precision_policy, compute_backend
-        )
+        self.equilibrium = QuadraticEquilibrium(velocity_set, precision_policy, compute_backend)
         self.macroscopic = Macroscopic(velocity_set, precision_policy, compute_backend)
 
         operators = [self.macroscopic, self.equilibrium, self.collision, self.stream]
@@ -91,9 +89,7 @@ class IncompressibleNavierStokesStepper(Stepper):
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(
-            self.velocity_set.q, dtype=wp.uint8
-        )  # TODO fix vec bool
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         @wp.struct
         class BoundaryConditionIDStruct:
@@ -130,23 +126,17 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Apply streaming (pull method)
             f_post_stream = self.stream.warp_functional(f_0, index)
-            
-            # Apply post-streaming type boundary conditions 
+
+            # Apply post-streaming type boundary conditions
             if _boundary_id == bc_struct.id_EquilibriumBC:
                 # Equilibrium boundary condition
-                f_post_stream = self.equilibrium_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.equilibrium_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == bc_struct.id_DoNothingBC:
                 # Do nothing boundary condition
-                f_post_stream = self.do_nothing_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.do_nothing_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
                 # Half way boundary condition
-                f_post_stream = self.halfway_bounce_back_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.halfway_bounce_back_bc.warp_functional(f_0, _missing_mask, index)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -205,19 +195,13 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply post-streaming boundary conditions
             if _boundary_id == bc_struct.id_EquilibriumBC:
                 # Equilibrium boundary condition
-                f_post_stream = self.equilibrium_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.equilibrium_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == bc_struct.id_DoNothingBC:
                 # Do nothing boundary condition
-                f_post_stream = self.do_nothing_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.do_nothing_bc.warp_functional(f_0, _missing_mask, index)
             elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
                 # Half way boundary condition
-                f_post_stream = self.halfway_bounce_back_bc.warp_functional(
-                    f_0, _missing_mask, index
-                )
+                f_post_stream = self.halfway_bounce_back_bc.warp_functional(f_0, _missing_mask, index)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -248,27 +232,26 @@ class IncompressibleNavierStokesStepper(Stepper):
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f_0, f_1, boundary_mask, missing_mask, timestep):
-
         # Get the boundary condition ids
         from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
+
         bc_to_id = boundary_condition_registry.bc_to_id
-    
+
         bc_struct = self.warp_functional()
         bc_attribute_list = []
         for bc in self.boundary_conditions:
             # Setting the Struct attributes based on the BC class names
             attribute_str = bc.__class__.__name__
-            setattr(bc_struct,  'id_' + attribute_str,  bc_to_id[attribute_str]) 
-            bc_attribute_list.append('id_' + attribute_str)
+            setattr(bc_struct, "id_" + attribute_str, bc_to_id[attribute_str])
+            bc_attribute_list.append("id_" + attribute_str)
 
         # Unused attributes of the struct are set to inernal (id=0)
         ll = vars(bc_struct)
         for var in ll:
-            if var not in bc_attribute_list and not var.startswith('_'):
+            if var not in bc_attribute_list and not var.startswith("_"):
                 # set unassigned boundaries to the maximum integer in uint8
                 attribute_str = bc.__class__.__name__
-                setattr(bc_struct,  var,  255) 
-
+                setattr(bc_struct, var, 255)
 
         # Launch the warp kernel
         wp.launch(

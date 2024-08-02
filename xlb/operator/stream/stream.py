@@ -49,9 +49,7 @@ class Stream(Operator):
             elif self.velocity_set.d == 3:
                 return jnp.roll(f, (c[0], c[1], c[2]), axis=(0, 1, 2))
 
-        return vmap(_streaming_jax_i, in_axes=(0, 0), out_axes=0)(
-            f, jnp.array(self.velocity_set.c).T
-        )
+        return vmap(_streaming_jax_i, in_axes=(0, 0), out_axes=0)(f, jnp.array(self.velocity_set.c).T)
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update

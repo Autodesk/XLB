@@ -37,7 +37,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
-        indices = None,
+        indices=None,
     ):
         # Call the parent constructor
         super().__init__(
@@ -64,9 +64,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
         _c = self.velocity_set.wp_c
         _opp_indices = self.velocity_set.wp_opp_indices
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(
-            self.velocity_set.q, dtype=wp.uint8
-        )  # TODO fix vec bool
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         @wp.func
         def functional2d(

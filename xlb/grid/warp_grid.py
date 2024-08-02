@@ -23,11 +23,7 @@ class WarpGrid(Grid):
         dtype: Literal[Precision.FP32, Precision.FP64, Precision.FP16] = None,
         fill_value=None,
     ):
-        dtype = (
-            dtype.wp_dtype
-            if dtype
-            else DefaultConfig.default_precision_policy.store_precision.wp_dtype
-        )
+        dtype = dtype.wp_dtype if dtype else DefaultConfig.default_precision_policy.store_precision.wp_dtype
         shape = (cardinality,) + (self.shape)
 
         if fill_value is None:

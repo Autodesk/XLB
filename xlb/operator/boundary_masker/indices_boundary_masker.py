@@ -22,41 +22,32 @@ class IndicesBoundaryMasker(Operator):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
-
     @Operator.register_backend(ComputeBackend.JAX)
-    # TODO HS: figure out why uncommenting the line below fails unlike other operators! 
+    # TODO HS: figure out why uncommenting the line below fails unlike other operators!
     # @partial(jit, static_argnums=(0))
-    def jax_implementation(
-        self, bclist, boundary_mask, mask, start_index=None
-    ):
+    def jax_implementation(self, bclist, boundary_mask, mask, start_index=None):
         # define a helper function
         def compute_boundary_id_and_mask(boundary_mask, mask):
             if dim == 2:
-                boundary_mask = boundary_mask.at[
-                    0, local_indices[0], local_indices[1]
-                ].set(id_number)
+                boundary_mask = boundary_mask.at[0, local_indices[0], local_indices[1]].set(id_number)
                 mask = mask.at[:, local_indices[0], local_indices[1]].set(True)
 
             if dim == 3:
-                boundary_mask = boundary_mask.at[
-                    0, local_indices[0], local_indices[1], local_indices[2]
-                ].set(id_number)
-                mask = mask.at[
-                    :, local_indices[0], local_indices[1], local_indices[2]
-                ].set(True)
+                boundary_mask = boundary_mask.at[0, local_indices[0], local_indices[1], local_indices[2]].set(id_number)
+                mask = mask.at[:, local_indices[0], local_indices[1], local_indices[2]].set(True)
             return boundary_mask, mask
-    
+
         dim = mask.ndim - 1
         if start_index is None:
             start_index = (0,) * dim
 
         for bc in bclist:
-            assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC!'
+            assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
             id_number = bc.id
             local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
             boundary_mask, mask = compute_boundary_id_and_mask(boundary_mask, mask)
             # We are done with bc.indices. Remove them from BC objects
-            bc.__dict__.pop('indices', None)
+            bc.__dict__.pop("indices", None)
 
         mask = self.stream(mask)
         return boundary_mask, mask
@@ -84,12 +75,7 @@ class IndicesBoundaryMasker(Operator):
             index[1] = indices[1, ii] - start_index[1]
 
             # Check if in bounds
-            if (
-                index[0] >= 0
-                and index[0] < mask.shape[1]
-                and index[1] >= 0
-                and index[1] < mask.shape[2]
-            ):
+            if index[0] >= 0 and index[0] < mask.shape[1] and index[1] >= 0 and index[1] < mask.shape[2]:
                 # Stream indices
                 for l in range(_q):
                     # Get the index of the streaming direction
@@ -146,10 +132,7 @@ class IndicesBoundaryMasker(Operator):
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(
-        self, bclist, boundary_mask, missing_mask, start_index=None
-    ):
-
+    def warp_implementation(self, bclist, boundary_mask, missing_mask, start_index=None):
         dim = self.velocity_set.d
         index_list = [[] for _ in range(dim)]
         id_list = []
@@ -159,10 +142,10 @@ class IndicesBoundaryMasker(Operator):
                 index_list[d] += bc.indices[d]
             id_list += [bc.id] * len(bc.indices[0])
             # We are done with bc.indices. Remove them from BC objects
-            bc.__dict__.pop('indices', None)
-      
-        indices = wp.array2d(index_list, dtype = wp.int32)
-        id_number = wp.array1d(id_list, dtype = wp.uint8)
+            bc.__dict__.pop("indices", None)
+
+        indices = wp.array2d(index_list, dtype=wp.int32)
+        id_number = wp.array1d(id_list, dtype=wp.uint8)
 
         if start_index is None:
             start_index = (0,) * dim

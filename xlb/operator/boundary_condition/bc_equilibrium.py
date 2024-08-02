@@ -35,11 +35,11 @@ class EquilibriumBC(BoundaryCondition):
         self,
         rho: float,
         u: Tuple[float, float, float],
-        equilibrium_operator : Operator = None,
+        equilibrium_operator: Operator = None,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
-        indices = None,
+        indices=None,
     ):
         # Store the equilibrium information
         self.rho = rho
@@ -73,14 +73,8 @@ class EquilibriumBC(BoundaryCondition):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = wp.float32(self.rho)
-        _u = (
-            _u_vec(self.u[0], self.u[1], self.u[2])
-            if self.velocity_set.d == 3
-            else _u_vec(self.u[0], self.u[1])
-        )
-        _missing_mask_vec = wp.vec(
-            self.velocity_set.q, dtype=wp.uint8
-        )  # TODO fix vec bool
+        _u = _u_vec(self.u[0], self.u[1], self.u[2]) if self.velocity_set.d == 3 else _u_vec(self.u[0], self.u[1])
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         # Construct the funcional to get streamed indices
         @wp.func

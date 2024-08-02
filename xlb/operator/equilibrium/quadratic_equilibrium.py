@@ -10,6 +10,7 @@ from xlb.operator.equilibrium.equilibrium import Equilibrium
 from xlb.operator import Operator
 from xlb import DefaultConfig
 
+
 class QuadraticEquilibrium(Equilibrium):
     """
     Quadratic equilibrium of Boltzmann equation using hermite polynomials.
