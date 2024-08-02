@@ -79,7 +79,7 @@ class EquilibriumBC(BoundaryCondition):
         # Construct the funcional to get streamed indices
         @wp.func
         def functional2d(
-            f: wp.array3d(dtype=Any),
+            f_pre: wp.array3d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
@@ -93,7 +93,6 @@ class EquilibriumBC(BoundaryCondition):
             f_post: wp.array3d(dtype=Any),
             boundary_mask: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
-            f: wp.array3d(dtype=Any),
         ):
             # Get the global index
             i, j = wp.tid()
@@ -111,7 +110,7 @@ class EquilibriumBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):
-                _f = functional2d(f_post, _missing_mask, index)
+                _f = functional2d(f_pre, _missing_mask, index)
             else:
                 _f = _f_vec()
                 for l in range(self.velocity_set.q):
@@ -119,11 +118,11 @@ class EquilibriumBC(BoundaryCondition):
 
             # Write the result
             for l in range(self.velocity_set.q):
-                f[l, index[0], index[1]] = _f[l]
+                f_post[l, index[0], index[1]] = _f[l]
 
         @wp.func
         def functional3d(
-            f: wp.array4d(dtype=Any),
+            f_pre: wp.array4d(dtype=Any),
             missing_mask: Any,
             index: Any,
         ):
@@ -137,7 +136,6 @@ class EquilibriumBC(BoundaryCondition):
             f_post: wp.array4d(dtype=Any),
             boundary_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
-            f: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -155,7 +153,7 @@ class EquilibriumBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):
-                _f = functional3d(f_post, _missing_mask, index)
+                _f = functional3d(f_pre, _missing_mask, index)
             else:
                 _f = _f_vec()
                 for l in range(self.velocity_set.q):
@@ -163,7 +161,7 @@ class EquilibriumBC(BoundaryCondition):
 
             # Write the result
             for l in range(self.velocity_set.q):
-                f[l, index[0], index[1], index[2]] = _f[l]
+                f_post[l, index[0], index[1], index[2]] = _f[l]
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
         functional = functional3d if self.velocity_set.d == 3 else functional2d
@@ -171,11 +169,11 @@ class EquilibriumBC(BoundaryCondition):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, boundary_mask, missing_mask, f):
+    def warp_implementation(self, f_pre, f_post, boundary_mask, missing_mask):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f_pre, f_post, boundary_mask, missing_mask, f],
+            inputs=[f_pre, f_post, boundary_mask, missing_mask],
             dim=f_pre.shape[1:],
         )
-        return f
+        return f_post

@@ -5,6 +5,7 @@ import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
 from xlb import DefaultConfig
+from xlb.operator.boundary_masker import IndicesBoundaryMasker
 
 
 def init_xlb_env(velocity_set):
@@ -35,7 +36,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
 
     boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
-    indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
+    indices_boundary_masker = IndicesBoundaryMasker()
 
     # Make indices for boundary conditions (sphere)
     sphere_radius = grid_shape[0] // 4
@@ -64,7 +65,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    f_pre = fullway_bc(f_pre, f_post, boundary_mask, missing_mask, f_pre)
+    f_pre = fullway_bc(f_pre, f_post, boundary_mask, missing_mask)
 
     f = f_pre.numpy()
     f_post = f_post.numpy()

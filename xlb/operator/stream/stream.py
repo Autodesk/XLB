@@ -69,6 +69,7 @@ class Stream(Operator):
                 for d in range(self.velocity_set.d):
                     pull_index[d] = index[d] - _c[d, l]
 
+                    # impose periodicity for out of bound values
                     if pull_index[d] < 0:
                         pull_index[d] = f.shape[d + 1] - 1
                     elif pull_index[d] >= f.shape[d + 1]:
@@ -109,6 +110,7 @@ class Stream(Operator):
                 for d in range(self.velocity_set.d):
                     pull_index[d] = index[d] - _c[d, l]
 
+                    # impose periodicity for out of bound values
                     if pull_index[d] < 0:
                         pull_index[d] = f.shape[d + 1] - 1
                     elif pull_index[d] >= f.shape[d + 1]:

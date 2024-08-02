@@ -109,8 +109,8 @@ class WindTunnel3D:
                 elapsed_time = time.time() - start_time
                 print(f"Iteration: {i + 1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
 
-                if i % post_process_interval == 0 or i == num_steps - 1:
-                    self.post_process(i)
+            if i % post_process_interval == 0 or i == num_steps - 1:
+                self.post_process(i)
 
     def post_process(self, i):
         # Write the results. We'll use JAX backend for the post-processing

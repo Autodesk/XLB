@@ -153,11 +153,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply post-collision type boundary conditions
             if _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Full way boundary condition
-                f_post_collision = self.fullway_bounce_back_bc.warp_functional(
-                    f_post_stream,
-                    f_post_collision,
-                    _missing_mask,
-                )
+                f_post_collision = self.fullway_bounce_back_bc.warp_functional(f_post_stream, _missing_mask, index)
 
             # Set the output
             for l in range(self.velocity_set.q):
@@ -213,11 +209,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply collision type boundary conditions
             if _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Full way boundary condition
-                f_post_collision = self.fullway_bounce_back_bc.warp_functional(
-                    f_post_stream,
-                    f_post_collision,
-                    _missing_mask,
-                )
+                f_post_collision = self.fullway_bounce_back_bc.warp_functional(f_post_stream, _missing_mask, index)
 
             # Set the output
             for l in range(self.velocity_set.q):
