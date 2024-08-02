@@ -1,13 +1,10 @@
-from dataclasses import field
 import warp as wp
 
 from .grid import Grid
-from xlb.operator import Operator
 from xlb.precision_policy import Precision
 from xlb.compute_backend import ComputeBackend
 from typing import Literal
 from xlb import DefaultConfig
-import numpy as np
 
 
 class WarpGrid(Grid):
@@ -23,11 +20,7 @@ class WarpGrid(Grid):
         dtype: Literal[Precision.FP32, Precision.FP64, Precision.FP16] = None,
         fill_value=None,
     ):
-        dtype = (
-            dtype.wp_dtype
-            if dtype
-            else DefaultConfig.default_precision_policy.store_precision.wp_dtype
-        )
+        dtype = dtype.wp_dtype if dtype else DefaultConfig.default_precision_policy.store_precision.wp_dtype
         shape = (cardinality,) + (self.shape)
 
         if fill_value is None:

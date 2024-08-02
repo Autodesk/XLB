@@ -1,9 +1,6 @@
 import numpy as np
 import cupy as cp
-import itertools
-from dataclasses import dataclass
 import warnings
-import time
 
 try:
     from kvikio._lib.arr import asarray
@@ -98,9 +95,7 @@ class CompressedTile(Tile):
         # Get total number of bytes in uncompressed tile
         total_bytes_uncompressed = np.prod(self.shape) * self.dtype_itemsize
         for pad_ind in self.pad_ind:
-            total_bytes_uncompressed += (
-                np.prod(self._padding_shape[pad_ind]) * self.dtype_itemsize
-            )
+            total_bytes_uncompressed += np.prod(self._padding_shape[pad_ind]) * self.dtype_itemsize
 
         # Return compression ratio
         return total_bytes_uncompressed, total_bytes
@@ -147,9 +142,7 @@ class CompressedCPUTile(CompressedTile):
         """Copy tile to a GPU tile."""
 
         # Check tile is Compressed
-        assert isinstance(
-            dst_gpu_tile, CompressedGPUTile
-        ), "Destination tile must be a CompressedGPUTile"
+        assert isinstance(dst_gpu_tile, CompressedGPUTile), "Destination tile must be a CompressedGPUTile"
 
         # Copy array
         dst_gpu_tile._array[: len(self._array.array)].set(self._array.array)
@@ -157,9 +150,7 @@ class CompressedCPUTile(CompressedTile):
 
         # Copy padding
         for pad_ind in self.pad_ind:
-            dst_gpu_tile._padding[pad_ind][: len(self._padding[pad_ind].array)].set(
-                self._padding[pad_ind].array
-            )
+            dst_gpu_tile._padding[pad_ind][: len(self._padding[pad_ind].array)].set(self._padding[pad_ind].array)
             dst_gpu_tile._padding_bytes[pad_ind] = self._padding[pad_ind].nbytes
 
 
@@ -186,9 +177,7 @@ class CompressedGPUTile(CompressedTile):
         """Returns a cupy array with the given shape."""
         nbytes = np.prod(shape) * self.dtype_itemsize
         codec = self.codec()
-        max_compressed_buffer = codec._manager.configure_compression(nbytes)[
-            "max_compressed_buffer_size"
-        ]
+        max_compressed_buffer = codec._manager.configure_compression(nbytes)["max_compressed_buffer_size"]
         array = cp.zeros((max_compressed_buffer,), dtype=np.uint8)
         return array
 
@@ -198,9 +187,7 @@ class CompressedGPUTile(CompressedTile):
         # Copy center array
         if self._array_codec is None:
             self._array_codec = self.codec()
-            self._array_codec._manager.configure_decompression_with_compressed_buffer(
-                asarray(self._array[: self._array_bytes])
-            )
+            self._array_codec._manager.configure_decompression_with_compressed_buffer(asarray(self._array[: self._array_bytes]))
             self._array_codec.decompression_config = self._array_codec._manager.configure_decompression_with_compressed_buffer(
                 asarray(self._array[: self._array_bytes])
             )
@@ -217,17 +204,13 @@ class CompressedGPUTile(CompressedTile):
                 self._padding_codec[pad_ind] = self.codec()
                 self._padding_codec[pad_ind].decompression_config = self._padding_codec[
                     pad_ind
-                ]._manager.configure_decompression_with_compressed_buffer(
-                    asarray(self._padding[pad_ind][: self._padding_bytes[pad_ind]])
-                )
+                ]._manager.configure_decompression_with_compressed_buffer(asarray(self._padding[pad_ind][: self._padding_bytes[pad_ind]]))
             self.dense_gpu_tile._padding[pad_ind] = _decode(
                 self._padding[pad_ind][: self._padding_bytes[pad_ind]],
                 self.dense_gpu_tile._padding[pad_ind],
                 self._padding_codec[pad_ind],
             )
-            array[self._slice_padding_to_array[pad_ind]] = self.dense_gpu_tile._padding[
-                pad_ind
-            ]
+            array[self._slice_padding_to_array[pad_ind]] = self.dense_gpu_tile._padding[pad_ind]
 
     def from_array(self, array):
         """Copy a full array to tile."""
@@ -236,17 +219,13 @@ class CompressedGPUTile(CompressedTile):
         if self._array_codec is None:
             self._array_codec = self.codec()
             self._array_codec.configure_compression(self._array.nbytes)
-        self._array_bytes = _encode(
-            array[self._slice_center], self._array, self._array_codec
-        )
+        self._array_bytes = _encode(array[self._slice_center], self._array, self._array_codec)
 
         # Copy padding
         for pad_ind in self.pad_ind:
             if pad_ind not in self._padding_codec:
                 self._padding_codec[pad_ind] = self.codec()
-                self._padding_codec[pad_ind].configure_compression(
-                    self._padding[pad_ind].nbytes
-                )
+                self._padding_codec[pad_ind].configure_compression(self._padding[pad_ind].nbytes)
             self._padding_bytes[pad_ind] = _encode(
                 array[self._slice_array_to_padding[pad_ind]],
                 self._padding[pad_ind],
@@ -257,9 +236,7 @@ class CompressedGPUTile(CompressedTile):
         """Copy tile to a CPU tile."""
 
         # Check tile is Compressed
-        assert isinstance(
-            dst_cpu_tile, CompressedCPUTile
-        ), "Destination tile must be a CompressedCPUTile"
+        assert isinstance(dst_cpu_tile, CompressedCPUTile), "Destination tile must be a CompressedCPUTile"
 
         # Copy array
         dst_cpu_tile._array.resize(self._array_bytes)
@@ -268,6 +245,4 @@ class CompressedGPUTile(CompressedTile):
         # Copy padding
         for pad_ind in self.pad_ind:
             dst_cpu_tile._padding[pad_ind].resize(self._padding_bytes[pad_ind])
-            self._padding[pad_ind][: self._padding_bytes[pad_ind]].get(
-                out=dst_cpu_tile._padding[pad_ind].array
-            )
+            self._padding[pad_ind][: self._padding_bytes[pad_ind]].get(out=dst_cpu_tile._padding[pad_ind].array)

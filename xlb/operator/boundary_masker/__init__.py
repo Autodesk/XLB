@@ -1,6 +1,6 @@
 from xlb.operator.boundary_masker.indices_boundary_masker import (
-    IndicesBoundaryMasker,
+    IndicesBoundaryMasker as IndicesBoundaryMasker,
 )
 from xlb.operator.boundary_masker.stl_boundary_masker import (
-    STLBoundaryMasker,
+    STLBoundaryMasker as STLBoundaryMasker,
 )

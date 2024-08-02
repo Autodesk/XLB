@@ -1,7 +1,5 @@
 import numpy as np
 import cupy as cp
-import itertools
-from dataclasses import dataclass
 
 from xlb.experimental.ooc.tiles.tile import Tile
 
@@ -46,9 +44,7 @@ class DenseCPUTile(DenseTile):
         """Returns a cupy array with the given shape."""
         # TODO: Seems hacky, but it works. Is there a better way?
         mem = cp.cuda.alloc_pinned_memory(np.prod(shape) * self.dtype_itemsize)
-        array = np.frombuffer(mem, dtype=self.dtype, count=np.prod(shape)).reshape(
-            shape
-        )
+        array = np.frombuffer(mem, dtype=self.dtype, count=np.prod(shape)).reshape(shape)
         self.nbytes += mem.size()
         return array
 
@@ -62,9 +58,7 @@ class DenseCPUTile(DenseTile):
         dst_gpu_tile._array.set(self._array)
 
         # Copy padding
-        for src_array, dst_gpu_array in zip(
-            self._padding.values(), dst_gpu_tile._padding.values()
-        ):
+        for src_array, dst_gpu_array in zip(self._padding.values(), dst_gpu_tile._padding.values()):
             dst_gpu_array.set(src_array)
 
 
@@ -90,7 +84,5 @@ class DenseGPUTile(DenseTile):
         self._array.get(out=dst_cpu_tile._array)
 
         # Copy padding
-        for src_array, dst_array in zip(
-            self._padding.values(), dst_cpu_tile._padding.values()
-        ):
+        for src_array, dst_array in zip(self._padding.values(), dst_cpu_tile._padding.values()):
             src_array.get(out=dst_array)

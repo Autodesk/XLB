@@ -19,11 +19,11 @@ class BoundaryConditionRegistry:
         """
         Register a boundary condition.
         """
-        id = self.next_id
+        _id = self.next_id
         self.next_id += 1
-        self.id_to_bc[id] = boundary_condition
-        self.bc_to_id[boundary_condition] = id
-        return id
+        self.id_to_bc[_id] = boundary_condition
+        self.bc_to_id[boundary_condition] = _id
+        return _id
 
 
 boundary_condition_registry = BoundaryConditionRegistry()

@@ -65,12 +65,8 @@ class ParallelOperator:
         jax.numpy.ndarray
             The processed data.
         """
-        rightPerm = [
-            (i, (i + 1) % self.grid.nDevices) for i in range(self.grid.nDevices)
-        ]
-        leftPerm = [
-            ((i + 1) % self.grid.nDevices, i) for i in range(self.grid.nDevices)
-        ]
+        rightPerm = [(i, (i + 1) % self.grid.nDevices) for i in range(self.grid.nDevices)]
+        leftPerm = [((i + 1) % self.grid.nDevices, i) for i in range(self.grid.nDevices)]
         f = self.func(f)
         left_comm, right_comm = (
             f[self.velocity_set.right_indices, :1, ...],

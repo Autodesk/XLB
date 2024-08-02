@@ -22,8 +22,8 @@ xlb.init(
 
 from xlb.operator import Operator
 
-class UniformInitializer(Operator):
 
+class UniformInitializer(Operator):
     def _construct_warp(self):
         # Construct the warp kernel
         @wp.kernel
@@ -149,48 +149,27 @@ if __name__ == "__main__":
     y = np.arange(nr)
     z = np.arange(nr)
     X, Y, Z = np.meshgrid(x, y, z)
-    indices = np.where(
-        (X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2
-        < sphere_radius**2
-    )
+    indices = np.where((X - nr // 2) ** 2 + (Y - nr // 2) ** 2 + (Z - nr // 2) ** 2 < sphere_radius**2)
     indices = np.array(indices).T
     indices = wp.from_numpy(indices, dtype=wp.int32)
 
     # Set boundary conditions on the indices
-    boundary_mask, missing_mask = indices_boundary_masker(
-        indices,
-        half_way_bc.id,
-        boundary_mask,
-        missing_mask,
-        (0, 0, 0)
-    )
+    boundary_mask, missing_mask = indices_boundary_masker(indices, half_way_bc.id, boundary_mask, missing_mask, (0, 0, 0))
 
     # Set inlet bc
     lower_bound = (0, 0, 0)
     upper_bound = (0, nr, nr)
     direction = (1, 0, 0)
     boundary_mask, missing_mask = planar_boundary_masker(
-        lower_bound,
-        upper_bound,
-        direction,
-        equilibrium_bc.id,
-        boundary_mask,
-        missing_mask,
-        (0, 0, 0)
+        lower_bound, upper_bound, direction, equilibrium_bc.id, boundary_mask, missing_mask, (0, 0, 0)
     )
 
     # Set outlet bc
-    lower_bound = (nr-1, 0, 0)
-    upper_bound = (nr-1, nr, nr)
+    lower_bound = (nr - 1, 0, 0)
+    upper_bound = (nr - 1, nr, nr)
     direction = (-1, 0, 0)
     boundary_mask, missing_mask = planar_boundary_masker(
-        lower_bound,
-        upper_bound,
-        direction,
-        do_nothing_bc.id,
-        boundary_mask,
-        missing_mask,
-        (0, 0, 0)
+        lower_bound, upper_bound, direction, do_nothing_bc.id, boundary_mask, missing_mask, (0, 0, 0)
     )
 
     # Set initial conditions
@@ -201,7 +180,7 @@ if __name__ == "__main__":
     plot_freq = 512
     save_dir = "flow_past_sphere"
     os.makedirs(save_dir, exist_ok=True)
-    #compute_mlup = False # Plotting results
+    # compute_mlup = False # Plotting results
     compute_mlup = True
     num_steps = 1024 * 8
     start = time.time()
@@ -225,4 +204,4 @@ if __name__ == "__main__":
     end = time.time()
 
     # Print MLUPS
-    print(f"MLUPS: {num_steps*nr**3/(end-start)/1e6}")
+    print(f"MLUPS: {num_steps * nr**3 / (end - start) / 1e6}")

@@ -1,17 +1,19 @@
 import pytest
-import warp as wp
 import numpy as np
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.grid import grid_factory
 from xlb import DefaultConfig
+
+
 def init_xlb_env(velocity_set):
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.WARP,
         velocity_set=velocity_set(),
     )
+
 
 @pytest.mark.parametrize(
     "dim,velocity_set,grid_shape",
@@ -44,6 +46,7 @@ def test_quadratic_equilibrium_warp(dim, velocity_set, grid_shape):
     weights = DefaultConfig.velocity_set.w
     for i, weight in enumerate(weights):
         assert np.allclose(f_eq_np[i, ...], weight), f"Direction {i} in f_eq does not match the expected weight"
+
 
 # @pytest.fixture(autouse=True)
 # def setup_xlb_env(request):
