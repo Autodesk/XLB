@@ -31,5 +31,4 @@ if __name__ == "__main__":
     omega=1.6
 
     simulation = LidDrivenCavity2D_distributed(omega, grid_shape, velocity_set, backend, precision_policy)
-    simulation.run(num_steps=5000)
-    simulation.post_process(i=5000)
+    simulation.run(num_steps=5000, post_process_interval=1000)
