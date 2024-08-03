@@ -61,8 +61,8 @@ class FullwayBounceBackBC(BoundaryCondition):
         @wp.func
         def functional(
             f_pre: Any,
+            f_post: Any,
             missing_mask: Any,
-            index: Any,
         ):
             fliped_f = _f_vec()
             for l in range(_q):
@@ -87,6 +87,7 @@ class FullwayBounceBackBC(BoundaryCondition):
             _f_post = _f_vec()
             _mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
+                # q-sized vector of populations
                 _f_pre[l] = f_pre[l, index[0], index[1]]
                 _f_post[l] = f_post[l, index[0], index[1]]
 
@@ -98,7 +99,7 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f = functional(_f_pre, _mask, index)
+                _f = functional(_f_pre, _f_post, _mask)
             else:
                 _f = _f_post
 
@@ -126,6 +127,7 @@ class FullwayBounceBackBC(BoundaryCondition):
             _f_post = _f_vec()
             _mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
+                # q-sized vector of populations
                 _f_pre[l] = f_pre[l, index[0], index[1], index[2]]
                 _f_post[l] = f_post[l, index[0], index[1], index[2]]
 
@@ -137,7 +139,7 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f = functional(_f_pre, _mask, index)
+                _f = functional(_f_pre, _f_post, _mask)
             else:
                 _f = _f_post
 
