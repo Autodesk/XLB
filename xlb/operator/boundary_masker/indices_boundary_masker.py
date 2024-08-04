@@ -1,8 +1,12 @@
 import numpy as np
 import warp as wp
+import jax
+import jax.numpy as jnp
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb.operator.stream.stream import Stream
+from xlb.grid import grid_factory
+from xlb.precision_policy import Precision
 
 
 class IndicesBoundaryMasker(Operator):
@@ -25,32 +29,43 @@ class IndicesBoundaryMasker(Operator):
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
     # @partial(jit, static_argnums=(0))
-    def jax_implementation(self, bclist, boundary_mask, mask, start_index=None):
-        # define a helper function
-        def compute_boundary_id_and_mask(boundary_mask, mask):
-            if dim == 2:
-                boundary_mask = boundary_mask.at[0, local_indices[0], local_indices[1]].set(id_number)
-                mask = mask.at[:, local_indices[0], local_indices[1]].set(True)
+    def jax_implementation(self, bclist, boundary_mask, missing_mask, start_index=None):
+        # Pad the missing mask to create a grid mask to identify out of bound boundaries
+        # Set padded regin to True (i.e. boundary)
+        dim = missing_mask.ndim - 1
+        nDevices = jax.device_count()
+        pad_x, pad_y, pad_z = nDevices, 1, 1
+        if dim == 2:
+            grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y)), constant_values=True)
+        if dim == 3:
+            grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=True)
 
-            if dim == 3:
-                boundary_mask = boundary_mask.at[0, local_indices[0], local_indices[1], local_indices[2]].set(id_number)
-                mask = mask.at[:, local_indices[0], local_indices[1], local_indices[2]].set(True)
-            return boundary_mask, mask
-
-        dim = mask.ndim - 1
+        # shift indices
+        shift_tup = (pad_x, pad_y) if dim == 2 else (pad_x, pad_y, pad_z)
         if start_index is None:
             start_index = (0,) * dim
 
+        bid = boundary_mask[0]
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
             id_number = bc.id
-            local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
-            boundary_mask, mask = compute_boundary_id_and_mask(boundary_mask, mask)
+            local_indices = np.array(bc.indices) + np.array(start_index)[:, np.newaxis]
+            padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
+            bid = bid.at[tuple(local_indices)].set(id_number)
+            if dim == 2:
+                grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1]].set(True)
+            if dim == 3:
+                grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1], padded_indices[2]].set(True)
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 
-        mask = self.stream(mask)
-        return boundary_mask, mask
+        boundary_mask = boundary_mask.at[0].set(bid)
+        grid_mask = self.stream(grid_mask)
+        if dim == 2:
+            missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y]
+        if dim == 3:
+            missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z]
+        return boundary_mask, missing_mask
 
     def _construct_warp(self):
         # Make constants for warp
@@ -63,7 +78,7 @@ class IndicesBoundaryMasker(Operator):
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.array1d(dtype=wp.uint8),
             boundary_mask: wp.array3d(dtype=wp.uint8),
-            mask: wp.array3d(dtype=wp.bool),
+            missing_mask: wp.array3d(dtype=wp.bool),
             start_index: wp.vec2i,
         ):
             # Get the index of indices
@@ -71,20 +86,23 @@ class IndicesBoundaryMasker(Operator):
 
             # Get local indices
             index = wp.vec2i()
-            index[0] = indices[0, ii] - start_index[0]
-            index[1] = indices[1, ii] - start_index[1]
+            index[0] = indices[0, ii] + start_index[0]
+            index[1] = indices[1, ii] + start_index[1]
 
-            # Check if in bounds
-            if index[0] >= 0 and index[0] < mask.shape[1] and index[1] >= 0 and index[1] < mask.shape[2]:
+            # Check if index is in bounds
+            if index[0] >= 0 and index[0] < missing_mask.shape[1] and index[1] >= 0 and index[1] < missing_mask.shape[2]:
                 # Stream indices
                 for l in range(_q):
                     # Get the index of the streaming direction
-                    push_index = wp.vec2i()
+                    pull_index = wp.vec2i()
                     for d in range(self.velocity_set.d):
-                        push_index[d] = index[d] + _c[d, l]
+                        pull_index[d] = index[d] - _c[d, l]
 
-                    # Set the boundary id and mask
-                    mask[l, push_index[0], push_index[1]] = True
+                    # check if pull index is out of bound
+                    # These directions will have missing information after streaming
+                    if pull_index[0] < 0 or pull_index[0] >= missing_mask.shape[1] or pull_index[1] < 0 or pull_index[1] >= missing_mask.shape[2]:
+                        # Set the missing mask
+                        missing_mask[l, index[0], index[1]] = True
 
                 boundary_mask[0, index[0], index[1]] = id_number[ii]
 
@@ -94,7 +112,7 @@ class IndicesBoundaryMasker(Operator):
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.array1d(dtype=wp.uint8),
             boundary_mask: wp.array4d(dtype=wp.uint8),
-            mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
             # Get the index of indices
@@ -102,28 +120,38 @@ class IndicesBoundaryMasker(Operator):
 
             # Get local indices
             index = wp.vec3i()
-            index[0] = indices[0, ii] - start_index[0]
-            index[1] = indices[1, ii] - start_index[1]
-            index[2] = indices[2, ii] - start_index[2]
+            index[0] = indices[0, ii] + start_index[0]
+            index[1] = indices[1, ii] + start_index[1]
+            index[2] = indices[2, ii] + start_index[2]
 
-            # Check if in bounds
+            # Check if index is in bounds
             if (
                 index[0] >= 0
-                and index[0] < mask.shape[1]
+                and index[0] < missing_mask.shape[1]
                 and index[1] >= 0
-                and index[1] < mask.shape[2]
+                and index[1] < missing_mask.shape[2]
                 and index[2] >= 0
-                and index[2] < mask.shape[3]
+                and index[2] < missing_mask.shape[3]
             ):
                 # Stream indices
                 for l in range(_q):
                     # Get the index of the streaming direction
-                    push_index = wp.vec3i()
+                    pull_index = wp.vec3i()
                     for d in range(self.velocity_set.d):
-                        push_index[d] = index[d] + _c[d, l]
+                        pull_index[d] = index[d] - _c[d, l]
 
-                    # Set the mask
-                    mask[l, push_index[0], push_index[1], push_index[2]] = True
+                    # check if pull index is out of bound
+                    # These directions will have missing information after streaming
+                    if (
+                        pull_index[0] < 0
+                        or pull_index[0] >= missing_mask.shape[1]
+                        or pull_index[1] < 0
+                        or pull_index[1] >= missing_mask.shape[2]
+                        or pull_index[2] < 0
+                        or pull_index[2] >= missing_mask.shape[3]
+                    ):
+                        # Set the missing mask
+                        missing_mask[l, index[0], index[1], index[2]] = True
 
                 boundary_mask[0, index[0], index[1], index[2]] = id_number[ii]
 

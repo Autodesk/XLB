@@ -66,7 +66,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    f = equilibrium_bc(f_pre, f_post, boundary_mask, missing_mask, f)
+    f = equilibrium_bc(f_pre, f_post, boundary_mask, missing_mask)
 
     f = f.numpy()
     f_post = f_post.numpy()
