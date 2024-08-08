@@ -4,7 +4,7 @@ from xlb.precision_policy import PrecisionPolicy
 from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
-from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
+from xlb.operator.boundary_condition import HalfwayBounceBackBC, EquilibriumBC
 from xlb.operator.macroscopic import Macroscopic
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
@@ -48,7 +48,7 @@ class LidDrivenCavity2D:
     def setup_boundary_conditions(self):
         lid, walls = self.define_boundary_indices()
         bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0), indices=lid)
-        bc_walls = FullwayBounceBackBC(indices=walls)
+        bc_walls = HalfwayBounceBackBC(indices=walls)
         self.boundary_conditions = [bc_top, bc_walls]
 
     def setup_boundary_masks(self):
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     # Running the simulation
     grid_size = 500
     grid_shape = (grid_size, grid_size)
-    backend = ComputeBackend.JAX
+    backend = ComputeBackend.WARP
     velocity_set = xlb.velocity_set.D2Q9()
     precision_policy = PrecisionPolicy.FP32FP32
     omega = 1.6
