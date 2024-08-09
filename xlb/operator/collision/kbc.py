@@ -366,7 +366,7 @@ class KBC(Collision):
             for l in range(self.velocity_set.q):
                 _f[l] = f[l, index[0], index[1]]
                 _feq[l] = feq[l, index[0], index[1]]
-            _u = self._warp_u_vec()
+            _u = self.warp_u_vec()
             for l in range(_d):
                 _u[l] = u[l, index[0], index[1]]
             _rho = rho[0, index[0], index[1]]
@@ -398,7 +398,7 @@ class KBC(Collision):
             for l in range(self.velocity_set.q):
                 _f[l] = f[l, index[0], index[1], index[2]]
                 _feq[l] = feq[l, index[0], index[1], index[2]]
-            _u = self._warp_u_vec()
+            _u = self.warp_u_vec()
             for l in range(_d):
                 _u[l] = u[l, index[0], index[1], index[2]]
             _rho = rho[0, index[0], index[1], index[2]]

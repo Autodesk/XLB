@@ -98,6 +98,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             id_DoNothingBC: wp.uint8
             id_HalfwayBounceBackBC: wp.uint8
             id_FullwayBounceBackBC: wp.uint8
+            id_ZouHeBC: wp.uint8
 
         @wp.kernel
         def kernel2d(
@@ -139,6 +140,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
                 # Half way boundary condition
                 f_post_stream = self.halfway_bounce_back_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
+            elif _boundary_id == bc_struct.id_ZouHeBC:
+                # Zouhe boundary condition
+                f_post_stream = self.zouhe_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -204,6 +208,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
                 # Half way boundary condition
                 f_post_stream = self.halfway_bounce_back_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
+            elif _boundary_id == bc_struct.id_ZouHeBC:
+                # Zouhe boundary condition
+                f_post_stream = self.zouhe_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -237,9 +244,8 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         bc_struct = self.warp_functional()
         bc_attribute_list = []
-        for bc in self.boundary_conditions:
+        for attribute_str in bc_to_id.keys():
             # Setting the Struct attributes based on the BC class names
-            attribute_str = bc.__class__.__name__
             setattr(bc_struct, "id_" + attribute_str, bc_to_id[attribute_str])
             bc_attribute_list.append("id_" + attribute_str)
 
@@ -248,7 +254,6 @@ class IncompressibleNavierStokesStepper(Stepper):
         for var in ll:
             if var not in bc_attribute_list and not var.startswith("_"):
                 # set unassigned boundaries to the maximum integer in uint8
-                attribute_str = bc.__class__.__name__
                 setattr(bc_struct, var, 255)
 
         # Launch the warp kernel

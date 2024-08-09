@@ -48,6 +48,7 @@ class VelocitySet(object):
         self.wp_w = wp.constant(wp.vec(self.q, dtype=wp.float32)(self.w))  # TODO: Make type optional somehow
         self.wp_opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self.opp_indices))
         self.wp_cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.cc))
+        self.wp_c32 = wp.constant(wp.mat((self.d, self.q), dtype=wp.float32)(self.c))
 
     def warp_lattice_vec(self, dtype):
         return wp.vec(len(self.c), dtype=dtype)
