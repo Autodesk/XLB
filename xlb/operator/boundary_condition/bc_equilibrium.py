@@ -70,13 +70,11 @@ class EquilibriumBC(BoundaryCondition):
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = wp.float32(self.rho)
         _u = _u_vec(self.u[0], self.u[1], self.u[2]) if self.velocity_set.d == 3 else _u_vec(self.u[0], self.u[1])
-        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
-        # Construct the funcional to get streamed indices
+        # Construct the functional for this BC
         @wp.func
         def functional(
             f_pre: Any,
@@ -98,21 +96,8 @@ class EquilibriumBC(BoundaryCondition):
             i, j = wp.tid()
             index = wp.vec2i(i, j)
 
-            # Get the boundary id and missing mask
-            _f_pre = _f_vec()
-            _f_post = _f_vec()
-            _boundary_id = boundary_mask[0, index[0], index[1]]
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of populations
-                _f_pre[l] = f_pre[l, index[0], index[1]]
-                _f_post[l] = f_post[l, index[0], index[1]]
-
-                # TODO fix vec bool
-                if missing_mask[l, index[0], index[1]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
+            # read tid data
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):
@@ -136,21 +121,8 @@ class EquilibriumBC(BoundaryCondition):
             i, j, k = wp.tid()
             index = wp.vec3i(i, j, k)
 
-            # Get the boundary id and missing mask
-            _f_pre = _f_vec()
-            _f_post = _f_vec()
-            _boundary_id = boundary_mask[0, index[0], index[1], index[2]]
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of populations
-                _f_pre[l] = f_pre[l, index[0], index[1], index[2]]
-                _f_post[l] = f_post[l, index[0], index[1], index[2]]
-
-                # TODO fix vec bool
-                if missing_mask[l, index[0], index[1], index[2]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
+            # read tid data
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_mask, missing_mask, index)
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):

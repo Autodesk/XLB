@@ -33,6 +33,7 @@ class Stepper(Operator):
         from xlb.operator.boundary_condition.bc_do_nothing import DoNothingBC
         from xlb.operator.boundary_condition.bc_halfway_bounce_back import HalfwayBounceBackBC
         from xlb.operator.boundary_condition.bc_fullway_bounce_back import FullwayBounceBackBC
+        from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC
 
         # Define a list of tuples with attribute names and their corresponding classes
         conditions = [
@@ -40,6 +41,7 @@ class Stepper(Operator):
             ("do_nothing_bc", DoNothingBC),
             ("halfway_bounce_back_bc", HalfwayBounceBackBC),
             ("fullway_bounce_back_bc", FullwayBounceBackBC),
+            ("zouhe_bc", ZouHeBC),
         ]
 
         # this fall-back BC is just to ensure Warp codegen does not produce error when a particular BC is not used in an example.
