@@ -52,10 +52,10 @@ class IndicesBoundaryMasker(Operator):
             local_indices = np.array(bc.indices) + np.array(start_index)[:, np.newaxis]
             padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
             bid = bid.at[tuple(local_indices)].set(id_number)
-            if dim == 2:
-                grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1]].set(True)
-            if dim == 3:
-                grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1], padded_indices[2]].set(True)
+            # if dim == 2:
+            #     grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1]].set(True)
+            # if dim == 3:
+            #     grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1], padded_indices[2]].set(True)
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 

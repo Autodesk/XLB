@@ -26,11 +26,13 @@ class ZouHeBC(BoundaryCondition):
     """
     Zou-He boundary condition for a lattice Boltzmann method simulation.
 
-    This class implements the Zou-He boundary condition, which is a non-equilibrium bounce-back boundary condition.
-    It can be used to set inflow and outflow boundary conditions with prescribed pressure or velocity.
+    This method applies the Zou-He boundary condition by first computing the equilibrium distribution functions based
+    on the prescribed values and the type of boundary condition, and then setting the unknown distribution functions
+    based on the non-equilibrium bounce-back method.
+    Tangential velocity is not ensured to be zero by adding transverse contributions based on
+    Hecth & Harting (2010) (doi:10.1088/1742-5468/2010/01/P01018) as it caused numerical instabilities at higher
+    Reynolds numbers. One needs to use "Regularized" BC at higher Reynolds.
     """
-
-    id = boundary_condition_registry.register_boundary_condition(__qualname__)
 
     def __init__(
         self,
@@ -41,6 +43,9 @@ class ZouHeBC(BoundaryCondition):
         compute_backend: ComputeBackend = None,
         indices=None,
     ):
+        # Important Note: it is critical to add id inside __init__ for this BC because different instantiations of this BC
+        # may have different types (velocity or pressure).
+        self.id = boundary_condition_registry.register_boundary_condition(__class__.__name__)
         assert bc_type in ["velocity", "pressure"], f"type = {bc_type} not supported! Use 'pressure' or 'velocity'."
         self.bc_type = bc_type
         self.equilibrium_operator = QuadraticEquilibrium()
@@ -58,7 +63,7 @@ class ZouHeBC(BoundaryCondition):
         # Set the prescribed value for pressure or velocity
         dim = self.velocity_set.d
         if self.compute_backend == ComputeBackend.JAX:
-            self.prescribed_value = jnp.array(prescribed_value)[:, None, None, None] if dim == 3 else jnp.array(prescribed_value)[:, None, None]
+            self.prescribed_value = jnp.atleast_1d(prescribed_value)[(slice(None),) + (None,) * dim]
             # TODO: this won't work if the prescribed values are a profile with the length of bdry indices!
 
     @partial(jit, static_argnums=(0,), inline=True)
@@ -77,7 +82,7 @@ class ZouHeBC(BoundaryCondition):
     @partial(jit, static_argnums=(0,), inline=True)
     def get_rho(self, fpop, missing_mask):
         if self.bc_type == "velocity":
-            vel = self.get_vel(fpop, missing_mask)
+            vel = self.prescribed_value
             rho = self.calculate_rho(fpop, vel, missing_mask)
         elif self.bc_type == "pressure":
             rho = self.prescribed_value
@@ -90,7 +95,7 @@ class ZouHeBC(BoundaryCondition):
         if self.bc_type == "velocity":
             vel = self.prescribed_value
         elif self.bc_type == "pressure":
-            rho = self.get_rho(fpop, missing_mask)
+            rho = self.prescribed_value
             vel = self.calculate_vel(fpop, rho, missing_mask)
         else:
             raise ValueError(f"type = {self.bc_type} not supported! Use 'pressure' or 'velocity'.")
@@ -104,8 +109,8 @@ class ZouHeBC(BoundaryCondition):
 
         normals = self._get_normal_vec(missing_mask)
         known_mask, middle_mask = self._get_known_middle_mask(missing_mask)
-
-        unormal = -1.0 + 1.0 / rho * (jnp.sum(fpop * middle_mask, axis=0, keepdims=True) + 2.0 * jnp.sum(fpop * known_mask, axis=0, keepdims=True))
+        fsum = jnp.sum(fpop * middle_mask, axis=0, keepdims=True) + 2.0 * jnp.sum(fpop * known_mask, axis=0, keepdims=True)
+        unormal = -1.0 + fsum/rho
 
         # Return the above unormal as a normal vector which sets the tangential velocities to zero
         vel = unormal * normals
@@ -119,7 +124,8 @@ class ZouHeBC(BoundaryCondition):
         normals = self._get_normal_vec(missing_mask)
         known_mask, middle_mask = self._get_known_middle_mask(missing_mask)
         unormal = jnp.sum(normals * vel, keepdims=True, axis=0)
-        rho = (1.0 / (1.0 + unormal)) * (jnp.sum(fpop * middle_mask, axis=0, keepdims=True) + 2.0 * jnp.sum(fpop * known_mask, axis=0, keepdims=True))
+        fsum = jnp.sum(fpop * middle_mask, axis=0, keepdims=True) + 2.0 * jnp.sum(fpop * known_mask, axis=0, keepdims=True)
+        rho = fsum / (1.0 + unormal)
         return rho
 
     @partial(jit, static_argnums=(0,), inline=True)

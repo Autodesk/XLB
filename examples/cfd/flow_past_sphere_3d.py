@@ -5,6 +5,7 @@ from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
+    ZouHeBC,
     EquilibriumBC,
     DoNothingBC,
 )
@@ -67,11 +68,14 @@ class FlowOverSphere:
 
     def setup_boundary_conditions(self):
         inlet, outlet, walls, sphere = self.define_boundary_indices()
-        bc_left = EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=inlet)
+        bc_left = ZouHeBC("velocity", (0.04, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
-        bc_do_nothing = DoNothingBC(indices=outlet)
+        bc_outlet = ZouHeBC("pressure", 1.0, indices=outlet)
         bc_sphere = FullwayBounceBackBC(indices=sphere)
-        self.boundary_conditions = [bc_left, bc_walls, bc_do_nothing, bc_sphere]
+        self.boundary_conditions = [bc_left, bc_outlet, bc_sphere, bc_walls]
+        # Note: it is important to add bc_walls to be after bc_outlet/bc_inlet because
+        # of the corner nodes. This way the corners are treated as wall and not inlet/outlet.
+        # TODO: how to ensure about this behind in the src code?
 
     def setup_boundary_masks(self):
         indices_boundary_masker = IndicesBoundaryMasker(
@@ -107,9 +111,14 @@ class FlowOverSphere:
 
         # remove boundary cells
         u = u[:, 1:-1, 1:-1, 1:-1]
+        rho = rho[:, 1:-1, 1:-1, 1:-1][0]
         u_magnitude = (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5
 
-        fields = {"u_magnitude": u_magnitude}
+        fields = {"u_magnitude": u_magnitude,
+                  "u_x": u[0],
+                  "u_y": u[1],
+                  "u_z": u[2],
+                  "rho": rho}
 
         save_fields_vtk(fields, timestep=i)
         save_image(fields["u_magnitude"][:, self.grid_shape[1] // 2, :], timestep=i)
@@ -117,9 +126,9 @@ class FlowOverSphere:
 
 if __name__ == "__main__":
     # Running the simulation
-    grid_shape = (512, 128, 128)
+    grid_shape = (512//2, 128//2, 128//2)
     velocity_set = xlb.velocity_set.D3Q19()
-    backend = ComputeBackend.WARP
+    backend = ComputeBackend.JAX
     precision_policy = PrecisionPolicy.FP32FP32
     omega = 1.6
 
