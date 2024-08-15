@@ -99,6 +99,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             id_HalfwayBounceBackBC: wp.uint8
             id_FullwayBounceBackBC: wp.uint8
             id_ZouHeBC: wp.uint8
+            id_RegularizedBC: wp.uint8
 
         @wp.kernel
         def kernel2d(
@@ -143,6 +144,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_ZouHeBC:
                 # Zouhe boundary condition
                 f_post_stream = self.zouhe_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
+            elif _boundary_id == bc_struct.id_RegularizedBC:
+                # Regularized boundary condition
+                f_post_stream = self.regularized_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -211,6 +215,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_ZouHeBC:
                 # Zouhe boundary condition
                 f_post_stream = self.zouhe_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
+            elif _boundary_id == bc_struct.id_RegularizedBC:
+                # Regularized boundary condition
+                f_post_stream = self.regularized_bc.warp_functional(f_post_collision, f_post_stream, _missing_mask)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
