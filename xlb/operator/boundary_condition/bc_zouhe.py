@@ -339,7 +339,7 @@ class ZouHeBC(BoundaryCondition):
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_id == wp.uint8(ZouHeBC.id):
+            if _boundary_id == wp.uint8(self.id):
                 _f = functional(_f_pre, _f_post, _missing_mask)
             else:
                 _f = _f_post
@@ -364,7 +364,7 @@ class ZouHeBC(BoundaryCondition):
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_id == wp.uint8(ZouHeBC.id):
+            if _boundary_id == wp.uint8(self.id):
                 _f = functional(_f_pre, _f_post, _missing_mask)
             else:
                 _f = _f_post

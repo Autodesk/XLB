@@ -109,7 +109,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_post: Any,
             missing_mask: Any,
             _boundary_id: Any,
-            bc_struct: BoundaryConditionIDStruct,
+            bc_struct: Any,
         ):
             # Apply post-streaming type boundary conditions
             if _boundary_id == bc_struct.id_EquilibriumBC:
@@ -141,7 +141,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_post: Any,
             missing_mask: Any,
             _boundary_id: Any,
-            bc_struct: BoundaryConditionIDStruct,
+            bc_struct: Any,
         ):
             if _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Full way boundary condition
@@ -154,7 +154,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: wp.array3d(dtype=Any),
             boundary_mask: wp.array3d(dtype=Any),
             missing_mask: wp.array3d(dtype=Any),
-            bc_struct: BoundaryConditionIDStruct,
+            bc_struct: Any,
             timestep: int,
         ):
             # Get the global index
@@ -209,7 +209,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: wp.array4d(dtype=Any),
             boundary_mask: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
-            bc_struct: BoundaryConditionIDStruct,
+            bc_struct: Any,
             timestep: int,
         ):
             # Get the global index
