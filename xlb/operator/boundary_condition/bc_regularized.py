@@ -40,8 +40,6 @@ class RegularizedBC(ZouHeBC):
     lattice Boltzmann method. Physical Review E, 77(5), 056703. doi:10.1103/PhysRevE.77.056703
     """
 
-    id = boundary_condition_registry.register_boundary_condition(__qualname__)
-
     def __init__(
         self,
         bc_type,

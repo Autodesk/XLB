@@ -45,8 +45,8 @@ class ZouHeBC(BoundaryCondition):
     ):
         # Important Note: it is critical to add id inside __init__ for this BC because different instantiations of this BC
         # may have different types (velocity or pressure).
-        self.id = boundary_condition_registry.register_boundary_condition(__class__.__name__)
         assert bc_type in ["velocity", "pressure"], f"type = {bc_type} not supported! Use 'pressure' or 'velocity'."
+        self.id = boundary_condition_registry.register_boundary_condition(__class__.__name__ + "_" + bc_type)
         self.bc_type = bc_type
         self.equilibrium_operator = QuadraticEquilibrium()
         self.prescribed_value = prescribed_value
@@ -110,7 +110,7 @@ class ZouHeBC(BoundaryCondition):
         normals = self._get_normal_vec(missing_mask)
         known_mask, middle_mask = self._get_known_middle_mask(missing_mask)
         fsum = jnp.sum(fpop * middle_mask, axis=0, keepdims=True) + 2.0 * jnp.sum(fpop * known_mask, axis=0, keepdims=True)
-        unormal = -1.0 + fsum/rho
+        unormal = -1.0 + fsum / rho
 
         # Return the above unormal as a normal vector which sets the tangential velocities to zero
         vel = unormal * normals

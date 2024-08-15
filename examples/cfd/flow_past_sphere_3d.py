@@ -114,11 +114,7 @@ class FlowOverSphere:
         rho = rho[:, 1:-1, 1:-1, 1:-1][0]
         u_magnitude = (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5
 
-        fields = {"u_magnitude": u_magnitude,
-                  "u_x": u[0],
-                  "u_y": u[1],
-                  "u_z": u[2],
-                  "rho": rho}
+        fields = {"u_magnitude": u_magnitude, "u_x": u[0], "u_y": u[1], "u_z": u[2], "rho": rho}
 
         save_fields_vtk(fields, timestep=i)
         save_image(fields["u_magnitude"][:, self.grid_shape[1] // 2, :], timestep=i)
@@ -126,7 +122,7 @@ class FlowOverSphere:
 
 if __name__ == "__main__":
     # Running the simulation
-    grid_shape = (512//2, 128//2, 128//2)
+    grid_shape = (512 // 2, 128 // 2, 128 // 2)
     velocity_set = xlb.velocity_set.D3Q19()
     backend = ComputeBackend.JAX
     precision_policy = PrecisionPolicy.FP32FP32
