@@ -6,6 +6,7 @@ from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
     ZouHeBC,
+    RegularizedBC,
     EquilibriumBC,
     DoNothingBC,
 )
@@ -68,9 +69,11 @@ class FlowOverSphere:
 
     def setup_boundary_conditions(self):
         inlet, outlet, walls, sphere = self.define_boundary_indices()
-        bc_left = ZouHeBC("velocity", (0.04, 0.0, 0.0), indices=inlet)
+        bc_left = RegularizedBC("velocity", (0.04, 0.0, 0.0), indices=inlet)
+        # bc_left = EquilibriumBC(rho = 1, u=(0.04, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
-        bc_outlet = ZouHeBC("pressure", 1.0, indices=outlet)
+        bc_outlet = RegularizedBC("pressure", 1.0, indices=outlet)
+        # bc_outlet = DoNothingBC(indices=outlet)
         bc_sphere = FullwayBounceBackBC(indices=sphere)
         self.boundary_conditions = [bc_left, bc_outlet, bc_sphere, bc_walls]
         # Note: it is important to add bc_walls to be after bc_outlet/bc_inlet because
@@ -111,10 +114,10 @@ class FlowOverSphere:
 
         # remove boundary cells
         u = u[:, 1:-1, 1:-1, 1:-1]
-        rho = rho[:, 1:-1, 1:-1, 1:-1][0]
+        rho = rho[:, 1:-1, 1:-1, 1:-1]
         u_magnitude = (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5
 
-        fields = {"u_magnitude": u_magnitude, "u_x": u[0], "u_y": u[1], "u_z": u[2], "rho": rho}
+        fields = {"u_magnitude": u_magnitude, "u_x": u[0], "u_y": u[1], "u_z": u[2], "rho": rho[0]}
 
         save_fields_vtk(fields, timestep=i)
         save_image(fields["u_magnitude"][:, self.grid_shape[1] // 2, :], timestep=i)
