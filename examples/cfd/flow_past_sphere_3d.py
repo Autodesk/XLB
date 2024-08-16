@@ -92,7 +92,7 @@ class FlowOverSphere:
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
 
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions, collision_type="BGK")
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     # Running the simulation
     grid_shape = (512 // 2, 128 // 2, 128 // 2)
     velocity_set = xlb.velocity_set.D3Q19()
-    backend = ComputeBackend.JAX
+    backend = ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
     omega = 1.6
 

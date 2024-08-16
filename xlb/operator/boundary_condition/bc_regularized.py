@@ -62,6 +62,25 @@ class RegularizedBC(ZouHeBC):
         # The operator to compute the momentum flux
         self.momentum_flux = SecondMoment()
 
+    # helper function
+    def compute_qi(self):
+        # Qi = cc - cs^2*I
+        dim = self.velocity_set.d
+        Qi = self.velocity_set.cc
+        if dim == 3:
+            diagonal = (0, 3, 5)
+            offdiagonal = (1, 2, 4)
+        elif dim == 2:
+            diagonal = (0, 2)
+            offdiagonal = (1,)
+        else:
+            raise ValueError(f"dim = {dim} not supported")
+
+        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
+        Qi[:, diagonal] += -1.0 / 3.0
+        Qi[:, offdiagonal] *= 2.0
+        return Qi
+
     @partial(jit, static_argnums=(0,), inline=True)
     def regularize_fpop(self, fpop, feq):
         """
@@ -82,6 +101,8 @@ class RegularizedBC(ZouHeBC):
         # Qi = cc - cs^2*I
         dim = self.velocity_set.d
         weights = self.velocity_set.w[(slice(None),) + (None,) * dim]
+        # TODO: if I use the following I get NaN ! figure out why!
+        #       Qi = jnp.array(self.compute_qi(), dtype=self.compute_dtype)
         Qi = jnp.array(self.velocity_set.cc, dtype=self.compute_dtype)
         if dim == 3:
             diagonal = (0, 3, 5)
@@ -142,10 +163,14 @@ class RegularizedBC(ZouHeBC):
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
+        # compute Qi tensor and store it in self
+        _qi = wp.constant(wp.mat((_q, _d * (_d + 1) // 2), dtype=wp.float32)(self.compute_qi()))
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = wp.float32(rho)
         _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])
         _opp_indices = self.velocity_set.wp_opp_indices
+        _w = self.velocity_set.wp_w
         _c = self.velocity_set.wp_c
         _c32 = self.velocity_set.wp_c32
         # TODO: this is way less than ideal. we should not be making new types
@@ -190,6 +215,32 @@ class RegularizedBC(ZouHeBC):
             for l in range(_q):
                 if missing_mask[l] == wp.uint8(1):
                     fpop[l] = fpop[_opp_indices[l]] + feq[l] - feq[_opp_indices[l]]
+            return fpop
+
+        @wp.func
+        def regularize_fpop(
+            fpop: Any,
+            feq: Any,
+        ):
+            """
+            Regularizes the distribution functions by adding non-equilibrium contributions based on second moments of fpop.
+            """
+            # Compute momentum flux of off-equilibrium populations for regularization: Pi^1 = Pi^{neq}
+            f_neq = fpop - feq
+            PiNeq = self.momentum_flux.warp_functional(f_neq)
+
+            # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
+            nt = _d * (_d + 1) // 2
+            QiPi1 = _f_vec()
+            for l in range(_q):
+                QiPi1[l] = 0.0
+                for t in range(nt):
+                    QiPi1[l] += _qi[l, t] * PiNeq[t]
+
+                # assign all populations based on eq 45 of Latt et al (2008)
+                # fneq ~ f^1
+                fpop1 = 9.0 / 2.0 * _w[l] * QiPi1[l]
+                fpop[l] = feq[l] + fpop1
             return fpop
 
         @wp.func
