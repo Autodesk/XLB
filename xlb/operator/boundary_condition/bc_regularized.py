@@ -168,7 +168,7 @@ class RegularizedBC(ZouHeBC):
             fsum_middle = self.compute_dtype(0.0)
             for l in range(_q):
                 if missing_mask[_opp_indices[l]] == wp.uint8(1):
-                    fsum_known += 2. * fpop[l]
+                    fsum_known += 2.0 * fpop[l]
                 elif missing_mask[l] != wp.uint8(1):
                     fsum_middle += fpop[l]
             return fsum_known + fsum_middle
@@ -178,20 +178,15 @@ class RegularizedBC(ZouHeBC):
             missing_mask: Any,
         ):
             for l in range(_q):
-                if (
-                    missing_mask[l] == wp.uint8(1)
-                    and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1
-                ):
+                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
                     return -_u_vec(_c32[0, l], _c32[1, l], _c32[2, l])
 
         @wp.func
         def bounceback_nonequilibrium(
             fpop: Any,
+            feq: Any,
             missing_mask: Any,
-            density: Any,
-            velocity: Any,
         ):
-            feq = self.equilibrium_operator.warp_functional(density, velocity)
             for l in range(_q):
                 if missing_mask[l] == wp.uint8(1):
                     fpop[l] = fpop[_opp_indices[l]] + feq[l] - feq[_opp_indices[l]]
@@ -217,7 +212,11 @@ class RegularizedBC(ZouHeBC):
             _rho = fsum / (1.0 + unormal)
 
             # impose non-equilibrium bounceback
-            _f = bounceback_nonequilibrium(_f, missing_mask, _rho, _u)
+            feq = self.equilibrium_operator.warp_functional(_rho, _u)
+            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         @wp.func
@@ -238,7 +237,11 @@ class RegularizedBC(ZouHeBC):
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
-            _f = bounceback_nonequilibrium(_f, missing_mask, _rho, _u)
+            feq = self.equilibrium_operator.warp_functional(_rho, _u)
+            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         @wp.func
@@ -261,7 +264,11 @@ class RegularizedBC(ZouHeBC):
             _rho = fsum / (1.0 + unormal)
 
             # impose non-equilibrium bounceback
-            _f = bounceback_nonequilibrium(_f, missing_mask, _rho, _u)
+            feq = self.equilibrium_operator.warp_functional(_rho, _u)
+            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         @wp.func
@@ -282,7 +289,11 @@ class RegularizedBC(ZouHeBC):
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
-            _f = bounceback_nonequilibrium(_f, missing_mask, _rho, _u)
+            feq = self.equilibrium_operator.warp_functional(_rho, _u)
+            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         # Construct the warp kernel
