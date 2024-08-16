@@ -193,32 +193,29 @@ class ZouHeBC(BoundaryCondition):
             return normals
 
         @wp.func
-        def get_normal_vectors_3d(
-            lattice_direction: Any,
+        def _helper_function(
+            fpop: Any,
+            missing_mask: Any,
         ):
-            l = lattice_direction
-            if wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                normals = -_u_vec(_c32[0, l], _c32[1, l], _c32[2, l])
-            return normals
+            fsum_known = self.compute_dtype(0.0)
+            fsum_middle = self.compute_dtype(0.0)
+            for l in range(_q):
+                if missing_mask[_opp_indices[l]] == wp.uint8(1):
+                    fsum_known += 2. * fpop[l]
+                elif missing_mask[l] != wp.uint8(1):
+                    fsum_middle += fpop[l]
+            return fsum_known + fsum_middle
 
         @wp.func
-        def _helper_functional(
-            fpop: Any,
-            fsum: Any,
+        def get_normal_vectors_3d(
             missing_mask: Any,
-            lattice_direction: Any,
         ):
-            l = lattice_direction
-            known_mask = missing_mask[_opp_indices[l]]
-            middle_mask = ~(missing_mask[l] | known_mask)
-            # fsum += fpop[l] * float(middle_mask) + 2.0 * fpop[l] * float(known_mask)
-            if middle_mask and known_mask:
-                fsum += fpop[l] + 2.0 * fpop[l]
-            elif middle_mask:
-                fsum += fpop[l]
-            elif known_mask:
-                fsum += 2.0 * fpop[l]
-            return fsum
+            for l in range(_q):
+                if (
+                    missing_mask[l] == wp.uint8(1)
+                    and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1
+                ):
+                    return -_u_vec(_c32[0, l], _c32[1, l], _c32[2, l])
 
         @wp.func
         def bounceback_nonequilibrium(
@@ -241,16 +238,16 @@ class ZouHeBC(BoundaryCondition):
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
-            _fsum = self.compute_dtype(0.0)
-            unormal = self.compute_dtype(0.0)
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1):
-                    normals = get_normal_vectors_3d(l)
-                _fsum = _helper_functional(_f, _fsum, missing_mask, l)
 
+            # Find normal vector
+            normals = get_normal_vectors_3d(missing_mask)
+
+            # calculate rho
+            fsum = _helper_function(_f, missing_mask)
+            unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
-            _rho = _fsum / (1.0 + unormal)
+            _rho = fsum / (1.0 + unormal)
 
             # impose non-equilibrium bounceback
             _f = bounceback_nonequilibrium(_f, missing_mask, _rho, _u)
@@ -264,14 +261,13 @@ class ZouHeBC(BoundaryCondition):
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
-            _fsum = self.compute_dtype(0.0)
-            unormal = self.compute_dtype(0.0)
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1):
-                    normals = get_normal_vectors_3d(l)
-                _fsum = _helper_functional(_f, _fsum, missing_mask, l)
 
-            unormal = -1.0 + _fsum / _rho
+            # Find normal vector
+            normals = get_normal_vectors_3d(missing_mask)
+
+            # calculate velocity
+            fsum = _helper_function(_f, missing_mask)
+            unormal = -1.0 + fsum / _rho
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
@@ -286,16 +282,16 @@ class ZouHeBC(BoundaryCondition):
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
-            _fsum = self.compute_dtype(0.0)
-            unormal = self.compute_dtype(0.0)
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1):
-                    normals = get_normal_vectors_2d(l)
-                _fsum = _helper_functional(_f, _fsum, missing_mask, l)
 
+            # Find normal vector
+            normals = get_normal_vectors_2d(missing_mask)
+
+            # calculate rho
+            fsum = _helper_function(_f, missing_mask)
+            unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
-            _rho = _fsum / (1.0 + unormal)
+            _rho = fsum / (1.0 + unormal)
 
             # impose non-equilibrium bounceback
             _f = bounceback_nonequilibrium(_f, missing_mask, _rho, _u)
@@ -309,14 +305,13 @@ class ZouHeBC(BoundaryCondition):
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
-            _fsum = self.compute_dtype(0.0)
-            unormal = self.compute_dtype(0.0)
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1):
-                    normals = get_normal_vectors_2d(l)
-                _fsum = _helper_functional(_f, _fsum, missing_mask, l)
 
-            unormal = -1.0 + _fsum / _rho
+            # Find normal vector
+            normals = get_normal_vectors_2d(missing_mask)
+
+            # calculate velocity
+            fsum = _helper_function(_f, missing_mask)
+            unormal = -1.0 + fsum / _rho
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
