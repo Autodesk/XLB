@@ -10,9 +10,9 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
 
-class Macroscopic(Operator):
+class FirstAndZerothMoment(Operator):
     """
-    Base class for all macroscopic operators
+    A class to compute first and zeroth moments of distribution functions.
 
     TODO: Currently this is only used for the standard rho and u moments.
     In the future, this should be extended to include higher order moments
