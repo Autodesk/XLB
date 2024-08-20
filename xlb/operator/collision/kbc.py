@@ -311,7 +311,7 @@ class KBC(Collision):
         ):
             # Get the global index
             i, j = wp.tid()
-            index = wp.vec3i(i, j)  # TODO: Warp needs to fix this
+            index = wp.vec2i(i, j)  # TODO: Warp needs to fix this
 
             # Load needed values
             _f = _f_vec()

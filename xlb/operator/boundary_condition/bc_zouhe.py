@@ -329,7 +329,7 @@ class ZouHeBC(BoundaryCondition):
         ):
             # Get the global index
             i, j = wp.tid()
-            index = wp.vec3i(i, j)
+            index = wp.vec2i(i, j)
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)

@@ -178,15 +178,6 @@ class RegularizedBC(ZouHeBC):
         # TODO: this is way less than ideal. we should not be making new types
 
         @wp.func
-        def get_normal_vectors_2d(
-            lattice_direction: Any,
-        ):
-            l = lattice_direction
-            if wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
-                normals = -_u_vec(_c32[0, l], _c32[1, l])
-            return normals
-
-        @wp.func
         def _get_fsum(
             fpop: Any,
             missing_mask: Any,
@@ -199,6 +190,14 @@ class RegularizedBC(ZouHeBC):
                 elif missing_mask[l] != wp.uint8(1):
                     fsum_middle += fpop[l]
             return fsum_known + fsum_middle
+
+        @wp.func
+        def get_normal_vectors_2d(
+            missing_mask: Any,
+        ):
+            for l in range(_q):
+                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
+                    return -_u_vec(_c32[0, l], _c32[1, l])
 
         @wp.func
         def get_normal_vectors_3d(
@@ -359,7 +358,7 @@ class RegularizedBC(ZouHeBC):
         ):
             # Get the global index
             i, j = wp.tid()
-            index = wp.vec3i(i, j)
+            index = wp.vec2i(i, j)
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)
