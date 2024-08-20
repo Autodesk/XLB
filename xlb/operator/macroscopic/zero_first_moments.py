@@ -10,7 +10,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
 
-class FirstAndZerothMoment(Operator):
+class ZeroAndFirstMoments(Operator):
     """
     A class to compute first and zeroth moments of distribution functions.
 

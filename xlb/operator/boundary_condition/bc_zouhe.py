@@ -4,6 +4,7 @@ Base class for boundary conditions in a LBM simulation.
 
 import jax.numpy as jnp
 from jax import jit
+import jax.lax as lax
 from functools import partial
 import warp as wp
 from typing import Any
@@ -156,7 +157,8 @@ class ZouHeBC(BoundaryCondition):
     def apply_jax(self, f_pre, f_post, boundary_mask, missing_mask):
         # creat a mask to slice boundary cells
         boundary = boundary_mask == self.id
-        boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
+        new_shape = (self.velocity_set.q,) + boundary.shape[1:]
+        boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
 
         # compute the equilibrium based on prescribed values and the type of BC
         feq = self.calculate_equilibrium(f_post, missing_mask)
@@ -193,7 +195,7 @@ class ZouHeBC(BoundaryCondition):
             return normals
 
         @wp.func
-        def _helper_function(
+        def _get_fsum(
             fpop: Any,
             missing_mask: Any,
         ):
@@ -238,7 +240,7 @@ class ZouHeBC(BoundaryCondition):
             normals = get_normal_vectors_3d(missing_mask)
 
             # calculate rho
-            fsum = _helper_function(_f, missing_mask)
+            fsum = _get_fsum(_f, missing_mask)
             unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
@@ -262,7 +264,7 @@ class ZouHeBC(BoundaryCondition):
             normals = get_normal_vectors_3d(missing_mask)
 
             # calculate velocity
-            fsum = _helper_function(_f, missing_mask)
+            fsum = _get_fsum(_f, missing_mask)
             unormal = -1.0 + fsum / _rho
             _u = unormal * normals
 
@@ -284,7 +286,7 @@ class ZouHeBC(BoundaryCondition):
             normals = get_normal_vectors_2d(missing_mask)
 
             # calculate rho
-            fsum = _helper_function(_f, missing_mask)
+            fsum = _get_fsum(_f, missing_mask)
             unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
@@ -308,7 +310,7 @@ class ZouHeBC(BoundaryCondition):
             normals = get_normal_vectors_2d(missing_mask)
 
             # calculate velocity
-            fsum = _helper_function(_f, missing_mask)
+            fsum = _get_fsum(_f, missing_mask)
             unormal = -1.0 + fsum / _rho
             _u = unormal * normals
 
