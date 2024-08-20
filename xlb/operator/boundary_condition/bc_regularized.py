@@ -13,26 +13,32 @@ from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from xlb.operator.boundary_condition.boundary_condition import (
-    ImplementationStep,
-    BoundaryCondition,
-)
-from xlb.operator.boundary_condition.boundary_condition_registry import (
-    boundary_condition_registry,
-)
-from xlb.operator.equilibrium import QuadraticEquilibrium
+from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC
+from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
+from xlb.operator.macroscopic.second_moment import SecondMoment
 
 
-class ZouHeBC(BoundaryCondition):
+class RegularizedBC(ZouHeBC):
     """
-    Zou-He boundary condition for a lattice Boltzmann method simulation.
+    Regularized boundary condition for a lattice Boltzmann method simulation.
 
-    This method applies the Zou-He boundary condition by first computing the equilibrium distribution functions based
-    on the prescribed values and the type of boundary condition, and then setting the unknown distribution functions
-    based on the non-equilibrium bounce-back method.
-    Tangential velocity is not ensured to be zero by adding transverse contributions based on
-    Hecth & Harting (2010) (doi:10.1088/1742-5468/2010/01/P01018) as it caused numerical instabilities at higher
-    Reynolds numbers. One needs to use "Regularized" BC at higher Reynolds.
+    This class implements the regularized boundary condition, which is a non-equilibrium bounce-back boundary condition
+    with additional regularization. It can be used to set inflow and outflow boundary conditions with prescribed pressure
+    or velocity.
+
+    Attributes
+    ----------
+    name : str
+        The name of the boundary condition. For this class, it is "Regularized".
+    Qi : numpy.ndarray
+        The Qi tensor, which is used in the regularization of the distribution functions.
+
+    References
+    ----------
+    Latt, J. (2007). Hydrodynamic limit of lattice Boltzmann equations. PhD thesis, University of Geneva.
+    Latt, J., Chopard, B., Malaspinas, O., Deville, M., & Michler, A. (2008). Straight velocity boundaries in the
+    lattice Boltzmann method. Physical Review E, 77(5), 056703. doi:10.1103/PhysRevE.77.056703
     """
 
     def __init__(
@@ -44,113 +50,90 @@ class ZouHeBC(BoundaryCondition):
         compute_backend: ComputeBackend = None,
         indices=None,
     ):
-        # Important Note: it is critical to add id inside __init__ for this BC because different instantiations of this BC
-        # may have different types (velocity or pressure).
-        assert bc_type in ["velocity", "pressure"], f"type = {bc_type} not supported! Use 'pressure' or 'velocity'."
-        self.id = boundary_condition_registry.register_boundary_condition(__class__.__name__ + "_" + bc_type)
-        self.bc_type = bc_type
-        self.equilibrium_operator = QuadraticEquilibrium()
-        self.prescribed_value = prescribed_value
-
         # Call the parent constructor
         super().__init__(
-            ImplementationStep.STREAMING,
+            bc_type,
+            prescribed_value,
             velocity_set,
             precision_policy,
             compute_backend,
             indices,
         )
 
-        # Set the prescribed value for pressure or velocity
+        # The operator to compute the momentum flux
+        self.momentum_flux = SecondMoment()
+
+    # helper function
+    def compute_qi(self):
+        # Qi = cc - cs^2*I
         dim = self.velocity_set.d
-        if self.compute_backend == ComputeBackend.JAX:
-            self.prescribed_value = jnp.atleast_1d(prescribed_value)[(slice(None),) + (None,) * dim]
-            # TODO: this won't work if the prescribed values are a profile with the length of bdry indices!
-
-    @partial(jit, static_argnums=(0,), inline=True)
-    def _get_known_middle_mask(self, missing_mask):
-        known_mask = missing_mask[self.velocity_set.opp_indices]
-        middle_mask = ~(missing_mask | known_mask)
-        return known_mask, middle_mask
-
-    @partial(jit, static_argnums=(0,), inline=True)
-    def _get_normal_vec(self, missing_mask):
-        main_c = self.velocity_set.c[:, self.velocity_set.main_indices]
-        m = missing_mask[self.velocity_set.main_indices]
-        normals = -jnp.tensordot(main_c, m, axes=(-1, 0))
-        return normals
-
-    @partial(jit, static_argnums=(0,), inline=True)
-    def get_rho(self, fpop, missing_mask):
-        if self.bc_type == "velocity":
-            vel = self.prescribed_value
-            rho = self.calculate_rho(fpop, vel, missing_mask)
-        elif self.bc_type == "pressure":
-            rho = self.prescribed_value
+        Qi = self.velocity_set.cc
+        if dim == 3:
+            diagonal = (0, 3, 5)
+            offdiagonal = (1, 2, 4)
+        elif dim == 2:
+            diagonal = (0, 2)
+            offdiagonal = (1,)
         else:
-            raise ValueError(f"type = {self.bc_type} not supported! Use 'pressure' or 'velocity'.")
-        return rho
+            raise ValueError(f"dim = {dim} not supported")
+
+        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
+        Qi[:, diagonal] += -1.0 / 3.0
+        Qi[:, offdiagonal] *= 2.0
+        return Qi
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def get_vel(self, fpop, missing_mask):
-        if self.bc_type == "velocity":
-            vel = self.prescribed_value
-        elif self.bc_type == "pressure":
-            rho = self.prescribed_value
-            vel = self.calculate_vel(fpop, rho, missing_mask)
+    def regularize_fpop(self, fpop, feq):
+        """
+        Regularizes the distribution functions by adding non-equilibrium contributions based on second moments of fpop.
+
+        Parameters
+        ----------
+        fpop : jax.numpy.ndarray
+            The distribution functions.
+        feq : jax.numpy.ndarray
+            The equilibrium distribution functions.
+
+        Returns
+        -------
+        jax.numpy.ndarray
+            The regularized distribution functions.
+        """
+        # Qi = cc - cs^2*I
+        dim = self.velocity_set.d
+        weights = self.velocity_set.w[(slice(None),) + (None,) * dim]
+        # TODO: if I use the following I get NaN ! figure out why!
+        #       Qi = jnp.array(self.compute_qi(), dtype=self.compute_dtype)
+        Qi = jnp.array(self.velocity_set.cc, dtype=self.compute_dtype)
+        if dim == 3:
+            diagonal = (0, 3, 5)
+            offdiagonal = (1, 2, 4)
+        elif dim == 2:
+            diagonal = (0, 2)
+            offdiagonal = (1,)
         else:
-            raise ValueError(f"type = {self.bc_type} not supported! Use 'pressure' or 'velocity'.")
-        return vel
+            raise ValueError(f"dim = {dim} not supported")
 
-    @partial(jit, static_argnums=(0,), inline=True)
-    def calculate_vel(self, fpop, rho, missing_mask):
-        """
-        Calculate velocity based on the prescribed pressure/density (Zou/He BC)
-        """
+        # Qi = cc - cs^2*I
+        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
+        Qi = Qi.at[:, diagonal].add(-1.0 / 3.0)
+        Qi = Qi.at[:, offdiagonal].multiply(2.0)
 
-        normals = self._get_normal_vec(missing_mask)
-        known_mask, middle_mask = self._get_known_middle_mask(missing_mask)
-        fsum = jnp.sum(fpop * middle_mask, axis=0, keepdims=True) + 2.0 * jnp.sum(fpop * known_mask, axis=0, keepdims=True)
-        unormal = -1.0 + fsum / rho
+        # Compute momentum flux of off-equilibrium populations for regularization: Pi^1 = Pi^{neq}
+        f_neq = fpop - feq
+        PiNeq = self.momentum_flux(f_neq)
+        # PiNeq = self.momentum_flux(fpop) - self.momentum_flux(feq)
 
-        # Return the above unormal as a normal vector which sets the tangential velocities to zero
-        vel = unormal * normals
-        return vel
+        # Compute double dot product Qi:Pi1
+        # QiPi1 = np.zeros_like(fpop)
+        # Pi1 = PiNeq
+        QiPi1 = jnp.tensordot(Qi, PiNeq, axes=(1, 0))
 
-    @partial(jit, static_argnums=(0,), inline=True)
-    def calculate_rho(self, fpop, vel, missing_mask):
-        """
-        Calculate density based on the prescribed velocity (Zou/He BC)
-        """
-        normals = self._get_normal_vec(missing_mask)
-        known_mask, middle_mask = self._get_known_middle_mask(missing_mask)
-        unormal = jnp.sum(normals * vel, keepdims=True, axis=0)
-        fsum = jnp.sum(fpop * middle_mask, axis=0, keepdims=True) + 2.0 * jnp.sum(fpop * known_mask, axis=0, keepdims=True)
-        rho = fsum / (1.0 + unormal)
-        return rho
-
-    @partial(jit, static_argnums=(0,), inline=True)
-    def calculate_equilibrium(self, fpop, missing_mask):
-        """
-        This is the ZouHe method of calculating the missing macroscopic variables at the boundary.
-        """
-        rho = self.get_rho(fpop, missing_mask)
-        vel = self.get_vel(fpop, missing_mask)
-
-        # compute feq at the boundary
-        feq = self.equilibrium_operator(rho, vel)
-        return feq
-
-    @partial(jit, static_argnums=(0,), inline=True)
-    def bounceback_nonequilibrium(self, fpop, feq, missing_mask):
-        """
-        Calculate unknown populations using bounce-back of non-equilibrium populations
-        a la original Zou & He formulation
-        """
-        opp = self.velocity_set.opp_indices
-        fknown = fpop[opp] + feq - feq[opp]
-        fpop = jnp.where(missing_mask, fknown, fpop)
-        return fpop
+        # assign all populations based on eq 45 of Latt et al (2008)
+        # fneq ~ f^1
+        fpop1 = 9.0 / 2.0 * weights * QiPi1
+        fpop_regularized = feq + fpop1
+        return fpop_regularized
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
@@ -165,6 +148,11 @@ class ZouHeBC(BoundaryCondition):
 
         # set the unknown f populations based on the non-equilibrium bounce-back method
         f_post_bd = self.bounceback_nonequilibrium(f_post, feq, missing_mask)
+
+        # Regularize the boundary fpop
+        f_post_bd = self.regularize_fpop(f_post_bd, feq)
+
+        # apply bc
         f_post = jnp.where(boundary, f_post_bd, f_post)
         return f_post
 
@@ -177,10 +165,14 @@ class ZouHeBC(BoundaryCondition):
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
+        # compute Qi tensor and store it in self
+        _qi = wp.constant(wp.mat((_q, _d * (_d + 1) // 2), dtype=wp.float32)(self.compute_qi()))
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = wp.float32(rho)
         _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])
         _opp_indices = self.velocity_set.wp_opp_indices
+        _w = self.velocity_set.wp_w
         _c = self.velocity_set.wp_c
         _c32 = self.velocity_set.wp_c32
         # TODO: this is way less than ideal. we should not be making new types
@@ -228,6 +220,32 @@ class ZouHeBC(BoundaryCondition):
             return fpop
 
         @wp.func
+        def regularize_fpop(
+            fpop: Any,
+            feq: Any,
+        ):
+            """
+            Regularizes the distribution functions by adding non-equilibrium contributions based on second moments of fpop.
+            """
+            # Compute momentum flux of off-equilibrium populations for regularization: Pi^1 = Pi^{neq}
+            f_neq = fpop - feq
+            PiNeq = self.momentum_flux.warp_functional(f_neq)
+
+            # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
+            nt = _d * (_d + 1) // 2
+            QiPi1 = _f_vec()
+            for l in range(_q):
+                QiPi1[l] = 0.0
+                for t in range(nt):
+                    QiPi1[l] += _qi[l, t] * PiNeq[t]
+
+                # assign all populations based on eq 45 of Latt et al (2008)
+                # fneq ~ f^1
+                fpop1 = 9.0 / 2.0 * _w[l] * QiPi1[l]
+                fpop[l] = feq[l] + fpop1
+            return fpop
+
+        @wp.func
         def functional3d_velocity(
             f_pre: Any,
             f_post: Any,
@@ -249,6 +267,9 @@ class ZouHeBC(BoundaryCondition):
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
             _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         @wp.func
@@ -271,6 +292,9 @@ class ZouHeBC(BoundaryCondition):
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
             _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         @wp.func
@@ -295,6 +319,9 @@ class ZouHeBC(BoundaryCondition):
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
             _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         @wp.func
@@ -317,6 +344,9 @@ class ZouHeBC(BoundaryCondition):
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
             _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+
+            # Regularize the boundary fpop
+            _f = regularize_fpop(_f, feq)
             return _f
 
         # Construct the warp kernel

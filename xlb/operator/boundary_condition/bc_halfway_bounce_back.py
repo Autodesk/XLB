@@ -4,6 +4,7 @@ Base class for boundary conditions in a LBM simulation.
 
 import jax.numpy as jnp
 from jax import jit
+import jax.lax as lax
 from functools import partial
 import warp as wp
 from typing import Any
@@ -50,7 +51,8 @@ class HalfwayBounceBackBC(BoundaryCondition):
     @partial(jit, static_argnums=(0))
     def apply_jax(self, f_pre, f_post, boundary_mask, missing_mask):
         boundary = boundary_mask == self.id
-        boundary = jnp.repeat(boundary, self.velocity_set.q, axis=0)
+        new_shape = (self.velocity_set.q,) + boundary.shape[1:]
+        boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
         return jnp.where(
             jnp.logical_and(missing_mask, boundary),
             f_pre[self.velocity_set.opp_indices],

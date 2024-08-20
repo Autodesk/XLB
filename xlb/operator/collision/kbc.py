@@ -6,12 +6,13 @@ import jax.numpy as jnp
 from jax import jit
 import warp as wp
 from typing import Any
+from functools import partial
 
 from xlb.velocity_set import VelocitySet, D2Q9, D3Q27
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.collision.collision import Collision
 from xlb.operator import Operator
-from functools import partial
+from xlb.operator.macroscopic import SecondMoment
 
 
 class KBC(Collision):
@@ -28,6 +29,7 @@ class KBC(Collision):
         precision_policy=None,
         compute_backend=None,
     ):
+        self.momentum_flux = SecondMoment()
         self.epsilon = 1e-32
         self.beta = omega * 0.5
         self.inv_beta = 1.0 / self.beta
@@ -94,33 +96,6 @@ class KBC(Collision):
         """
         return jnp.sum(x * y / feq, axis=0)
 
-    @partial(jit, static_argnums=(0,), donate_argnums=(1,))
-    def momentum_flux_jax(
-        self,
-        fneq: jnp.ndarray,
-    ):
-        """
-        This function computes the momentum flux, which is the product of the non-equilibrium
-        distribution functions (fneq) and the lattice moments (cc).
-
-        The momentum flux is used in the computation of the stress tensor in the Lattice Boltzmann
-        Method (LBM).
-
-        # TODO: probably move this to equilibrium calculation
-
-        Parameters
-        ----------
-        fneq: jax.numpy.ndarray
-            The non-equilibrium distribution functions.
-
-        Returns
-        -------
-        jax.numpy.ndarray
-            The computed momentum flux.
-        """
-
-        return jnp.tensordot(self.velocity_set.cc, fneq, axes=(0, 0))
-
     @partial(jit, static_argnums=(0,), inline=True)
     def decompose_shear_d3q27_jax(self, fneq):
         """
@@ -138,7 +113,7 @@ class KBC(Collision):
         """
 
         # Calculate the momentum flux
-        Pi = self.momentum_flux_jax(fneq)
+        Pi = self.momentum_flux(fneq)
         # Calculating Nxz and Nyz with indices moved to the first dimension
         Nxz = Pi[0, ...] - Pi[5, ...]
         Nyz = Pi[3, ...] - Pi[5, ...]
@@ -187,7 +162,7 @@ class KBC(Collision):
         jax.numpy.array
             Shear components of fneq.
         """
-        Pi = self.momentum_flux_jax(fneq)
+        Pi = self.momentum_flux(fneq)
         N = Pi[0, ...] - Pi[2, ...]
         s = jnp.zeros_like(fneq)
         s = s.at[3, ...].set(N)
@@ -207,35 +182,14 @@ class KBC(Collision):
             raise NotImplementedError("Velocity set not supported for warp backend: {}".format(type(self.velocity_set)))
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _w = self.velocity_set.wp_w
-        _cc = self.velocity_set.wp_cc
-        _omega = wp.constant(self.compute_dtype(self.omega))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _pi_dim = self.velocity_set.d * (self.velocity_set.d + 1) // 2
-        _pi_vec = wp.vec(
-            _pi_dim,
-            dtype=self.compute_dtype,
-        )
         _epsilon = wp.constant(self.compute_dtype(self.epsilon))
         _beta = wp.constant(self.compute_dtype(self.beta))
         _inv_beta = wp.constant(self.compute_dtype(1.0 / self.beta))
 
-        # Construct functional for computing momentum flux
-        @wp.func
-        def momentum_flux_warp(
-            fneq: Any,
-        ):
-            # Get momentum flux
-            pi = _pi_vec()
-            for d in range(_pi_dim):
-                pi[d] = 0.0
-                for q in range(self.velocity_set.q):
-                    pi[d] += _cc[q, d] * fneq[q]
-            return pi
-
         @wp.func
         def decompose_shear_d2q9(fneq: Any):
-            pi = momentum_flux_warp(fneq)
+            pi = self.momentum_flux.warp_functional(fneq)
             N = pi[0] - pi[1]
             s = wp.vec9(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
             s[3] = N
@@ -254,7 +208,7 @@ class KBC(Collision):
             fneq: Any,
         ):
             # Get momentum flux
-            pi = momentum_flux_warp(fneq)
+            pi = self.momentum_flux.warp_functional(fneq)
             nxz = pi[0] - pi[5]
             nyz = pi[3] - pi[5]
 
