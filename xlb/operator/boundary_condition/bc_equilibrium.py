@@ -79,6 +79,7 @@ class EquilibriumBC(BoundaryCondition):
         def functional(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             _f = self.equilibrium_operator.warp_functional(_rho, _u)

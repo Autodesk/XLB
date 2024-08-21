@@ -3,13 +3,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
 from xlb.helper import create_nse_fields, initialize_eq
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
-from xlb.operator.boundary_condition import (
-    FullwayBounceBackBC,
-    ZouHeBC,
-    RegularizedBC,
-    EquilibriumBC,
-    DoNothingBC,
-)
+from xlb.operator.boundary_condition import FullwayBounceBackBC, ZouHeBC, RegularizedBC, EquilibriumBC, DoNothingBC, ExtrapolationOutflowBC
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
@@ -72,8 +66,9 @@ class FlowOverSphere:
         bc_left = RegularizedBC("velocity", (0.04, 0.0, 0.0), indices=inlet)
         # bc_left = EquilibriumBC(rho = 1, u=(0.04, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
-        bc_outlet = RegularizedBC("pressure", 1.0, indices=outlet)
+        # bc_outlet = RegularizedBC("pressure", 1.0, indices=outlet)
         # bc_outlet = DoNothingBC(indices=outlet)
+        bc_outlet = ExtrapolationOutflowBC(indices=outlet)
         bc_sphere = FullwayBounceBackBC(indices=sphere)
         self.boundary_conditions = [bc_left, bc_outlet, bc_sphere, bc_walls]
         # Note: it is important to add bc_walls to be after bc_outlet/bc_inlet because

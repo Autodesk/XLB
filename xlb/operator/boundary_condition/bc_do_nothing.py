@@ -56,6 +56,7 @@ class DoNothingBC(BoundaryCondition):
         def functional(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             return f_pre

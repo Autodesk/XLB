@@ -231,6 +231,7 @@ class ZouHeBC(BoundaryCondition):
         def functional3d_velocity(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -255,6 +256,7 @@ class ZouHeBC(BoundaryCondition):
         def functional3d_pressure(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -277,6 +279,7 @@ class ZouHeBC(BoundaryCondition):
         def functional2d_velocity(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -301,6 +304,7 @@ class ZouHeBC(BoundaryCondition):
         def functional2d_pressure(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction

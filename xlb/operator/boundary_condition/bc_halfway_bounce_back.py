@@ -68,6 +68,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
         def functional(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction

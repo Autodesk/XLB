@@ -24,9 +24,16 @@ from xlb.operator.boundary_condition.boundary_condition_registry import (
 
 class ExtrapolationOutflowBC(BoundaryCondition):
     """
-    Halfway Bounce-back boundary condition for a lattice Boltzmann method simulation.
+    Extrapolation outflow boundary condition for a lattice Boltzmann method simulation.
 
-    TODO: Implement moving boundary conditions for this
+    This class implements the extrapolation outflow boundary condition, which is a type of outflow boundary condition
+    that uses extrapolation to avoid strong wave reflections.
+
+    References
+    ----------
+    Geier, M., Schönherr, M., Pasquali, A., & Krafczyk, M. (2015). The cumulant lattice Boltzmann equation in three
+    dimensions: Theory and validation. Computers & Mathematics with Applications, 70(4), 507-547.
+    doi:10.1016/j.camwa.2015.05.001.
     """
 
     id = boundary_condition_registry.register_boundary_condition(__qualname__)
@@ -38,9 +45,6 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         compute_backend: ComputeBackend = None,
         indices=None,
     ):
-        # Auxiliary population variable to store previous time-step results
-        self.fpop_aux = None
-
         # Call the parent constructor
         super().__init__(
             ImplementationStep.STREAMING,
@@ -83,7 +87,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         ):
             for l in range(_q):
                 if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                    return -wp.vec2i(_c[0, l], _c[1, l], _c[2, l])
+                    return -wp.vec3i(_c[0, l], _c[1, l], _c[2, l])
 
         # Construct the functional for this BC
         @wp.func
@@ -113,14 +117,16 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             # Get the global index
             i, j = wp.tid()
             index = wp.vec2i(i, j)
-            index_nbr = index - get_normal_vectors_2d(missing_mask)
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)
             _faux = _f_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of populations
-                _faux[l] = f_pre[l, index_nbr[0], index_nbr[1]]
+
+            # special preparation of auxiliary data
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
+                index_nbr = index - get_normal_vectors_2d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    _faux[l] = _f_pre[l, index_nbr[0], index_nbr[1]]
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
@@ -143,14 +149,16 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             # Get the global index
             i, j, k = wp.tid()
             index = wp.vec3i(i, j, k)
-            index_nbr = index - get_normal_vectors_3d(missing_mask)
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_mask, missing_mask, index)
             _faux = _f_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of populations
-                _faux[l] = f_pre[l, index_nbr[0], index_nbr[1], index_nbr[2]]
+
+            # special preparation of auxiliary data
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
+                index_nbr = index - get_normal_vectors_3d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    _faux[l] = _f_pre[l, index_nbr[0], index_nbr[1], index_nbr[2]]
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):

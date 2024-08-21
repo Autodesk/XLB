@@ -88,6 +88,8 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
+        _c = self.velocity_set.wp_c
+        _q = self.velocity_set.q
 
         @wp.struct
         class BoundaryConditionIDStruct:
@@ -102,11 +104,13 @@ class IncompressibleNavierStokesStepper(Stepper):
             id_ZouHeBC_pressure: wp.uint8
             id_RegularizedBC_velocity: wp.uint8
             id_RegularizedBC_pressure: wp.uint8
+            id_ExtrapolationOutflowBC: wp.uint8
 
         @wp.func
         def apply_post_streaming_bc(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
             _boundary_id: Any,
             bc_struct: Any,
@@ -114,25 +118,28 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply post-streaming type boundary conditions
             if _boundary_id == bc_struct.id_EquilibriumBC:
                 # Equilibrium boundary condition
-                f_post = self.EquilibriumBC.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.EquilibriumBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_DoNothingBC:
                 # Do nothing boundary condition
-                f_post = self.DoNothingBC.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.DoNothingBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
                 # Half way boundary condition
-                f_post = self.HalfwayBounceBackBC.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.HalfwayBounceBackBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_ZouHeBC_velocity:
                 # Zouhe boundary condition (bc type = velocity)
-                f_post = self.ZouHeBC_velocity.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.ZouHeBC_velocity.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_ZouHeBC_pressure:
                 # Zouhe boundary condition (bc type = pressure)
-                f_post = self.ZouHeBC_pressure.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.ZouHeBC_pressure.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_RegularizedBC_velocity:
                 # Regularized boundary condition (bc type = velocity)
-                f_post = self.RegularizedBC_velocity.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.RegularizedBC_velocity.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_RegularizedBC_pressure:
                 # Regularized boundary condition (bc type = velocity)
-                f_post = self.RegularizedBC_pressure.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.RegularizedBC_pressure.warp_functional(f_pre, f_post, f_aux, missing_mask)
+            elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
+                # Regularized boundary condition (bc type = velocity)
+                f_post = self.ExtrapolationOutflowBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
             return f_post
 
         @wp.func
@@ -147,6 +154,22 @@ class IncompressibleNavierStokesStepper(Stepper):
                 # Full way boundary condition
                 f_post = self.FullwayBounceBackBC.warp_functional(f_pre, f_post, missing_mask)
             return f_post
+
+        @wp.func
+        def get_normal_vectors_2d(
+            missing_mask: Any,
+        ):
+            for l in range(_q):
+                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
+                    return -wp.vec2i(_c[0, l], _c[1, l])
+
+        @wp.func
+        def get_normal_vectors_3d(
+            missing_mask: Any,
+        ):
+            for l in range(_q):
+                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
+                    return -wp.vec3i(_c[0, l], _c[1, l], _c[2, l])
 
         @wp.kernel
         def kernel2d(
@@ -163,6 +186,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Get the boundary id and missing mask
             f_post_collision = _f_vec()
+            f_auxiliary = _f_vec()
             _boundary_id = boundary_mask[0, index[0], index[1]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
@@ -178,8 +202,14 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply streaming (pull method)
             f_post_stream = self.stream.warp_functional(f_0, index)
 
+            # special preparation of auxiliary data
+            if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
+                index_nbr = index - get_normal_vectors_2d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    f_auxiliary[l] = f_0[l, index_nbr[0], index_nbr[1]]
+
             # Apply post-streaming type boundary conditions
-            f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, _missing_mask, _boundary_id, bc_struct)
+            f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
@@ -218,6 +248,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Get the boundary id and missing mask
             f_post_collision = _f_vec()
+            f_auxiliary = _f_vec()
             _boundary_id = boundary_mask[0, index[0], index[1], index[2]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
@@ -233,8 +264,14 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply streaming (pull method)
             f_post_stream = self.stream.warp_functional(f_0, index)
 
+            # special preparation of auxiliary data
+            if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
+                index_nbr = index - get_normal_vectors_3d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    f_auxiliary[l] = f_0[l, index_nbr[0], index_nbr[1], index_nbr[2]]
+
             # Apply post-streaming type boundary conditions
-            f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, _missing_mask, _boundary_id, bc_struct)
+            f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)
