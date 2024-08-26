@@ -8,6 +8,8 @@ import jax.lax as lax
 from functools import partial
 import warp as wp
 from typing import Any
+from collections import Counter
+import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -53,6 +55,65 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             compute_backend,
             indices,
         )
+
+        # find and store the normal vector using indices
+        self._get_normal_vec(indices)
+
+    def _get_normal_vec(self, indices):
+        # Get the frequency count and most common element directly
+        freq_counts = [Counter(coord).most_common(1)[0] for coord in indices]
+
+        # Extract counts and elements
+        counts = np.array([count for _, count in freq_counts])
+        elements = np.array([element for element, _ in freq_counts])
+
+        # Normalize the counts
+        self.normal = counts // counts.max()
+
+        # Reverse the normal vector if the most frequent element is 0
+        if elements[np.argmax(counts)] == 0:
+            self.normal *= -1
+        return
+
+    @partial(jit, static_argnums=(0,), inline=True)
+    def _roll(self, fld, vec):
+        """
+        Perform rolling operation of a field with dimentions [q, nx, ny, nz] in a direction
+        given by vec. All q-directions are rolled at the same time.
+        # TODO: how to improve this for multi-gpu runs?
+        """
+        if self.velocity_set.d == 2:
+            return jnp.roll(fld, (vec[0], vec[1]), axis=(1, 2))
+        elif self.velocity_set.d == 3:
+            return jnp.roll(fld, (vec[0], vec[1], vec[2]), axis=(1, 2, 3))
+
+    @partial(jit, static_argnums=(0,), inline=True)
+    def prepare_bc_auxilary_data(self, f_pre, f_post, boundary_mask, missing_mask):
+        """
+        Prepare the auxilary distribution functions for the boundary condition.
+        Since this function is called post-collisiotn: f_pre = f_post_stream and f_post = f_post_collision
+        """
+        sound_speed = 1.0 / jnp.sqrt(3.0)
+        boundary = boundary_mask == self.id
+        new_shape = (self.velocity_set.q,) + boundary.shape[1:]
+        boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
+
+        # Roll boundary mask in the opposite of the normal vector to mask its next immediate neighbour
+        neighbour = self._roll(boundary, -self.normal)
+
+        # gather post-streaming values associated with previous time-step to construct the auxilary data for BC
+        fpop = jnp.where(boundary, f_pre, f_post)
+        fpop_neighbour = jnp.where(neighbour, f_pre, f_post)
+
+        # With fpop_neighbour isolated, now roll it back to be positioned at the boundary for subsequent operations
+        fpop_neighbour = self._roll(fpop_neighbour, self.normal)
+        fpop_extrapolated = sound_speed * fpop_neighbour + (1.0 - sound_speed) * fpop
+
+        # Use the iknown directions of f_postcollision that leave the domain during streaming to store the BC data
+        opp = self.velocity_set.opp_indices
+        known_mask = missing_mask[opp]
+        f_post = jnp.where(jnp.logical_and(boundary, known_mask), fpop_extrapolated[opp], f_post)
+        return f_post
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
