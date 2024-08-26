@@ -63,6 +63,7 @@ class FullwayBounceBackBC(BoundaryCondition):
         def functional(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             fliped_f = _f_vec()

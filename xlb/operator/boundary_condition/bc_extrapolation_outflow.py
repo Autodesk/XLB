@@ -133,6 +133,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _c = self.velocity_set.wp_c
         _q = self.velocity_set.q
+        _opp_indices = self.velocity_set.wp_opp_indices
 
         @wp.func
         def get_normal_vectors_2d(
@@ -163,7 +164,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             for l in range(self.velocity_set.q):
                 # If the mask is missing then take the opposite index
                 if missing_mask[l] == wp.uint8(1):
-                    _f[l] = (1.0 - sound_speed) * f_pre[l] + sound_speed * f_nbr[l]
+                    _f[l] = f_pre[_opp_indices[l]]
 
             return _f
 
