@@ -369,7 +369,8 @@ class RegularizedBC(ZouHeBC):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_vec()
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -394,7 +395,8 @@ class RegularizedBC(ZouHeBC):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_vec()
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 

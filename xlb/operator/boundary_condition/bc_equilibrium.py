@@ -102,7 +102,8 @@ class EquilibriumBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_post
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -127,7 +128,8 @@ class EquilibriumBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(EquilibriumBC.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_post
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 

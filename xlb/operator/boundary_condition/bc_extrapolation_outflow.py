@@ -206,13 +206,22 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
             # special preparation of auxiliary data
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                index_nbr = index - get_normal_vectors_2d(_missing_mask)
+                nv = get_normal_vectors_2d(_missing_mask)
                 for l in range(self.velocity_set.q):
-                    _faux[l] = _f_pre[l, index_nbr[0], index_nbr[1]]
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        _faux[l] = _f_pre[l, pull_index[0], pull_index[1]]
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                _f = functional(_f_pre, _f_post, _faux, _missing_mask)
+                # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
+                # collision and streaming?
+                _f = functional_poststream(_f_pre, _f_post, _faux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -238,13 +247,22 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
             # special preparation of auxiliary data
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                index_nbr = index - get_normal_vectors_3d(_missing_mask)
+                nv = get_normal_vectors_3d(_missing_mask)
                 for l in range(self.velocity_set.q):
-                    _faux[l] = _f_pre[l, index_nbr[0], index_nbr[1], index_nbr[2]]
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        _faux[l] = _f_pre[l, pull_index[0], pull_index[1], pull_index[2]]
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                _f = functional(_f_pre, _f_post, _faux, _missing_mask)
+                # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
+                # collision and streaming?
+                _f = functional_poststream(_f_pre, _f_post, _faux, _missing_mask)
             else:
                 _f = _f_post
 

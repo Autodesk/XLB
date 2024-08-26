@@ -86,7 +86,8 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_vec()
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -111,7 +112,8 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_vec()
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
