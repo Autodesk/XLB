@@ -142,19 +142,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post = self.RegularizedBC_pressure.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
                 # Regularized boundary condition (bc type = velocity)
-                f_post = self.ExtrapolationOutflowBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
-            return f_post
-
-        @wp.func
-        def ExtrapolationOutflowBC_functional2(
-            f_pre: Any,
-            f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
-        ):
-            for l in range(self.velocity_set.q):
-                if missing_mask[l] == wp.uint8(1):
-                    f_post[_opp_indices[l]] = (1.0 - sound_speed) * f_pre[l] + sound_speed * f_aux[l]
+                f_post = self.ExtrapolationOutflowBC.warp_functional_poststream(f_pre, f_post, f_aux, missing_mask)
             return f_post
 
         @wp.func
@@ -172,7 +160,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
                 # f_aux is the neighbour's post-streaming values
                 # Storing post-streaming data in directions that leave the domain
-                f_post = ExtrapolationOutflowBC_functional2(f_pre, f_post, f_aux, missing_mask)
+                f_post = self.ExtrapolationOutflowBC.warp_functional_postcollision(f_pre, f_post, f_aux, missing_mask)
 
             return f_post
 

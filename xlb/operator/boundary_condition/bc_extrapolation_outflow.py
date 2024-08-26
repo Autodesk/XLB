@@ -59,6 +59,10 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         # find and store the normal vector using indices
         self._get_normal_vec(indices)
 
+        # Unpack the two warp functionals needed for this BC!
+        if self.compute_backend == ComputeBackend.WARP:
+            self.warp_functional_poststream, self.warp_functional_postcollision = self.warp_functional
+
     def _get_normal_vec(self, indices):
         # Get the frequency count and most common element directly
         freq_counts = [Counter(coord).most_common(1)[0] for coord in indices]
@@ -151,9 +155,9 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                 if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
                     return -wp.vec3i(_c[0, l], _c[1, l], _c[2, l])
 
-        # Construct the functional for this BC
+        # Construct the functionals for this BC
         @wp.func
-        def functional(
+        def functional_poststream(
             f_pre: Any,
             f_post: Any,
             f_nbr: Any,
@@ -166,6 +170,22 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                 if missing_mask[l] == wp.uint8(1):
                     _f[l] = f_pre[_opp_indices[l]]
 
+            return _f
+
+        @wp.func
+        def functional_postcollision(
+            f_pre: Any,
+            f_post: Any,
+            f_aux: Any,
+            missing_mask: Any,
+        ):
+            # Preparing the formulation for this BC using the neighbour's populations stored in f_aux and
+            # f_pre (posti-streaming values of the current voxel). We use directions that leave the domain
+            # for storing this prepared data.
+            _f = f_post
+            for l in range(self.velocity_set.q):
+                if missing_mask[l] == wp.uint8(1):
+                    _f[_opp_indices[l]] = (1.0 - sound_speed) * f_pre[l] + sound_speed * f_aux[l]
             return _f
 
         # Construct the warp kernel
@@ -234,7 +254,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
-        return functional, kernel
+        return [functional_poststream, functional_postcollision], kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f_pre, f_post, boundary_mask, missing_mask):
