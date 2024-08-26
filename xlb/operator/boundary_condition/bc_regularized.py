@@ -16,7 +16,7 @@ from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
-from xlb.operator.macroscopic.second_moment import SecondMoment
+from xlb.operator.macroscopic.second_moment import SecondMoment as MomentumFlux
 
 
 class RegularizedBC(ZouHeBC):
@@ -61,7 +61,7 @@ class RegularizedBC(ZouHeBC):
         )
 
         # The operator to compute the momentum flux
-        self.momentum_flux = SecondMoment()
+        self.momentum_flux = MomentumFlux()
 
     # helper function
     def compute_qi(self):

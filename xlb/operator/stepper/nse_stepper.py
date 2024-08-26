@@ -180,6 +180,92 @@ class IncompressibleNavierStokesStepper(Stepper):
                 if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
                     return -wp.vec3i(_c[0, l], _c[1, l], _c[2, l])
 
+        @wp.func
+        def get_thread_data_2d(
+            f_0: wp.array3d(dtype=Any),
+            missing_mask: wp.array3d(dtype=Any),
+            index: Any,
+        ):
+            # Get the boundary id and missing mask
+            f_post_collision = _f_vec()
+            _missing_mask = _missing_mask_vec()
+            for l in range(self.velocity_set.q):
+                # q-sized vector of pre-streaming populations
+                f_post_collision[l] = f_0[l, index[0], index[1]]
+
+                # TODO fix vec bool
+                if missing_mask[l, index[0], index[1]]:
+                    _missing_mask[l] = wp.uint8(1)
+                else:
+                    _missing_mask[l] = wp.uint8(0)
+            return f_post_collision, _missing_mask
+
+        @wp.func
+        def get_thread_data_3d(
+            f_0: wp.array4d(dtype=Any),
+            missing_mask: wp.array4d(dtype=Any),
+            index: Any,
+        ):
+            # Get the boundary id and missing mask
+            f_post_collision = _f_vec()
+            _missing_mask = _missing_mask_vec()
+            for l in range(self.velocity_set.q):
+                # q-sized vector of pre-streaming populations
+                f_post_collision[l] = f_0[l, index[0], index[1], index[2]]
+
+                # TODO fix vec bool
+                if missing_mask[l, index[0], index[1], index[2]]:
+                    _missing_mask[l] = wp.uint8(1)
+                else:
+                    _missing_mask[l] = wp.uint8(0)
+            return f_post_collision, _missing_mask
+
+        @wp.func
+        def prepare_bc_auxilary_data_2d(
+            f_0: wp.array3d(dtype=Any),
+            index: Any,
+            _boundary_id: Any,
+            _missing_mask: Any,
+            bc_struct: Any,
+        ):
+            # special preparation of auxiliary data
+            f_auxiliary = _f_vec()
+            if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
+                nv = get_normal_vectors_2d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1]]
+            return f_auxiliary
+
+        @wp.func
+        def prepare_bc_auxilary_data_3d(
+            f_0: wp.array4d(dtype=Any),
+            index: Any,
+            _boundary_id: Any,
+            _missing_mask: Any,
+            bc_struct: Any,
+        ):
+            # special preparation of auxiliary data
+            f_auxiliary = _f_vec()
+            if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
+                nv = get_normal_vectors_3d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1], pull_index[2]]
+            return f_auxiliary
+
         @wp.kernel
         def kernel2d(
             f_0: wp.array3d(dtype=Any),
@@ -193,36 +279,15 @@ class IncompressibleNavierStokesStepper(Stepper):
             i, j = wp.tid()
             index = wp.vec2i(i, j)  # TODO warp should fix this
 
-            # Get the boundary id and missing mask
-            f_post_collision = _f_vec()
-            f_auxiliary = _f_vec()
-            _boundary_id = boundary_mask[0, index[0], index[1]]
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of pre-streaming populations
-                f_post_collision[l] = f_0[l, index[0], index[1]]
-
-                # TODO fix vec bool
-                if missing_mask[l, index[0], index[1]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
+            # Read thread data for populations and missing mask
+            f_post_collision, _missing_mask = get_thread_data_2d(f_0, missing_mask, index)
 
             # Apply streaming (pull method)
             f_post_stream = self.stream.warp_functional(f_0, index)
 
-            # special preparation of auxiliary data
-            if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
-                nv = get_normal_vectors_2d(_missing_mask)
-                for l in range(self.velocity_set.q):
-                    if _missing_mask[l] == wp.uint8(1):
-                        # f_0 is the post-collision values of the current time-step
-                        # Get pull index associated with the "neighbours" pull_index
-                        pull_index = type(index)()
-                        for d in range(self.velocity_set.d):
-                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
-                        # The following is the post-streaming values of the neighbor cell
-                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1]]
+            # Prepare auxilary data for BC (if applicable)
+            _boundary_id = boundary_mask[0, index[0], index[1]]
+            f_auxiliary = prepare_bc_auxilary_data_2d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
             f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
@@ -262,36 +327,15 @@ class IncompressibleNavierStokesStepper(Stepper):
             i, j, k = wp.tid()
             index = wp.vec3i(i, j, k)  # TODO warp should fix this
 
-            # Get the boundary id and missing mask
-            f_post_collision = _f_vec()
-            f_auxiliary = _f_vec()
-            _boundary_id = boundary_mask[0, index[0], index[1], index[2]]
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of pre-streaming populations
-                f_post_collision[l] = f_0[l, index[0], index[1], index[2]]
-
-                # TODO fix vec bool
-                if missing_mask[l, index[0], index[1], index[2]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
+            # Read thread data for populations and missing mask
+            f_post_collision, _missing_mask = get_thread_data_3d(f_0, missing_mask, index)
 
             # Apply streaming (pull method)
             f_post_stream = self.stream.warp_functional(f_0, index)
 
-            # special preparation of auxiliary data
-            if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
-                nv = get_normal_vectors_3d(_missing_mask)
-                for l in range(self.velocity_set.q):
-                    if _missing_mask[l] == wp.uint8(1):
-                        # f_0 is the post-collision values of the current time-step
-                        # Get pull index associated with the "neighbours" pull_index
-                        pull_index = type(index)()
-                        for d in range(self.velocity_set.d):
-                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
-                        # The following is the post-streaming values of the neighbor cell
-                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1], pull_index[2]]
+            # Prepare auxilary data for BC (if applicable)
+            _boundary_id = boundary_mask[0, index[0], index[1], index[2]]
+            f_auxiliary = prepare_bc_auxilary_data_3d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
             f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
