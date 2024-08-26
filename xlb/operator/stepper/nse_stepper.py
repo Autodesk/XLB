@@ -91,6 +91,8 @@ class IncompressibleNavierStokesStepper(Stepper):
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
         _c = self.velocity_set.wp_c
         _q = self.velocity_set.q
+        _opp_indices = self.velocity_set.wp_opp_indices
+        sound_speed = 1.0 / wp.sqrt(3.0)
 
         @wp.struct
         class BoundaryConditionIDStruct:
@@ -140,20 +142,26 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post = self.RegularizedBC_pressure.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
                 # Regularized boundary condition (bc type = velocity)
-                f_post = self.ExtrapolationOutflowBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
+                f_post = self.ExtrapolationOutflowBC.warp_functional_poststream(f_pre, f_post, f_aux, missing_mask)
             return f_post
 
         @wp.func
         def apply_post_collision_bc(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
             _boundary_id: Any,
             bc_struct: Any,
         ):
             if _boundary_id == bc_struct.id_FullwayBounceBackBC:
                 # Full way boundary condition
-                f_post = self.FullwayBounceBackBC.warp_functional(f_pre, f_post, missing_mask)
+                f_post = self.FullwayBounceBackBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
+            elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
+                # f_aux is the neighbour's post-streaming values
+                # Storing post-streaming data in directions that leave the domain
+                f_post = self.ExtrapolationOutflowBC.warp_functional_postcollision(f_pre, f_post, f_aux, missing_mask)
+
             return f_post
 
         @wp.func
@@ -205,9 +213,16 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # special preparation of auxiliary data
             if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
-                index_nbr = index - get_normal_vectors_2d(_missing_mask)
+                nv = get_normal_vectors_2d(_missing_mask)
                 for l in range(self.velocity_set.q):
-                    f_auxiliary[l] = f_0[l, index_nbr[0], index_nbr[1]]
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1]]
 
             # Apply post-streaming type boundary conditions
             f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
@@ -227,7 +242,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             )
 
             # Apply post-collision type boundary conditions
-            f_post_collision = apply_post_collision_bc(f_post_stream, f_post_collision, _missing_mask, _boundary_id, bc_struct)
+            f_post_collision = apply_post_collision_bc(f_post_stream, f_post_collision, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Set the output
             for l in range(self.velocity_set.q):
@@ -267,9 +282,16 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # special preparation of auxiliary data
             if _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
-                index_nbr = index - get_normal_vectors_3d(_missing_mask)
+                nv = get_normal_vectors_3d(_missing_mask)
                 for l in range(self.velocity_set.q):
-                    f_auxiliary[l] = f_0[l, index_nbr[0], index_nbr[1], index_nbr[2]]
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1], pull_index[2]]
 
             # Apply post-streaming type boundary conditions
             f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
@@ -284,7 +306,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_post_collision = self.collision.warp_functional(f_post_stream, feq, rho, u)
 
             # Apply post-collision type boundary conditions
-            f_post_collision = apply_post_collision_bc(f_post_stream, f_post_collision, _missing_mask, _boundary_id, bc_struct)
+            f_post_collision = apply_post_collision_bc(f_post_stream, f_post_collision, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Set the output
             for l in range(self.velocity_set.q):
