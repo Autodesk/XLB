@@ -63,25 +63,6 @@ class RegularizedBC(ZouHeBC):
         # The operator to compute the momentum flux
         self.momentum_flux = MomentumFlux()
 
-    # helper function
-    def compute_qi(self):
-        # Qi = cc - cs^2*I
-        dim = self.velocity_set.d
-        Qi = self.velocity_set.cc
-        if dim == 3:
-            diagonal = (0, 3, 5)
-            offdiagonal = (1, 2, 4)
-        elif dim == 2:
-            diagonal = (0, 2)
-            offdiagonal = (1,)
-        else:
-            raise ValueError(f"dim = {dim} not supported")
-
-        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
-        Qi[:, diagonal] += -1.0 / 3.0
-        Qi[:, offdiagonal] *= 2.0
-        return Qi
-
     @partial(jit, static_argnums=(0,), inline=True)
     def regularize_fpop(self, fpop, feq):
         """
@@ -102,22 +83,7 @@ class RegularizedBC(ZouHeBC):
         # Qi = cc - cs^2*I
         dim = self.velocity_set.d
         weights = self.velocity_set.w[(slice(None),) + (None,) * dim]
-        # TODO: if I use the following I get NaN ! figure out why!
-        #       Qi = jnp.array(self.compute_qi(), dtype=self.compute_dtype)
-        Qi = jnp.array(self.velocity_set.cc, dtype=self.compute_dtype)
-        if dim == 3:
-            diagonal = (0, 3, 5)
-            offdiagonal = (1, 2, 4)
-        elif dim == 2:
-            diagonal = (0, 2)
-            offdiagonal = (1,)
-        else:
-            raise ValueError(f"dim = {dim} not supported")
-
-        # Qi = cc - cs^2*I
-        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
-        Qi = Qi.at[:, diagonal].add(-1.0 / 3.0)
-        Qi = Qi.at[:, offdiagonal].multiply(2.0)
+        Qi = jnp.array(self.velocity_set.qi, dtype=self.compute_dtype)
 
         # Compute momentum flux of off-equilibrium populations for regularization: Pi^1 = Pi^{neq}
         f_neq = fpop - feq
@@ -166,7 +132,6 @@ class RegularizedBC(ZouHeBC):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
         # compute Qi tensor and store it in self
-        _qi = wp.constant(wp.mat((_q, _d * (_d + 1) // 2), dtype=wp.float32)(self.compute_qi()))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = wp.float32(rho)
@@ -175,7 +140,8 @@ class RegularizedBC(ZouHeBC):
         _w = self.velocity_set.wp_w
         _c = self.velocity_set.wp_c
         _c32 = self.velocity_set.wp_c32
-        # TODO: this is way less than ideal. we should not be making new types
+        _qi = self.velocity_set.wp_qi
+        # TODO: related to _c32: this is way less than ideal. we should not be making new types
 
         @wp.func
         def _get_fsum(
