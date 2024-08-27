@@ -25,7 +25,7 @@ class FlowOverSphere:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_map = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -34,7 +34,7 @@ class FlowOverSphere:
 
     def _setup(self, omega):
         self.setup_boundary_conditions()
-        self.setup_boundary_masks()
+        self.setup_boundary_masker()
         self.initialize_fields()
         self.setup_stepper(omega)
 
@@ -75,13 +75,13 @@ class FlowOverSphere:
         # of the corner nodes. This way the corners are treated as wall and not inlet/outlet.
         # TODO: how to ensure about this behind in the src code?
 
-    def setup_boundary_masks(self):
+    def setup_boundary_masker(self):
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0))
+        self.boundary_map, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_map, self.missing_mask, (0, 0, 0))
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
@@ -91,7 +91,7 @@ class FlowOverSphere:
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):
-            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_map, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if i % post_process_interval == 0 or i == num_steps - 1:

@@ -25,10 +25,10 @@ class STLBoundaryMasker(Operator):
         super().__init__(velocity_set, precision_policy, compute_backend)
 
     @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(self, stl_file, origin, spacing, id_number, boundary_id, missing_mask, start_index=(0, 0, 0)):
+    def jax_implementation(self, stl_file, origin, spacing, id_number, boundary_map, missing_mask, start_index=(0, 0, 0)):
         # Use Warp backend even for this particular operation.
-        boundary_id, missing_mask = self.warp_implementation(stl_file, origin, spacing, id_number, boundary_id, missing_mask, start_index=(0, 0, 0))
-        return wp.to_jax(boundary_id), wp.to_jax(missing_mask)
+        boundary_map, missing_mask = self.warp_implementation(stl_file, origin, spacing, id_number, boundary_map, missing_mask, start_index=(0, 0, 0))
+        return wp.to_jax(boundary_map), wp.to_jax(missing_mask)
 
     def _construct_warp(self):
         # Make constants for warp
@@ -42,7 +42,7 @@ class STLBoundaryMasker(Operator):
             origin: wp.vec3,
             spacing: wp.vec3,
             id_number: wp.int32,
-            boundary_id: wp.array4d(dtype=wp.uint8),
+            boundary_map: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -62,9 +62,9 @@ class STLBoundaryMasker(Operator):
 
             # Compute the maximum length
             max_length = wp.sqrt(
-                (spacing[0] * wp.float32(boundary_id.shape[1])) ** 2.0
-                + (spacing[1] * wp.float32(boundary_id.shape[2])) ** 2.0
-                + (spacing[2] * wp.float32(boundary_id.shape[3])) ** 2.0
+                (spacing[0] * wp.float32(boundary_map.shape[1])) ** 2.0
+                + (spacing[1] * wp.float32(boundary_map.shape[2])) ** 2.0
+                + (spacing[2] * wp.float32(boundary_map.shape[3])) ** 2.0
             )
 
             # evaluate if point is inside mesh
@@ -83,7 +83,7 @@ class STLBoundaryMasker(Operator):
                             push_index[d] = index[d] + _c[d, l]
 
                         # Set the boundary id and missing_mask
-                        boundary_id[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
+                        boundary_map[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
                         missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel
@@ -95,7 +95,7 @@ class STLBoundaryMasker(Operator):
         origin,
         spacing,
         id_number,
-        boundary_id,
+        boundary_map,
         missing_mask,
         start_index=(0, 0, 0),
     ):
@@ -116,11 +116,11 @@ class STLBoundaryMasker(Operator):
                 origin,
                 spacing,
                 id_number,
-                boundary_id,
+                boundary_map,
                 missing_mask,
                 start_index,
             ],
-            dim=boundary_id.shape[1:],
+            dim=boundary_map.shape[1:],
         )
 
-        return boundary_id, missing_mask
+        return boundary_map, missing_mask

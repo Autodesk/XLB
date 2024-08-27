@@ -32,7 +32,7 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
 
     missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
-    boundary_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    boundary_map = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
 
@@ -54,33 +54,33 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
     assert len(indices) == dim
     test_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
     test_bc.id = 5
-    boundary_mask, missing_mask = indices_boundary_masker(
+    boundary_map, missing_mask = indices_boundary_masker(
         [test_bc],
-        boundary_mask,
+        boundary_map,
         missing_mask,
         start_index=(0, 0, 0) if dim == 3 else (0, 0),
     )
     assert missing_mask.dtype == xlb.Precision.BOOL.wp_dtype
 
-    assert boundary_mask.dtype == xlb.Precision.UINT8.wp_dtype
+    assert boundary_map.dtype == xlb.Precision.UINT8.wp_dtype
 
-    boundary_mask = boundary_mask.numpy()
+    boundary_map = boundary_map.numpy()
     missing_mask = missing_mask.numpy()
 
-    assert boundary_mask.shape == (1,) + grid_shape
+    assert boundary_map.shape == (1,) + grid_shape
 
     assert missing_mask.shape == (velocity_set.q,) + grid_shape
 
     if dim == 2:
-        assert np.all(boundary_mask[0, indices[0], indices[1]] == test_bc.id)
-        # assert that the rest of the boundary_mask is zero
-        boundary_mask[0, indices[0], indices[1]] = 0
-        assert np.all(boundary_mask == 0)
+        assert np.all(boundary_map[0, indices[0], indices[1]] == test_bc.id)
+        # assert that the rest of the boundary_map is zero
+        boundary_map[0, indices[0], indices[1]] = 0
+        assert np.all(boundary_map == 0)
     if dim == 3:
-        assert np.all(boundary_mask[0, indices[0], indices[1], indices[2]] == test_bc.id)
-        # assert that the rest of the boundary_mask is zero
-        boundary_mask[0, indices[0], indices[1], indices[2]] = 0
-        assert np.all(boundary_mask == 0)
+        assert np.all(boundary_map[0, indices[0], indices[1], indices[2]] == test_bc.id)
+        # assert that the rest of the boundary_map is zero
+        boundary_map[0, indices[0], indices[1], indices[2]] = 0
+        assert np.all(boundary_map == 0)
 
 
 if __name__ == "__main__":

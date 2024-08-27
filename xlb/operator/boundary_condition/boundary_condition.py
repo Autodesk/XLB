@@ -73,14 +73,14 @@ class BoundaryCondition(Operator):
         def _get_thread_data_2d(
             f_pre: wp.array3d(dtype=Any),
             f_post: wp.array3d(dtype=Any),
-            boundary_mask: wp.array3d(dtype=wp.uint8),
+            boundary_map: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
             index: wp.vec2i,
         ):
             # Get the boundary id and missing mask
             _f_pre = _f_vec()
             _f_post = _f_vec()
-            _boundary_id = boundary_mask[0, index[0], index[1]]
+            _boundary_map = boundary_map[0, index[0], index[1]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of populations
@@ -92,20 +92,20 @@ class BoundaryCondition(Operator):
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return _f_pre, _f_post, _boundary_id, _missing_mask
+            return _f_pre, _f_post, _boundary_map, _missing_mask
 
         @wp.func
         def _get_thread_data_3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
-            boundary_mask: wp.array4d(dtype=wp.uint8),
+            boundary_map: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             index: wp.vec3i,
         ):
             # Get the boundary id and missing mask
             _f_pre = _f_vec()
             _f_post = _f_vec()
-            _boundary_id = boundary_mask[0, index[0], index[1], index[2]]
+            _boundary_map = boundary_map[0, index[0], index[1], index[2]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of populations
@@ -117,7 +117,7 @@ class BoundaryCondition(Operator):
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return _f_pre, _f_post, _boundary_id, _missing_mask
+            return _f_pre, _f_post, _boundary_map, _missing_mask
 
         # Construct some helper warp functions for getting tid data
         if self.compute_backend == ComputeBackend.WARP:
@@ -127,7 +127,7 @@ class BoundaryCondition(Operator):
             self.warp_functional_postcollision = functional_postcollision
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def prepare_bc_auxilary_data(self, f_pre, f_post, boundary_mask, missing_mask):
+    def prepare_bc_auxilary_data(self, f_pre, f_post, boundary_map, missing_mask):
         """
         A placeholder function for prepare the auxilary distribution functions for the boundary condition.
         currently being called after collision only.

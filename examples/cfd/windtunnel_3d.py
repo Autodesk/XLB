@@ -32,7 +32,7 @@ class WindTunnel3D:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_map = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -41,7 +41,7 @@ class WindTunnel3D:
 
     def _setup(self, omega, wind_speed):
         self.setup_boundary_conditions(wind_speed)
-        self.setup_boundary_masks()
+        self.setup_boundary_masker()
         self.initialize_fields()
         self.setup_stepper(omega)
 
@@ -86,13 +86,13 @@ class WindTunnel3D:
         bc_car = FullwayBounceBackBC(indices=car)
         self.boundary_conditions = [bc_left, bc_do_nothing, bc_walls, bc_car]
 
-    def setup_boundary_masks(self):
+    def setup_boundary_masker(self):
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask, (0, 0, 0))
+        self.boundary_map, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_map, self.missing_mask, (0, 0, 0))
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
@@ -103,7 +103,7 @@ class WindTunnel3D:
     def run(self, num_steps, print_interval, post_process_interval=100):
         start_time = time.time()
         for i in range(num_steps):
-            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_map, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if (i + 1) % print_interval == 0:

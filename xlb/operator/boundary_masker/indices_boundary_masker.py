@@ -29,7 +29,7 @@ class IndicesBoundaryMasker(Operator):
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
     # @partial(jit, static_argnums=(0))
-    def jax_implementation(self, bclist, boundary_mask, missing_mask, start_index=None):
+    def jax_implementation(self, bclist, boundary_map, missing_mask, start_index=None):
         # Pad the missing mask to create a grid mask to identify out of bound boundaries
         # Set padded regin to True (i.e. boundary)
         dim = missing_mask.ndim - 1
@@ -45,7 +45,7 @@ class IndicesBoundaryMasker(Operator):
         if start_index is None:
             start_index = (0,) * dim
 
-        bid = boundary_mask[0]
+        bid = boundary_map[0]
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
             id_number = bc.id
@@ -59,13 +59,13 @@ class IndicesBoundaryMasker(Operator):
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 
-        boundary_mask = boundary_mask.at[0].set(bid)
+        boundary_map = boundary_map.at[0].set(bid)
         grid_mask = self.stream(grid_mask)
         if dim == 2:
             missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y]
         if dim == 3:
             missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z]
-        return boundary_mask, missing_mask
+        return boundary_map, missing_mask
 
     def _construct_warp(self):
         # Make constants for warp
@@ -77,7 +77,7 @@ class IndicesBoundaryMasker(Operator):
         def kernel2d(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.array1d(dtype=wp.uint8),
-            boundary_mask: wp.array3d(dtype=wp.uint8),
+            boundary_map: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
             start_index: wp.vec2i,
         ):
@@ -104,14 +104,14 @@ class IndicesBoundaryMasker(Operator):
                         # Set the missing mask
                         missing_mask[l, index[0], index[1]] = True
 
-                boundary_mask[0, index[0], index[1]] = id_number[ii]
+                boundary_map[0, index[0], index[1]] = id_number[ii]
 
         # Construct the warp 3D kernel
         @wp.kernel
         def kernel3d(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.array1d(dtype=wp.uint8),
-            boundary_mask: wp.array4d(dtype=wp.uint8),
+            boundary_map: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -153,14 +153,14 @@ class IndicesBoundaryMasker(Operator):
                         # Set the missing mask
                         missing_mask[l, index[0], index[1], index[2]] = True
 
-                boundary_mask[0, index[0], index[1], index[2]] = id_number[ii]
+                boundary_map[0, index[0], index[1], index[2]] = id_number[ii]
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, bclist, boundary_mask, missing_mask, start_index=None):
+    def warp_implementation(self, bclist, boundary_map, missing_mask, start_index=None):
         dim = self.velocity_set.d
         index_list = [[] for _ in range(dim)]
         id_list = []
@@ -184,11 +184,11 @@ class IndicesBoundaryMasker(Operator):
             inputs=[
                 indices,
                 id_number,
-                boundary_mask,
+                boundary_map,
                 missing_mask,
                 start_index,
             ],
             dim=indices.shape[1],
         )
 
-        return boundary_mask, missing_mask
+        return boundary_map, missing_mask
