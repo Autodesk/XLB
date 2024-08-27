@@ -12,7 +12,7 @@ from xlb.operator.operator import Operator
 
 class STLBoundaryMasker(Operator):
     """
-    Operator for creating a boundary mask from an STL file
+    Operator for creating a boundary missing_mask from an STL file
     """
 
     def __init__(
@@ -24,6 +24,12 @@ class STLBoundaryMasker(Operator):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+    @Operator.register_backend(ComputeBackend.JAX)
+    def jax_implementation(self, stl_file, origin, spacing, id_number, boundary_id, missing_mask, start_index=(0, 0, 0)):
+        # Use Warp backend even for this particular operation.
+        boundary_id, missing_mask = self.warp_implementation(stl_file, origin, spacing, id_number, boundary_id, missing_mask, start_index=(0, 0, 0))
+        return wp.to_jax(boundary_id), wp.to_jax(missing_mask)
+
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.wp_c
@@ -32,12 +38,12 @@ class STLBoundaryMasker(Operator):
         # Construct the warp kernel
         @wp.kernel
         def kernel(
-            mesh: wp.uint64,
+            mesh_id: wp.uint64,
             origin: wp.vec3,
             spacing: wp.vec3,
             id_number: wp.int32,
-            boundary_mask: wp.array4d(dtype=wp.uint8),
-            mask: wp.array4d(dtype=wp.bool),
+            boundary_id: wp.array4d(dtype=wp.uint8),
+            missing_mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
             # get index
@@ -56,9 +62,9 @@ class STLBoundaryMasker(Operator):
 
             # Compute the maximum length
             max_length = wp.sqrt(
-                (spacing[0] * wp.float32(boundary_mask.shape[1])) ** 2.0
-                + (spacing[1] * wp.float32(boundary_mask.shape[2])) ** 2.0
-                + (spacing[2] * wp.float32(boundary_mask.shape[3])) ** 2.0
+                (spacing[0] * wp.float32(boundary_id.shape[1])) ** 2.0
+                + (spacing[1] * wp.float32(boundary_id.shape[2])) ** 2.0
+                + (spacing[2] * wp.float32(boundary_id.shape[3])) ** 2.0
             )
 
             # evaluate if point is inside mesh
@@ -66,7 +72,7 @@ class STLBoundaryMasker(Operator):
             face_u = float(0.0)
             face_v = float(0.0)
             sign = float(0.0)
-            if wp.mesh_query_point_sign_winding_number(mesh, pos, max_length, sign, face_index, face_u, face_v):
+            if wp.mesh_query_point_sign_winding_number(mesh_id, pos, max_length, sign, face_index, face_u, face_v):
                 # set point to be solid
                 if sign <= 0:  # TODO: fix this
                     # Stream indices
@@ -76,9 +82,9 @@ class STLBoundaryMasker(Operator):
                         for d in range(self.velocity_set.d):
                             push_index[d] = index[d] + _c[d, l]
 
-                        # Set the boundary id and mask
-                        boundary_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
-                        mask[l, push_index[0], push_index[1], push_index[2]] = True
+                        # Set the boundary id and missing_mask
+                        boundary_id[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
+                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel
 
@@ -89,8 +95,8 @@ class STLBoundaryMasker(Operator):
         origin,
         spacing,
         id_number,
-        boundary_mask,
-        mask,
+        boundary_id,
+        missing_mask,
         start_index=(0, 0, 0),
     ):
         # Load the mesh
@@ -110,11 +116,11 @@ class STLBoundaryMasker(Operator):
                 origin,
                 spacing,
                 id_number,
-                boundary_mask,
-                mask,
+                boundary_id,
+                missing_mask,
                 start_index,
             ],
-            dim=boundary_mask.shape[1:],
+            dim=boundary_id.shape[1:],
         )
 
-        return boundary_mask, mask
+        return boundary_id, missing_mask
