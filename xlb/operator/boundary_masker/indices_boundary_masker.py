@@ -48,8 +48,9 @@ class IndicesBoundaryMasker(Operator):
         bid = boundary_map[0]
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
+            assert bc.mesh_points is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             id_number = bc.id
-            local_indices = np.array(bc.indices) + np.array(start_index)[:, np.newaxis]
+            local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
             padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
             bid = bid.at[tuple(local_indices)].set(id_number)
             # if dim == 2:
@@ -86,8 +87,8 @@ class IndicesBoundaryMasker(Operator):
 
             # Get local indices
             index = wp.vec2i()
-            index[0] = indices[0, ii] + start_index[0]
-            index[1] = indices[1, ii] + start_index[1]
+            index[0] = indices[0, ii] - start_index[0]
+            index[1] = indices[1, ii] - start_index[1]
 
             # Check if index is in bounds
             if index[0] >= 0 and index[0] < missing_mask.shape[1] and index[1] >= 0 and index[1] < missing_mask.shape[2]:
@@ -120,9 +121,9 @@ class IndicesBoundaryMasker(Operator):
 
             # Get local indices
             index = wp.vec3i()
-            index[0] = indices[0, ii] + start_index[0]
-            index[1] = indices[1, ii] + start_index[1]
-            index[2] = indices[2, ii] + start_index[2]
+            index[0] = indices[0, ii] - start_index[0]
+            index[1] = indices[1, ii] - start_index[1]
+            index[2] = indices[2, ii] - start_index[2]
 
             # Check if index is in bounds
             if (
@@ -166,6 +167,7 @@ class IndicesBoundaryMasker(Operator):
         id_list = []
         for bc in bclist:
             assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC using keyword "indices"!'
+            assert bc.mesh_points is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             for d in range(dim):
                 index_list[d] += bc.indices[d]
             id_list += [bc.id] * len(bc.indices[0])

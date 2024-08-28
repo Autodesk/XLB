@@ -35,6 +35,7 @@ class DoNothingBC(BoundaryCondition):
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
+        mesh_points=None,
     ):
         super().__init__(
             ImplementationStep.STREAMING,
@@ -42,6 +43,7 @@ class DoNothingBC(BoundaryCondition):
             precision_policy,
             compute_backend,
             indices,
+            mesh_points,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)

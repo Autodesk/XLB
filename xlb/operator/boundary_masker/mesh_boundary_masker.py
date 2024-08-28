@@ -1,7 +1,6 @@
 # Base class for all equilibriums
 
 import numpy as np
-from stl import mesh as np_mesh
 import warp as wp
 
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -10,7 +9,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
 
-class STLBoundaryMasker(Operator):
+class MeshBoundaryMasker(Operator):
     """
     Operator for creating a boundary missing_mask from an STL file
     """
@@ -19,15 +18,29 @@ class STLBoundaryMasker(Operator):
         self,
         velocity_set: VelocitySet,
         precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend.JAX,
+        compute_backend: ComputeBackend.WARP,
     ):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+        # Also using Warp kernels for JAX implementation
+        if self.compute_backend == ComputeBackend.JAX:
+            self.warp_functional, self.warp_kernel = self._construct_warp()
+
     @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(self, stl_file, origin, spacing, id_number, boundary_map, missing_mask, start_index=(0, 0, 0)):
+    def jax_implementation(
+        self,
+        bc,
+        origin,
+        spacing,
+        boundary_map,
+        missing_mask,
+        start_index=(0, 0, 0),
+    ):
         # Use Warp backend even for this particular operation.
-        boundary_map, missing_mask = self.warp_implementation(stl_file, origin, spacing, id_number, boundary_map, missing_mask, start_index=(0, 0, 0))
+        boundary_map, missing_mask = self.warp_implementation(
+            bc, origin, spacing, wp.array(np.array(boundary_map)), wp.array(np.array(missing_mask)), start_index
+        )
         return wp.to_jax(boundary_map), wp.to_jax(missing_mask)
 
     def _construct_warp(self):
@@ -91,17 +104,22 @@ class STLBoundaryMasker(Operator):
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
         self,
-        stl_file,
+        bc,
         origin,
         spacing,
-        id_number,
         boundary_map,
         missing_mask,
         start_index=(0, 0, 0),
     ):
-        # Load the mesh
-        mesh = np_mesh.Mesh.from_file(stl_file)
-        mesh_points = mesh.points.reshape(-1, 3)
+        assert bc.mesh_points is not None, f'Please provide the mesh points for {bc.__class__.__name__} BC using keyword "mesh_points"!'
+        assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
+        assert bc.mesh_points.shape[1] == self.velocity_set.d, "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
+        mesh_points = bc.mesh_points
+        id_number = bc.id
+
+        # We are done with bc.mesh_points. Remove them from BC objects
+        bc.__dict__.pop("mesh_points", None)
+
         mesh_indices = np.arange(mesh_points.shape[0])
         mesh = wp.Mesh(
             points=wp.array(mesh_points, dtype=wp.vec3),

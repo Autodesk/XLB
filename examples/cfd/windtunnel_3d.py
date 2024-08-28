@@ -12,7 +12,7 @@ from xlb.operator.boundary_condition import (
     ExtrapolationOutflowBC,
 )
 from xlb.operator.macroscopic import Macroscopic
-from xlb.operator.boundary_masker import IndicesBoundaryMasker
+from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
 import numpy as np
@@ -64,17 +64,20 @@ class WindTunnel3D:
             for i in range(self.velocity_set.d)
         ]
 
+        # Load the mesh
         stl_filename = "examples/cfd/stl-files/DrivAer-Notchback.stl"
-        grid_size_x = self.grid_shape[0]
-        car_length_lbm_unit = grid_size_x / 4
-        car_voxelized, pitch = self.voxelize_stl(stl_filename, car_length_lbm_unit)
+        mesh = trimesh.load_mesh(stl_filename, process=False)
+        mesh_points = mesh.vertices
 
-        # car_area = np.prod(car_voxelized.shape[1:])
-        tx, ty, _ = np.array([grid_size_x, grid_size_y, grid_size_z]) - car_voxelized.shape
-        shift = [tx // 4, ty // 2, 0]
-        car = np.argwhere(car_voxelized) + shift
-        car = np.array(car).T
-        car = [tuple(car[i]) for i in range(self.velocity_set.d)]
+        # Transform the mesh points to be located in the right position in the wind tunnel
+        mesh_points -= mesh_points.min(axis=0)
+        mesh_extents = mesh_points.max(axis=0)
+        length_phys_unit = mesh_extents.max()
+        length_lbm_unit = self.grid_shape[0] / 4
+        dx = length_phys_unit / length_lbm_unit
+        shift = np.array([self.grid_shape[0] * dx / 4, (self.grid_shape[1] * dx - mesh_extents[1]) / 2, 0])
+        car = mesh_points + shift
+        self.grid_spacing = dx
 
         return inlet, outlet, walls, car
 
@@ -83,7 +86,7 @@ class WindTunnel3D:
         bc_left = EquilibriumBC(rho=1.0, u=(wind_speed, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
         bc_do_nothing = ExtrapolationOutflowBC(indices=outlet)
-        bc_car = FullwayBounceBackBC(indices=car)
+        bc_car = FullwayBounceBackBC(mesh_points=car)
         self.boundary_conditions = [bc_left, bc_do_nothing, bc_walls, bc_car]
 
     def setup_boundary_masker(self):
@@ -92,7 +95,17 @@ class WindTunnel3D:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_map, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_map, self.missing_mask, (0, 0, 0))
+        mesh_boundary_masker = MeshBoundaryMasker(
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=self.backend,
+        )
+        bclist_other = self.boundary_conditions[:-1]
+        bc_mesh = self.boundary_conditions[-1]
+        dx = self.grid_spacing
+        origin, spacing = (0, 0, 0), (dx, dx, dx)
+        self.boundary_map, self.missing_mask = indices_boundary_masker(bclist_other, self.boundary_map, self.missing_mask)
+        self.boundary_map, self.missing_mask = mesh_boundary_masker(bc_mesh, origin, spacing, self.boundary_map, self.missing_mask)
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
