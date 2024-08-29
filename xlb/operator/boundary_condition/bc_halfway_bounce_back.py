@@ -68,6 +68,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
         def functional(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -90,14 +91,15 @@ class HalfwayBounceBackBC(BoundaryCondition):
         ):
             # Get the global index
             i, j = wp.tid()
-            index = wp.vec3i(i, j)
+            index = wp.vec2i(i, j)
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(HalfwayBounceBackBC.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_post
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -122,7 +124,8 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(HalfwayBounceBackBC.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_post
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 

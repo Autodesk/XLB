@@ -9,6 +9,7 @@ from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
     EquilibriumBC,
     DoNothingBC,
+    ExtrapolationOutflowBC,
 )
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
@@ -81,9 +82,9 @@ class WindTunnel3D:
         inlet, outlet, walls, car = self.define_boundary_indices()
         bc_left = EquilibriumBC(rho=1.0, u=(wind_speed, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
-        bc_do_nothing = DoNothingBC(indices=outlet)
+        bc_do_nothing = ExtrapolationOutflowBC(indices=outlet)
         bc_car = FullwayBounceBackBC(indices=car)
-        self.boundary_conditions = [bc_left, bc_walls, bc_do_nothing, bc_car]
+        self.boundary_conditions = [bc_left, bc_do_nothing, bc_walls, bc_car]
 
     def setup_boundary_masks(self):
         indices_boundary_masker = IndicesBoundaryMasker(

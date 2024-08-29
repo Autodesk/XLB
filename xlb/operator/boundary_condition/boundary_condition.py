@@ -5,6 +5,8 @@ Base class for boundary conditions in a LBM simulation.
 from enum import Enum, auto
 import warp as wp
 from typing import Any
+from jax import jit
+from functools import partial
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -48,6 +50,15 @@ class BoundaryCondition(Operator):
             # Set local constants TODO: This is a hack and should be fixed with warp update
             _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
             _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
+
+        @wp.func
+        def prepare_bc_auxilary_data(
+            f_pre: Any,
+            f_post: Any,
+            f_aux: Any,
+            missing_mask: Any,
+        ):
+            return f_post
 
         @wp.func
         def _get_thread_data_2d(
@@ -103,3 +114,12 @@ class BoundaryCondition(Operator):
         if self.compute_backend == ComputeBackend.WARP:
             self._get_thread_data_2d = _get_thread_data_2d
             self._get_thread_data_3d = _get_thread_data_3d
+            self.prepare_bc_auxilary_data = prepare_bc_auxilary_data
+
+    @partial(jit, static_argnums=(0,), inline=True)
+    def prepare_bc_auxilary_data(self, f_pre, f_post, boundary_mask, missing_mask):
+        """
+        A placeholder function for prepare the auxilary distribution functions for the boundary condition.
+        currently being called after collision only.
+        """
+        return f_post

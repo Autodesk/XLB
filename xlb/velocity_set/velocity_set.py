@@ -41,6 +41,7 @@ class VelocitySet(object):
         self.main_indices = self._construct_main_indices()
         self.right_indices = self._construct_right_indices()
         self.left_indices = self._construct_left_indices()
+        self.qi = self._construct_qi()
 
         # Make warp constants for these vectors
         # TODO: Following warp updates these may not be necessary
@@ -49,6 +50,7 @@ class VelocitySet(object):
         self.wp_opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self.opp_indices))
         self.wp_cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.cc))
         self.wp_c32 = wp.constant(wp.mat((self.d, self.q), dtype=wp.float32)(self.c))
+        self.wp_qi = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.qi))
 
     def warp_lattice_vec(self, dtype):
         return wp.vec(len(self.c), dtype=dtype)
@@ -58,6 +60,24 @@ class VelocitySet(object):
 
     def warp_stream_mat(self, dtype):
         return wp.mat((self.q, self.d), dtype=dtype)
+
+    def _construct_qi(self):
+        # Qi = cc - cs^2*I
+        dim = self.d
+        Qi = self.cc.copy()
+        if dim == 3:
+            diagonal = (0, 3, 5)
+            offdiagonal = (1, 2, 4)
+        elif dim == 2:
+            diagonal = (0, 2)
+            offdiagonal = (1,)
+        else:
+            raise ValueError(f"dim = {dim} not supported")
+
+        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
+        Qi[:, diagonal] += -1.0 / 3.0
+        Qi[:, offdiagonal] *= 2.0
+        return Qi
 
     def _construct_lattice_moment(self):
         """

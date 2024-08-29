@@ -12,7 +12,7 @@ from xlb.velocity_set import VelocitySet, D2Q9, D3Q27
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.collision.collision import Collision
 from xlb.operator import Operator
-from xlb.operator.macroscopic import SecondMoment
+from xlb.operator.macroscopic import SecondMoment as MomentumFlux
 
 
 class KBC(Collision):
@@ -29,7 +29,7 @@ class KBC(Collision):
         precision_policy=None,
         compute_backend=None,
     ):
-        self.momentum_flux = SecondMoment()
+        self.momentum_flux = MomentumFlux()
         self.epsilon = 1e-32
         self.beta = omega * 0.5
         self.inv_beta = 1.0 / self.beta
@@ -311,7 +311,7 @@ class KBC(Collision):
         ):
             # Get the global index
             i, j = wp.tid()
-            index = wp.vec3i(i, j)  # TODO: Warp needs to fix this
+            index = wp.vec2i(i, j)  # TODO: Warp needs to fix this
 
             # Load needed values
             _f = _f_vec()

@@ -16,7 +16,7 @@ from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
-from xlb.operator.macroscopic.second_moment import SecondMoment
+from xlb.operator.macroscopic.second_moment import SecondMoment as MomentumFlux
 
 
 class RegularizedBC(ZouHeBC):
@@ -61,26 +61,7 @@ class RegularizedBC(ZouHeBC):
         )
 
         # The operator to compute the momentum flux
-        self.momentum_flux = SecondMoment()
-
-    # helper function
-    def compute_qi(self):
-        # Qi = cc - cs^2*I
-        dim = self.velocity_set.d
-        Qi = self.velocity_set.cc
-        if dim == 3:
-            diagonal = (0, 3, 5)
-            offdiagonal = (1, 2, 4)
-        elif dim == 2:
-            diagonal = (0, 2)
-            offdiagonal = (1,)
-        else:
-            raise ValueError(f"dim = {dim} not supported")
-
-        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
-        Qi[:, diagonal] += -1.0 / 3.0
-        Qi[:, offdiagonal] *= 2.0
-        return Qi
+        self.momentum_flux = MomentumFlux()
 
     @partial(jit, static_argnums=(0,), inline=True)
     def regularize_fpop(self, fpop, feq):
@@ -102,22 +83,7 @@ class RegularizedBC(ZouHeBC):
         # Qi = cc - cs^2*I
         dim = self.velocity_set.d
         weights = self.velocity_set.w[(slice(None),) + (None,) * dim]
-        # TODO: if I use the following I get NaN ! figure out why!
-        #       Qi = jnp.array(self.compute_qi(), dtype=self.compute_dtype)
-        Qi = jnp.array(self.velocity_set.cc, dtype=self.compute_dtype)
-        if dim == 3:
-            diagonal = (0, 3, 5)
-            offdiagonal = (1, 2, 4)
-        elif dim == 2:
-            diagonal = (0, 2)
-            offdiagonal = (1,)
-        else:
-            raise ValueError(f"dim = {dim} not supported")
-
-        # Qi = cc - cs^2*I
-        # multiply off-diagonal elements by 2 because the Q tensor is symmetric
-        Qi = Qi.at[:, diagonal].add(-1.0 / 3.0)
-        Qi = Qi.at[:, offdiagonal].multiply(2.0)
+        Qi = jnp.array(self.velocity_set.qi, dtype=self.compute_dtype)
 
         # Compute momentum flux of off-equilibrium populations for regularization: Pi^1 = Pi^{neq}
         f_neq = fpop - feq
@@ -166,7 +132,6 @@ class RegularizedBC(ZouHeBC):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
         # compute Qi tensor and store it in self
-        _qi = wp.constant(wp.mat((_q, _d * (_d + 1) // 2), dtype=wp.float32)(self.compute_qi()))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = wp.float32(rho)
@@ -175,16 +140,8 @@ class RegularizedBC(ZouHeBC):
         _w = self.velocity_set.wp_w
         _c = self.velocity_set.wp_c
         _c32 = self.velocity_set.wp_c32
-        # TODO: this is way less than ideal. we should not be making new types
-
-        @wp.func
-        def get_normal_vectors_2d(
-            lattice_direction: Any,
-        ):
-            l = lattice_direction
-            if wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
-                normals = -_u_vec(_c32[0, l], _c32[1, l])
-            return normals
+        _qi = self.velocity_set.wp_qi
+        # TODO: related to _c32: this is way less than ideal. we should not be making new types
 
         @wp.func
         def _get_fsum(
@@ -199,6 +156,14 @@ class RegularizedBC(ZouHeBC):
                 elif missing_mask[l] != wp.uint8(1):
                     fsum_middle += fpop[l]
             return fsum_known + fsum_middle
+
+        @wp.func
+        def get_normal_vectors_2d(
+            missing_mask: Any,
+        ):
+            for l in range(_q):
+                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
+                    return -_u_vec(_c32[0, l], _c32[1, l])
 
         @wp.func
         def get_normal_vectors_3d(
@@ -249,6 +214,7 @@ class RegularizedBC(ZouHeBC):
         def functional3d_velocity(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -276,6 +242,7 @@ class RegularizedBC(ZouHeBC):
         def functional3d_pressure(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -301,6 +268,7 @@ class RegularizedBC(ZouHeBC):
         def functional2d_velocity(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -328,6 +296,7 @@ class RegularizedBC(ZouHeBC):
         def functional2d_pressure(
             f_pre: Any,
             f_post: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -359,14 +328,15 @@ class RegularizedBC(ZouHeBC):
         ):
             # Get the global index
             i, j = wp.tid()
-            index = wp.vec3i(i, j)
+            index = wp.vec2i(i, j)
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_vec()
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -391,7 +361,8 @@ class RegularizedBC(ZouHeBC):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f = functional(_f_pre, _f_post, _missing_mask)
+                _f_aux = _f_vec()
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
