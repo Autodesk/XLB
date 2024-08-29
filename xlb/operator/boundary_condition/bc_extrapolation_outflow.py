@@ -61,7 +61,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         # Unpack the two warp functionals needed for this BC!
         if self.compute_backend == ComputeBackend.WARP:
-            self.warp_functional_poststream, self.warp_functional_postcollision = self.warp_functional
+            self.warp_functional, self.prepare_bc_auxilary_data = self.warp_functional
 
     def _get_normal_vec(self, indices):
         # Get the frequency count and most common element directly
@@ -157,10 +157,10 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         # Construct the functionals for this BC
         @wp.func
-        def functional_poststream(
+        def functional(
             f_pre: Any,
             f_post: Any,
-            f_nbr: Any,
+            f_aux: Any,
             missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
@@ -173,7 +173,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return _f
 
         @wp.func
-        def functional_postcollision(
+        def prepare_bc_auxilary_data(
             f_pre: Any,
             f_post: Any,
             f_aux: Any,
@@ -202,7 +202,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_mask, missing_mask, index)
-            _faux = _f_vec()
+            _f_aux = _f_vec()
 
             # special preparation of auxiliary data
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
@@ -215,13 +215,13 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                         for d in range(self.velocity_set.d):
                             pull_index[d] = index[d] - (_c[d, l] + nv[d])
                         # The following is the post-streaming values of the neighbor cell
-                        _faux[l] = _f_pre[l, pull_index[0], pull_index[1]]
+                        _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1]]
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
+                # TODO: is there any way for this BC to have a meaningful kernel given that it has two steps after both
                 # collision and streaming?
-                _f = functional_poststream(_f_pre, _f_post, _faux, _missing_mask)
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -243,7 +243,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_mask, missing_mask, index)
-            _faux = _f_vec()
+            _f_aux = _f_vec()
 
             # special preparation of auxiliary data
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
@@ -256,13 +256,13 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                         for d in range(self.velocity_set.d):
                             pull_index[d] = index[d] - (_c[d, l] + nv[d])
                         # The following is the post-streaming values of the neighbor cell
-                        _faux[l] = _f_pre[l, pull_index[0], pull_index[1], pull_index[2]]
+                        _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1], pull_index[2]]
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
                 # collision and streaming?
-                _f = functional_poststream(_f_pre, _f_post, _faux, _missing_mask)
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
                 _f = _f_post
 
@@ -272,7 +272,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
-        return [functional_poststream, functional_postcollision], kernel
+        return (functional, prepare_bc_auxilary_data), kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f_pre, f_post, boundary_mask, missing_mask):

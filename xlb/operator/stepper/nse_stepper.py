@@ -142,7 +142,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post = self.RegularizedBC_pressure.warp_functional(f_pre, f_post, f_aux, missing_mask)
             elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
                 # Regularized boundary condition (bc type = velocity)
-                f_post = self.ExtrapolationOutflowBC.warp_functional_poststream(f_pre, f_post, f_aux, missing_mask)
+                f_post = self.ExtrapolationOutflowBC.warp_functional(f_pre, f_post, f_aux, missing_mask)
             return f_post
 
         @wp.func
@@ -160,7 +160,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
                 # f_aux is the neighbour's post-streaming values
                 # Storing post-streaming data in directions that leave the domain
-                f_post = self.ExtrapolationOutflowBC.warp_functional_postcollision(f_pre, f_post, f_aux, missing_mask)
+                f_post = self.ExtrapolationOutflowBC.prepare_bc_auxilary_data(f_pre, f_post, f_aux, missing_mask)
 
             return f_post
 
@@ -221,7 +221,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             return f_post_collision, _missing_mask
 
         @wp.func
-        def prepare_bc_auxilary_data_2d(
+        def get_bc_auxilary_data_2d(
             f_0: wp.array3d(dtype=Any),
             index: Any,
             _boundary_id: Any,
@@ -244,7 +244,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             return f_auxiliary
 
         @wp.func
-        def prepare_bc_auxilary_data_3d(
+        def get_bc_auxilary_data_3d(
             f_0: wp.array4d(dtype=Any),
             index: Any,
             _boundary_id: Any,
@@ -287,7 +287,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Prepare auxilary data for BC (if applicable)
             _boundary_id = boundary_mask[0, index[0], index[1]]
-            f_auxiliary = prepare_bc_auxilary_data_2d(f_0, index, _boundary_id, _missing_mask, bc_struct)
+            f_auxiliary = get_bc_auxilary_data_2d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
             f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
@@ -335,7 +335,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Prepare auxilary data for BC (if applicable)
             _boundary_id = boundary_mask[0, index[0], index[1], index[2]]
-            f_auxiliary = prepare_bc_auxilary_data_3d(f_0, index, _boundary_id, _missing_mask, bc_struct)
+            f_auxiliary = get_bc_auxilary_data_3d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
             f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
@@ -380,6 +380,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Setting the Struct attributes and active BC classes based on the BC class names
         bc_fallback = self.boundary_conditions[0]
+        # TODO: what if self.boundary_conditions is an empty list e.g. when we have periodic BC all around!
         for var in vars(bc_struct):
             if var not in active_bc_list and not var.startswith("_"):
                 # set unassigned boundaries to the maximum integer in uint8

@@ -52,16 +52,7 @@ class BoundaryCondition(Operator):
             _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         @wp.func
-        def functional_postcollision(
-            f_pre: Any,
-            f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
-        ):
-            return f_post
-
-        @wp.func
-        def functional_poststream(
+        def prepare_bc_auxilary_data(
             f_pre: Any,
             f_post: Any,
             f_aux: Any,
@@ -123,8 +114,7 @@ class BoundaryCondition(Operator):
         if self.compute_backend == ComputeBackend.WARP:
             self._get_thread_data_2d = _get_thread_data_2d
             self._get_thread_data_3d = _get_thread_data_3d
-            self.warp_functional_poststream = functional_poststream
-            self.warp_functional_postcollision = functional_postcollision
+            self.prepare_bc_auxilary_data = prepare_bc_auxilary_data
 
     @partial(jit, static_argnums=(0,), inline=True)
     def prepare_bc_auxilary_data(self, f_pre, f_post, boundary_mask, missing_mask):
