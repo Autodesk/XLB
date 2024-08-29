@@ -2,7 +2,7 @@
 
 import numpy as np
 import warp as wp
-
+import jax
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
@@ -37,10 +37,12 @@ class MeshBoundaryMasker(Operator):
         missing_mask,
         start_index=(0, 0, 0),
     ):
+        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
         # Use Warp backend even for this particular operation.
-        boundary_map, missing_mask = self.warp_implementation(
-            bc, origin, spacing, wp.array(np.array(boundary_map)), wp.array(np.array(missing_mask)), start_index
-        )
+        wp.init()
+        boundary_map = wp.from_jax(boundary_map)
+        missing_mask = wp.from_jax(missing_mask)
+        boundary_map, missing_mask = self.warp_implementation(bc, origin, spacing, boundary_map, missing_mask, start_index)
         return wp.to_jax(boundary_map), wp.to_jax(missing_mask)
 
     def _construct_warp(self):

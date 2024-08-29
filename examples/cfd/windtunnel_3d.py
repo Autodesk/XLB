@@ -9,6 +9,8 @@ from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
     EquilibriumBC,
     DoNothingBC,
+    RegularizedBC,
+    HalfwayBounceBackBC,
     ExtrapolationOutflowBC,
 )
 from xlb.operator.macroscopic import Macroscopic
@@ -75,7 +77,7 @@ class WindTunnel3D:
         length_phys_unit = mesh_extents.max()
         length_lbm_unit = self.grid_shape[0] / 4
         dx = length_phys_unit / length_lbm_unit
-        shift = np.array([self.grid_shape[0] * dx / 4, (self.grid_shape[1] * dx - mesh_extents[1]) / 2, 0])
+        shift = np.array([self.grid_shape[0] * dx / 4, (self.grid_shape[1] * dx - mesh_extents[1]) / 2, 0.0])
         car = mesh_points + shift
         self.grid_spacing = dx
 
@@ -84,9 +86,11 @@ class WindTunnel3D:
     def setup_boundary_conditions(self, wind_speed):
         inlet, outlet, walls, car = self.define_boundary_indices()
         bc_left = EquilibriumBC(rho=1.0, u=(wind_speed, 0.0, 0.0), indices=inlet)
+        # bc_left = RegularizedBC('velocity', (wind_speed, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
         bc_do_nothing = ExtrapolationOutflowBC(indices=outlet)
-        bc_car = FullwayBounceBackBC(mesh_points=car)
+        bc_car = HalfwayBounceBackBC(mesh_points=car)
+        # bc_car = FullwayBounceBackBC(mesh_points=car)
         self.boundary_conditions = [bc_left, bc_do_nothing, bc_walls, bc_car]
 
     def setup_boundary_masker(self):
