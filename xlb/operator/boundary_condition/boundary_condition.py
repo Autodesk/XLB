@@ -33,7 +33,7 @@ class BoundaryCondition(Operator):
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
-        mesh_points=None,
+        mesh_vertices=None,
     ):
         velocity_set = velocity_set or DefaultConfig.velocity_set
         precision_policy = precision_policy or DefaultConfig.default_precision_policy
@@ -43,7 +43,7 @@ class BoundaryCondition(Operator):
 
         # Set the BC indices
         self.indices = indices
-        self.mesh_points = mesh_points
+        self.mesh_vertices = mesh_vertices
 
         # Set the implementation step
         self.implementation_step = implementation_step

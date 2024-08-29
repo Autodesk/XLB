@@ -13,12 +13,14 @@ from xlb.operator.boundary_condition import (
     HalfwayBounceBackBC,
     ExtrapolationOutflowBC,
 )
+from xlb.operator.force.momentum_transfer import MomentumTransfer
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
 import numpy as np
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 
 
 class WindTunnel3D:
@@ -39,13 +41,20 @@ class WindTunnel3D:
         self.boundary_conditions = []
 
         # Setup the simulation BC, its initial conditions, and the stepper
-        self._setup(omega, wind_speed)
+        self.wind_speed = wind_speed
+        self.omega = omega
+        self._setup()
 
-    def _setup(self, omega, wind_speed):
-        self.setup_boundary_conditions(wind_speed)
+        # Make list to store drag coefficients
+        self.time_steps = []
+        self.drag_coefficients = []
+        self.lift_coefficients = []
+
+    def _setup(self):
+        self.setup_boundary_conditions()
         self.setup_boundary_masker()
         self.initialize_fields()
-        self.setup_stepper(omega)
+        self.setup_stepper()
 
     def voxelize_stl(self, stl_filename, length_lbm_unit):
         mesh = trimesh.load_mesh(stl_filename, process=False)
@@ -69,28 +78,29 @@ class WindTunnel3D:
         # Load the mesh
         stl_filename = "examples/cfd/stl-files/DrivAer-Notchback.stl"
         mesh = trimesh.load_mesh(stl_filename, process=False)
-        mesh_points = mesh.vertices
+        mesh_vertices = mesh.vertices
 
         # Transform the mesh points to be located in the right position in the wind tunnel
-        mesh_points -= mesh_points.min(axis=0)
-        mesh_extents = mesh_points.max(axis=0)
+        mesh_vertices -= mesh_vertices.min(axis=0)
+        mesh_extents = mesh_vertices.max(axis=0)
         length_phys_unit = mesh_extents.max()
         length_lbm_unit = self.grid_shape[0] / 4
         dx = length_phys_unit / length_lbm_unit
         shift = np.array([self.grid_shape[0] * dx / 4, (self.grid_shape[1] * dx - mesh_extents[1]) / 2, 0.0])
-        car = mesh_points + shift
+        car = mesh_vertices + shift
         self.grid_spacing = dx
+        self.car_cross_section = np.prod(mesh_extents[1:]) / dx**2
 
         return inlet, outlet, walls, car
 
-    def setup_boundary_conditions(self, wind_speed):
+    def setup_boundary_conditions(self):
         inlet, outlet, walls, car = self.define_boundary_indices()
-        bc_left = EquilibriumBC(rho=1.0, u=(wind_speed, 0.0, 0.0), indices=inlet)
-        # bc_left = RegularizedBC('velocity', (wind_speed, 0.0, 0.0), indices=inlet)
+        bc_left = EquilibriumBC(rho=1.0, u=(self.wind_speed, 0.0, 0.0), indices=inlet)
+        # bc_left = RegularizedBC('velocity', (self.wind_speed, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
         bc_do_nothing = ExtrapolationOutflowBC(indices=outlet)
-        bc_car = HalfwayBounceBackBC(mesh_points=car)
-        # bc_car = FullwayBounceBackBC(mesh_points=car)
+        bc_car = HalfwayBounceBackBC(mesh_vertices=car)
+        # bc_car = FullwayBounceBackBC(mesh_vertices=car)
         self.boundary_conditions = [bc_left, bc_do_nothing, bc_walls, bc_car]
 
     def setup_boundary_masker(self):
@@ -114,10 +124,14 @@ class WindTunnel3D:
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
 
-    def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions, collision_type="KBC")
+    def setup_stepper(self):
+        self.stepper = IncompressibleNavierStokesStepper(self.omega, boundary_conditions=self.boundary_conditions, collision_type="KBC")
 
     def run(self, num_steps, print_interval, post_process_interval=100):
+        # Setup the operator for computing surface forces at the interface of the specified BC
+        bc_car = self.boundary_conditions[-1]
+        self.momentum_transfer = MomentumTransfer(bc_car)
+
         start_time = time.time()
         for i in range(num_steps):
             self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_map, self.missing_mask, i)
@@ -149,6 +163,49 @@ class WindTunnel3D:
 
         save_fields_vtk(fields, timestep=i)
         save_image(fields["u_magnitude"][:, grid_size_y // 2, :], timestep=i)
+
+        # Compute lift and drag
+        boundary_force = self.momentum_transfer(self.f_0, self.boundary_map, self.missing_mask)
+        drag = np.sqrt(boundary_force[0] ** 2 + boundary_force[1] ** 2)  # xy-plane
+        lift = boundary_force[2]
+        c_d = 2.0 * drag / (self.wind_speed**2 * self.car_cross_section)
+        c_l = 2.0 * lift / (self.wind_speed**2 * self.car_cross_section)
+        self.drag_coefficients.append(c_d)
+        self.lift_coefficients.append(c_l)
+        self.time_steps.append(i)
+
+        # Save monitor plot
+        self.plot_drag_coefficient()
+        return
+
+    def plot_drag_coefficient(self):
+        # Compute moving average of drag coefficient, 100, 1000, 10000
+        drag_coefficients = np.array(self.drag_coefficients)
+        self.drag_coefficients_ma_10 = np.convolve(drag_coefficients, np.ones(10) / 10, mode="valid")
+        self.drag_coefficients_ma_100 = np.convolve(drag_coefficients, np.ones(100) / 100, mode="valid")
+        self.drag_coefficients_ma_1000 = np.convolve(drag_coefficients, np.ones(1000) / 1000, mode="valid")
+        self.drag_coefficients_ma_10000 = np.convolve(drag_coefficients, np.ones(10000) / 10000, mode="valid")
+        self.drag_coefficients_ma_100000 = np.convolve(drag_coefficients, np.ones(100000) / 100000, mode="valid")
+
+        # Plot drag coefficient
+        plt.plot(self.time_steps, drag_coefficients, label="Raw")
+        if len(self.time_steps) > 10:
+            plt.plot(self.time_steps[9:], self.drag_coefficients_ma_10, label="MA 10")
+        if len(self.time_steps) > 100:
+            plt.plot(self.time_steps[99:], self.drag_coefficients_ma_100, label="MA 100")
+        if len(self.time_steps) > 1000:
+            plt.plot(self.time_steps[999:], self.drag_coefficients_ma_1000, label="MA 1,000")
+        if len(self.time_steps) > 10000:
+            plt.plot(self.time_steps[9999:], self.drag_coefficients_ma_10000, label="MA 10,000")
+        if len(self.time_steps) > 100000:
+            plt.plot(self.time_steps[99999:], self.drag_coefficients_ma_100000, label="MA 100,000")
+
+        plt.ylim(-1.0, 1.0)
+        plt.legend()
+        plt.xlabel("Time step")
+        plt.ylabel("Drag coefficient")
+        plt.savefig("drag_coefficient_ma.png")
+        plt.close()
 
 
 if __name__ == "__main__":

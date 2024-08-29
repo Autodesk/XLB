@@ -43,7 +43,7 @@ class ZouHeBC(BoundaryCondition):
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
-        mesh_points=None,
+        mesh_vertices=None,
     ):
         # Important Note: it is critical to add id inside __init__ for this BC because different instantiations of this BC
         # may have different types (velocity or pressure).
@@ -60,7 +60,7 @@ class ZouHeBC(BoundaryCondition):
             precision_policy,
             compute_backend,
             indices,
-            mesh_points,
+            mesh_vertices,
         )
 
         # Set the prescribed value for pressure or velocity

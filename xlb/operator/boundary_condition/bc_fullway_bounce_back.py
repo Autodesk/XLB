@@ -35,7 +35,7 @@ class FullwayBounceBackBC(BoundaryCondition):
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
-        mesh_points=None,
+        mesh_vertices=None,
     ):
         super().__init__(
             ImplementationStep.COLLISION,
@@ -43,7 +43,7 @@ class FullwayBounceBackBC(BoundaryCondition):
             precision_policy,
             compute_backend,
             indices,
-            mesh_points,
+            mesh_vertices,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)

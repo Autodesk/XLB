@@ -48,7 +48,7 @@ class IndicesBoundaryMasker(Operator):
         bid = boundary_map[0]
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
-            assert bc.mesh_points is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
+            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             id_number = bc.id
             local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
             padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
@@ -167,7 +167,7 @@ class IndicesBoundaryMasker(Operator):
         id_list = []
         for bc in bclist:
             assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC using keyword "indices"!'
-            assert bc.mesh_points is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
+            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             for d in range(dim):
                 index_list[d] += bc.indices[d]
             id_list += [bc.id] * len(bc.indices[0])

@@ -49,7 +49,7 @@ class RegularizedBC(ZouHeBC):
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
-        mesh_points=None,
+        mesh_vertices=None,
     ):
         # Call the parent constructor
         super().__init__(
@@ -59,7 +59,7 @@ class RegularizedBC(ZouHeBC):
             precision_policy,
             compute_backend,
             indices,
-            mesh_points,
+            mesh_vertices,
         )
 
         # The operator to compute the momentum flux

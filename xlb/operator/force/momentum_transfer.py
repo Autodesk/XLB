@@ -213,4 +213,4 @@ class MomentumTransfer(Operator):
             inputs=[f, boundary_map, missing_mask, force],
             dim=f.shape[1:],
         )
-        return force.numpy()
+        return force.numpy()[0]

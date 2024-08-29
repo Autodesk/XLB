@@ -113,18 +113,20 @@ class MeshBoundaryMasker(Operator):
         missing_mask,
         start_index=(0, 0, 0),
     ):
-        assert bc.mesh_points is not None, f'Please provide the mesh points for {bc.__class__.__name__} BC using keyword "mesh_points"!'
+        assert bc.mesh_vertices is not None, f'Please provide the mesh points for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
         assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
-        assert bc.mesh_points.shape[1] == self.velocity_set.d, "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
-        mesh_points = bc.mesh_points
+        assert (
+            bc.mesh_vertices.shape[1] == self.velocity_set.d
+        ), "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
+        mesh_vertices = bc.mesh_vertices
         id_number = bc.id
 
-        # We are done with bc.mesh_points. Remove them from BC objects
-        bc.__dict__.pop("mesh_points", None)
+        # We are done with bc.mesh_vertices. Remove them from BC objects
+        bc.__dict__.pop("mesh_vertices", None)
 
-        mesh_indices = np.arange(mesh_points.shape[0])
+        mesh_indices = np.arange(mesh_vertices.shape[0])
         mesh = wp.Mesh(
-            points=wp.array(mesh_points, dtype=wp.vec3),
+            points=wp.array(mesh_vertices, dtype=wp.vec3),
             indices=wp.array(mesh_indices, dtype=int),
         )
 

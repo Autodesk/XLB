@@ -40,7 +40,7 @@ class EquilibriumBC(BoundaryCondition):
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
-        mesh_points=None,
+        mesh_vertices=None,
     ):
         # Store the equilibrium information
         self.rho = rho
@@ -57,7 +57,7 @@ class EquilibriumBC(BoundaryCondition):
             precision_policy,
             compute_backend,
             indices,
-            mesh_points,
+            mesh_vertices,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)
