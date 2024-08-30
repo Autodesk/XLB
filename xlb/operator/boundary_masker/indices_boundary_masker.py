@@ -26,10 +26,27 @@ class IndicesBoundaryMasker(Operator):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+    def are_indices_in_interior(self, indices, shape):
+        """
+        Check if all 2D or 3D indices are inside the bounds of the domain with the given shape and not
+        at its boundary.
+
+        :param indices: List of tuples, where each tuple contains indices for each dimension.
+        :param shape: Tuple representing the shape of the domain (nx, ny) for 2D or (nx, ny, nz) for 3D.
+        :return: Boolean flag is_inside indicating whether all indices are inside the bounds.
+        """
+        # Ensure that the number of dimensions in indices matches the domain shape
+        dim = len(shape)
+        if len(indices) != dim:
+            raise ValueError(f"Indices tuple must have {dim} dimensions to match the domain shape.")
+
+        # Check if all indices are within the bounds
+        return all(0 < idx < shape[d] - 1 for d, idx_list in enumerate(indices) for idx in idx_list)
+
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
     # @partial(jit, static_argnums=(0))
-    def jax_implementation(self, bclist, boundary_mask, missing_mask, start_index=None):
+    def jax_implementation(self, bclist, boundary_map, missing_mask, start_index=None):
         # Pad the missing mask to create a grid mask to identify out of bound boundaries
         # Set padded regin to True (i.e. boundary)
         dim = missing_mask.ndim - 1
@@ -45,27 +62,38 @@ class IndicesBoundaryMasker(Operator):
         if start_index is None:
             start_index = (0,) * dim
 
-        bid = boundary_mask[0]
+        bmap = boundary_map[0]
+        domain_shape = bmap.shape
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
+            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             id_number = bc.id
-            local_indices = np.array(bc.indices) + np.array(start_index)[:, np.newaxis]
+            local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
             padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
-            bid = bid.at[tuple(local_indices)].set(id_number)
-            # if dim == 2:
-            #     grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1]].set(True)
-            # if dim == 3:
-            #     grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1], padded_indices[2]].set(True)
+            bmap = bmap.at[tuple(local_indices)].set(id_number)
+            if self.are_indices_in_interior(bc.indices, domain_shape):
+                # checking if all indices associated with this BC are in the interior of the domain (not at the boundary).
+                # This flag is needed e.g. if the no-slip geometry is anywhere but at the boundaries of the computational domain.
+                if dim == 2:
+                    grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1]].set(True)
+                if dim == 3:
+                    grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1], padded_indices[2]].set(True)
+
+                # Assign the boundary id to the push indices
+                push_indices = local_indices[:, :, None] + self.velocity_set.c[:, None, :]
+                push_indices = push_indices.reshape(3, -1)
+                bmap = bmap.at[tuple(push_indices)].set(id_number)
+
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 
-        boundary_mask = boundary_mask.at[0].set(bid)
+        boundary_map = boundary_map.at[0].set(bmap)
         grid_mask = self.stream(grid_mask)
         if dim == 2:
             missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y]
         if dim == 3:
             missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z]
-        return boundary_mask, missing_mask
+        return boundary_map, missing_mask
 
     def _construct_warp(self):
         # Make constants for warp
@@ -77,7 +105,8 @@ class IndicesBoundaryMasker(Operator):
         def kernel2d(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.array1d(dtype=wp.uint8),
-            boundary_mask: wp.array3d(dtype=wp.uint8),
+            is_interior: wp.array1d(dtype=wp.bool),
+            boundary_map: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
             start_index: wp.vec2i,
         ):
@@ -86,8 +115,8 @@ class IndicesBoundaryMasker(Operator):
 
             # Get local indices
             index = wp.vec2i()
-            index[0] = indices[0, ii] + start_index[0]
-            index[1] = indices[1, ii] + start_index[1]
+            index[0] = indices[0, ii] - start_index[0]
+            index[1] = indices[1, ii] - start_index[1]
 
             # Check if index is in bounds
             if index[0] >= 0 and index[0] < missing_mask.shape[1] and index[1] >= 0 and index[1] < missing_mask.shape[2]:
@@ -95,23 +124,37 @@ class IndicesBoundaryMasker(Operator):
                 for l in range(_q):
                     # Get the index of the streaming direction
                     pull_index = wp.vec2i()
+                    push_index = wp.vec2i()
                     for d in range(self.velocity_set.d):
                         pull_index[d] = index[d] - _c[d, l]
+                        push_index[d] = index[d] + _c[d, l]
 
                     # check if pull index is out of bound
                     # These directions will have missing information after streaming
                     if pull_index[0] < 0 or pull_index[0] >= missing_mask.shape[1] or pull_index[1] < 0 or pull_index[1] >= missing_mask.shape[2]:
                         # Set the missing mask
                         missing_mask[l, index[0], index[1]] = True
+                        boundary_map[0, index[0], index[1]] = id_number[ii]
 
-                boundary_mask[0, index[0], index[1]] = id_number[ii]
+                    # handling geometries in the interior of the computational domain
+                    elif (
+                        is_interior[ii]
+                        and push_index[0] >= 0
+                        and push_index[0] < missing_mask.shape[1]
+                        and push_index[1] >= 0
+                        and push_index[1] < missing_mask.shape[2]
+                    ):
+                        # Set the missing mask
+                        missing_mask[l, push_index[0], push_index[1]] = True
+                        boundary_map[0, push_index[0], push_index[1]] = id_number[ii]
 
         # Construct the warp 3D kernel
         @wp.kernel
         def kernel3d(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.array1d(dtype=wp.uint8),
-            boundary_mask: wp.array4d(dtype=wp.uint8),
+            is_interior: wp.array1d(dtype=wp.bool),
+            boundary_map: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -120,9 +163,9 @@ class IndicesBoundaryMasker(Operator):
 
             # Get local indices
             index = wp.vec3i()
-            index[0] = indices[0, ii] + start_index[0]
-            index[1] = indices[1, ii] + start_index[1]
-            index[2] = indices[2, ii] + start_index[2]
+            index[0] = indices[0, ii] - start_index[0]
+            index[1] = indices[1, ii] - start_index[1]
+            index[2] = indices[2, ii] - start_index[2]
 
             # Check if index is in bounds
             if (
@@ -137,8 +180,10 @@ class IndicesBoundaryMasker(Operator):
                 for l in range(_q):
                     # Get the index of the streaming direction
                     pull_index = wp.vec3i()
+                    push_index = wp.vec3i()
                     for d in range(self.velocity_set.d):
                         pull_index[d] = index[d] - _c[d, l]
+                        push_index[d] = index[d] + _c[d, l]
 
                     # check if pull index is out of bound
                     # These directions will have missing information after streaming
@@ -152,28 +197,46 @@ class IndicesBoundaryMasker(Operator):
                     ):
                         # Set the missing mask
                         missing_mask[l, index[0], index[1], index[2]] = True
+                        boundary_map[0, index[0], index[1], index[2]] = id_number[ii]
 
-                boundary_mask[0, index[0], index[1], index[2]] = id_number[ii]
+                    # handling geometries in the interior of the computational domain
+                    elif (
+                        is_interior[ii]
+                        and push_index[0] >= 0
+                        and push_index[0] < missing_mask.shape[1]
+                        and push_index[1] >= 0
+                        and push_index[1] < missing_mask.shape[2]
+                        and push_index[2] >= 0
+                        and push_index[2] < missing_mask.shape[3]
+                    ):
+                        # Set the missing mask
+                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
+                        boundary_map[0, push_index[0], push_index[1], push_index[2]] = id_number[ii]
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, bclist, boundary_mask, missing_mask, start_index=None):
+    def warp_implementation(self, bclist, boundary_map, missing_mask, start_index=None):
         dim = self.velocity_set.d
         index_list = [[] for _ in range(dim)]
         id_list = []
+        is_interior = []
         for bc in bclist:
             assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC using keyword "indices"!'
+            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             for d in range(dim):
                 index_list[d] += bc.indices[d]
             id_list += [bc.id] * len(bc.indices[0])
+            is_interior += [self.are_indices_in_interior(bc.indices, boundary_map[0].shape)] * len(bc.indices[0])
+
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 
         indices = wp.array2d(index_list, dtype=wp.int32)
         id_number = wp.array1d(id_list, dtype=wp.uint8)
+        is_interior = wp.array1d(is_interior, dtype=wp.bool)
 
         if start_index is None:
             start_index = (0,) * dim
@@ -184,11 +247,12 @@ class IndicesBoundaryMasker(Operator):
             inputs=[
                 indices,
                 id_number,
-                boundary_mask,
+                is_interior,
+                boundary_map,
                 missing_mask,
                 start_index,
             ],
             dim=indices.shape[1],
         )
 
-        return boundary_mask, missing_mask
+        return boundary_map, missing_mask
