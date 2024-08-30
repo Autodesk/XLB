@@ -14,6 +14,7 @@ from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
+from xlb.operator.boundary_condition import DoNothingBC as DummyBC
 
 
 class IncompressibleNavierStokesStepper(Stepper):
@@ -378,9 +379,16 @@ class IncompressibleNavierStokesStepper(Stepper):
             setattr(bc_struct, "id_" + bc_name, bc_to_id[bc_name])
             active_bc_list.append("id_" + bc_name)
 
-        # Setting the Struct attributes and active BC classes based on the BC class names
-        bc_fallback = self.boundary_conditions[0]
-        # TODO: what if self.boundary_conditions is an empty list e.g. when we have periodic BC all around!
+        # Check if boundary_conditions is an empty list (e.g. all periodic and no BC)
+        # TODO: There is a huge issue here with perf. when boundary_conditions list
+        #       is empty and is initialized with a dummy BC. If it is not empty, no perf
+        #       loss ocurrs. The following code at least prevents syntax error for periodic examples.
+        if self.boundary_conditions:
+            bc_dummy = self.boundary_conditions[0]
+        else:
+            bc_dummy = DummyBC()
+
+        # Setting the Struct attributes for inactive BC classes
         for var in vars(bc_struct):
             if var not in active_bc_list and not var.startswith("_"):
                 # set unassigned boundaries to the maximum integer in uint8
@@ -388,7 +396,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
                 # Assing a fall-back BC for inactive BCs. This is just to ensure Warp codegen does not
                 # produce error when a particular BC is not used in an example.
-                setattr(self, var.replace("id_", ""), bc_fallback)
+                setattr(self, var.replace("id_", ""), bc_dummy)
 
         # Launch the warp kernel
         wp.launch(

@@ -128,7 +128,7 @@ class FlowOverSphere:
 
         fields = {"u_magnitude": u_magnitude, "u_x": u[0], "u_y": u[1], "u_z": u[2], "rho": rho[0]}
 
-        save_fields_vtk(fields, timestep=i)
+        # save_fields_vtk(fields, timestep=i)
         save_image(fields["u_magnitude"][:, self.grid_shape[1] // 2, :], timestep=i)
 
 
