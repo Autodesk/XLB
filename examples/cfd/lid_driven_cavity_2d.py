@@ -24,7 +24,7 @@ class LidDrivenCavity2D:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_mask = create_nse_fields(grid_shape)
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_map = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -33,7 +33,7 @@ class LidDrivenCavity2D:
 
     def _setup(self, omega):
         self.setup_boundary_conditions()
-        self.setup_boundary_masks()
+        self.setup_boundary_masker()
         self.initialize_fields()
         self.setup_stepper(omega)
 
@@ -51,13 +51,13 @@ class LidDrivenCavity2D:
         bc_walls = HalfwayBounceBackBC(indices=walls)
         self.boundary_conditions = [bc_top, bc_walls]
 
-    def setup_boundary_masks(self):
+    def setup_boundary_masker(self):
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_mask, self.missing_mask)
+        self.boundary_map, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_map, self.missing_mask)
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
@@ -67,7 +67,7 @@ class LidDrivenCavity2D:
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):
-            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_mask, self.missing_mask, i)
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_map, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if i % post_process_interval == 0 or i == num_steps - 1:
