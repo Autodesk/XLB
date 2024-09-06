@@ -140,11 +140,12 @@ class MomentumTransfer(Operator):
                 f_post_stream = self.no_slip_bc_instance.warp_functional(f_post_collision, f_post_stream, _f_vec(), _missing_mask)
 
                 # Compute the momentum transfer
-                for l in range(self.velocity_set.q):
-                    if _missing_mask[l] == wp.uint8(1):
-                        phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
-                        for d in range(self.velocity_set.d):
-                            m[d] += phi * wp.float32(_c[d, _opp_indices[l]])
+                for d in range(self.velocity_set.d):
+                    m[d] = self.compute_dtype(0.0)
+                    for l in range(self.velocity_set.q):
+                        if _missing_mask[l] == wp.uint8(1):
+                            phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
+                            m[d] += phi * self.compute_dtype(_c[d, _opp_indices[l]])
 
             wp.atomic_add(force, 0, m)
 
@@ -189,11 +190,12 @@ class MomentumTransfer(Operator):
                 f_post_stream = self.no_slip_bc_instance.warp_functional(f_post_collision, f_post_stream, _f_vec(), _missing_mask)
 
                 # Compute the momentum transfer
-                for l in range(self.velocity_set.q):
-                    if _missing_mask[l] == wp.uint8(1):
-                        phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
-                        for d in range(self.velocity_set.d):
-                            m[d] += phi * wp.float32(_c[d, _opp_indices[l]])
+                for d in range(self.velocity_set.d):
+                    m[d] = self.compute_dtype(0.0)
+                    for l in range(self.velocity_set.q):
+                        if _missing_mask[l] == wp.uint8(1):
+                            phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
+                            m[d] += phi * self.compute_dtype(_c[d, _opp_indices[l]])
 
             wp.atomic_add(force, 0, m)
 

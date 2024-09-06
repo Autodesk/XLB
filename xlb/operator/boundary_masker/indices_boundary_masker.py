@@ -28,20 +28,21 @@ class IndicesBoundaryMasker(Operator):
 
     def are_indices_in_interior(self, indices, shape):
         """
-        Check if all 2D or 3D indices are inside the bounds of the domain with the given shape and not
+        Check if each 2D or 3D index is inside the bounds of the domain with the given shape and not
         at its boundary.
 
         :param indices: List of tuples, where each tuple contains indices for each dimension.
         :param shape: Tuple representing the shape of the domain (nx, ny) for 2D or (nx, ny, nz) for 3D.
-        :return: Boolean flag is_inside indicating whether all indices are inside the bounds.
+        :return: List of boolean flags where each flag indicates whether the corresponding index is inside the bounds.
         """
         # Ensure that the number of dimensions in indices matches the domain shape
         dim = len(shape)
         if len(indices) != dim:
             raise ValueError(f"Indices tuple must have {dim} dimensions to match the domain shape.")
 
-        # Check if all indices are within the bounds
-        return all(0 < idx < shape[d] - 1 for d, idx_list in enumerate(indices) for idx in idx_list)
+        # Check each index tuple and return a list of boolean flags
+        flags = [all(0 < idx[d] < shape[d] - 1 for d in range(dim)) for idx in np.array(indices).T]
+        return flags
 
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
@@ -54,24 +55,25 @@ class IndicesBoundaryMasker(Operator):
         pad_x, pad_y, pad_z = nDevices, 1, 1
         if dim == 2:
             grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y)), constant_values=True)
+            bmap = jnp.pad(boundary_map[0], ((pad_x, pad_x), (pad_y, pad_y)), constant_values=0)
         if dim == 3:
             grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=True)
+            bmap = jnp.pad(boundary_map[0], ((pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=0)
 
         # shift indices
         shift_tup = (pad_x, pad_y) if dim == 2 else (pad_x, pad_y, pad_z)
         if start_index is None:
             start_index = (0,) * dim
 
-        bmap = boundary_map[0]
-        domain_shape = bmap.shape
+        domain_shape = boundary_map[0].shape
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
             assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             id_number = bc.id
             local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
             padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
-            bmap = bmap.at[tuple(local_indices)].set(id_number)
-            if self.are_indices_in_interior(bc.indices, domain_shape):
+            bmap = bmap.at[tuple(padded_indices)].set(id_number)
+            if any(self.are_indices_in_interior(bc.indices, domain_shape)):
                 # checking if all indices associated with this BC are in the interior of the domain (not at the boundary).
                 # This flag is needed e.g. if the no-slip geometry is anywhere but at the boundaries of the computational domain.
                 if dim == 2:
@@ -80,19 +82,20 @@ class IndicesBoundaryMasker(Operator):
                     grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1], padded_indices[2]].set(True)
 
                 # Assign the boundary id to the push indices
-                push_indices = local_indices[:, :, None] + self.velocity_set.c[:, None, :]
+                push_indices = padded_indices[:, :, None] + self.velocity_set.c[:, None, :]
                 push_indices = push_indices.reshape(3, -1)
                 bmap = bmap.at[tuple(push_indices)].set(id_number)
 
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 
-        boundary_map = boundary_map.at[0].set(bmap)
         grid_mask = self.stream(grid_mask)
         if dim == 2:
             missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y]
+            boundary_map = boundary_map.at[0].set(bmap[pad_x:-pad_x, pad_y:-pad_y])
         if dim == 3:
             missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z]
+            boundary_map = boundary_map.at[0].set(bmap[pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z])
         return boundary_map, missing_mask
 
     def _construct_warp(self):
@@ -229,7 +232,7 @@ class IndicesBoundaryMasker(Operator):
             for d in range(dim):
                 index_list[d] += bc.indices[d]
             id_list += [bc.id] * len(bc.indices[0])
-            is_interior += [self.are_indices_in_interior(bc.indices, boundary_map[0].shape)] * len(bc.indices[0])
+            is_interior += self.are_indices_in_interior(bc.indices, boundary_map[0].shape)
 
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
