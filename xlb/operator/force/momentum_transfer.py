@@ -112,7 +112,7 @@ class MomentumTransfer(Operator):
             index = wp.vec2i(i, j)
 
             # Get the boundary id
-            _boundary_map = boundary_map[0, index[0], index[1]]
+            _boundary_id = boundary_map[0, index[0], index[1]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # TODO fix vec bool
@@ -123,7 +123,7 @@ class MomentumTransfer(Operator):
 
             # Determin if boundary is an edge by checking if center is missing
             is_edge = wp.bool(False)
-            if _boundary_map == wp.uint8(_no_slip_id):
+            if _boundary_id == wp.uint8(_no_slip_id):
                 if _missing_mask[_zero_index] == wp.uint8(0):
                     is_edge = wp.bool(True)
 
@@ -162,7 +162,7 @@ class MomentumTransfer(Operator):
             index = wp.vec3i(i, j, k)
 
             # Get the boundary id
-            _boundary_map = boundary_map[0, index[0], index[1], index[2]]
+            _boundary_id = boundary_map[0, index[0], index[1], index[2]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # TODO fix vec bool
@@ -173,7 +173,7 @@ class MomentumTransfer(Operator):
 
             # Determin if boundary is an edge by checking if center is missing
             is_edge = wp.bool(False)
-            if _boundary_map == wp.uint8(_no_slip_id):
+            if _boundary_id == wp.uint8(_no_slip_id):
                 if _missing_mask[_zero_index] == wp.uint8(0):
                     is_edge = wp.bool(True)
 

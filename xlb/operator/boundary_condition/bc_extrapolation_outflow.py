@@ -203,11 +203,11 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             index = wp.vec2i(i, j)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_map, missing_mask, index)
             _f_aux = _f_vec()
 
             # special preparation of auxiliary data
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 nv = get_normal_vectors_2d(_missing_mask)
                 for l in range(self.velocity_set.q):
                     if _missing_mask[l] == wp.uint8(1):
@@ -220,7 +220,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                         _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1]]
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 # TODO: is there any way for this BC to have a meaningful kernel given that it has two steps after both
                 # collision and streaming?
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
@@ -244,11 +244,11 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_map, missing_mask, index)
             _f_aux = _f_vec()
 
             # special preparation of auxiliary data
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 nv = get_normal_vectors_3d(_missing_mask)
                 for l in range(self.velocity_set.q):
                     if _missing_mask[l] == wp.uint8(1):
@@ -261,7 +261,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                         _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1], pull_index[2]]
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
                 # collision and streaming?
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)

@@ -73,7 +73,7 @@ class BoundaryCondition(Operator):
             # Get the boundary id and missing mask
             _f_pre = _f_vec()
             _f_post = _f_vec()
-            _boundary_map = boundary_map[0, index[0], index[1]]
+            _boundary_id = boundary_map[0, index[0], index[1]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of populations
@@ -85,7 +85,7 @@ class BoundaryCondition(Operator):
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return _f_pre, _f_post, _boundary_map, _missing_mask
+            return _f_pre, _f_post, _boundary_id, _missing_mask
 
         @wp.func
         def _get_thread_data_3d(
@@ -98,7 +98,7 @@ class BoundaryCondition(Operator):
             # Get the boundary id and missing mask
             _f_pre = _f_vec()
             _f_post = _f_vec()
-            _boundary_map = boundary_map[0, index[0], index[1], index[2]]
+            _boundary_id = boundary_map[0, index[0], index[1], index[2]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of populations
@@ -110,7 +110,7 @@ class BoundaryCondition(Operator):
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return _f_pre, _f_post, _boundary_map, _missing_mask
+            return _f_pre, _f_post, _boundary_id, _missing_mask
 
         # Construct some helper warp functions for getting tid data
         if self.compute_backend == ComputeBackend.WARP:
