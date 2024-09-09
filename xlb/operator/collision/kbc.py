@@ -182,6 +182,7 @@ class KBC(Collision):
             raise NotImplementedError("Velocity set not supported for warp backend: {}".format(type(self.velocity_set)))
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _epsilon = wp.constant(self.compute_dtype(self.epsilon))
         _beta = wp.constant(self.compute_dtype(self.beta))
@@ -305,9 +306,9 @@ class KBC(Collision):
         def kernel2d(
             f: wp.array3d(dtype=Any),
             feq: wp.array3d(dtype=Any),
+            fout: wp.array3d(dtype=Any),
             rho: wp.array3d(dtype=Any),
             u: wp.array3d(dtype=Any),
-            fout: wp.array3d(dtype=Any),
         ):
             # Get the global index
             i, j = wp.tid()
@@ -320,7 +321,7 @@ class KBC(Collision):
             for l in range(self.velocity_set.q):
                 _f[l] = f[l, index[0], index[1]]
                 _feq[l] = feq[l, index[0], index[1]]
-            _u = self.warp_u_vec()
+            _u = _u_vec()
             for l in range(_d):
                 _u[l] = u[l, index[0], index[1]]
             _rho = rho[0, index[0], index[1]]
@@ -337,9 +338,9 @@ class KBC(Collision):
         def kernel3d(
             f: wp.array4d(dtype=Any),
             feq: wp.array4d(dtype=Any),
+            fout: wp.array4d(dtype=Any),
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
-            fout: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -352,7 +353,7 @@ class KBC(Collision):
             for l in range(self.velocity_set.q):
                 _f[l] = f[l, index[0], index[1], index[2]]
                 _feq[l] = feq[l, index[0], index[1], index[2]]
-            _u = self.warp_u_vec()
+            _u = _u_vec()
             for l in range(_d):
                 _u[l] = u[l, index[0], index[1], index[2]]
             _rho = rho[0, index[0], index[1], index[2]]
