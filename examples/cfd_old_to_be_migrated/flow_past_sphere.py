@@ -75,7 +75,7 @@ if __name__ == "__main__":
     u = grid.create_field(cardinality=velocity_set.d, dtype=wp.float32)
     f0 = grid.create_field(cardinality=velocity_set.q, dtype=wp.float32)
     f1 = grid.create_field(cardinality=velocity_set.q, dtype=wp.float32)
-    boundary_map = grid.create_field(cardinality=1, dtype=wp.uint8)
+    bc_id = grid.create_field(cardinality=1, dtype=wp.uint8)
     missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=wp.bool)
 
     # Make operators
@@ -154,19 +154,19 @@ if __name__ == "__main__":
     indices = wp.from_numpy(indices, dtype=wp.int32)
 
     # Set boundary conditions on the indices
-    boundary_map, missing_mask = indices_boundary_masker(indices, half_way_bc.id, boundary_map, missing_mask, (0, 0, 0))
+    bc_id, missing_mask = indices_boundary_masker(indices, half_way_bc.id, bc_id, missing_mask, (0, 0, 0))
 
     # Set inlet bc
     lower_bound = (0, 0, 0)
     upper_bound = (0, nr, nr)
     direction = (1, 0, 0)
-    boundary_map, missing_mask = planar_boundary_masker(lower_bound, upper_bound, direction, equilibrium_bc.id, boundary_map, missing_mask, (0, 0, 0))
+    bc_id, missing_mask = planar_boundary_masker(lower_bound, upper_bound, direction, equilibrium_bc.id, bc_id, missing_mask, (0, 0, 0))
 
     # Set outlet bc
     lower_bound = (nr - 1, 0, 0)
     upper_bound = (nr - 1, nr, nr)
     direction = (-1, 0, 0)
-    boundary_map, missing_mask = planar_boundary_masker(lower_bound, upper_bound, direction, do_nothing_bc.id, boundary_map, missing_mask, (0, 0, 0))
+    bc_id, missing_mask = planar_boundary_masker(lower_bound, upper_bound, direction, do_nothing_bc.id, bc_id, missing_mask, (0, 0, 0))
 
     # Set initial conditions
     rho, u = initializer(rho, u, vel)
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     num_steps = 1024 * 8
     start = time.time()
     for _ in tqdm(range(num_steps)):
-        f1 = stepper(f0, f1, boundary_map, missing_mask, _)
+        f1 = stepper(f0, f1, bc_id, missing_mask, _)
         f1, f0 = f0, f1
         if (_ % plot_freq == 0) and (not compute_mlup):
             rho, u = macroscopic(f0, rho, u)
@@ -191,7 +191,7 @@ if __name__ == "__main__":
             plt.imshow(u[0, :, nr // 2, :].numpy())
             plt.colorbar()
             plt.subplot(1, 2, 2)
-            plt.imshow(boundary_map[0, :, nr // 2, :].numpy())
+            plt.imshow(bc_id[0, :, nr // 2, :].numpy())
             plt.colorbar()
             plt.savefig(f"{save_dir}/{str(_).zfill(6)}.png")
             plt.close()

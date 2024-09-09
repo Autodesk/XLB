@@ -40,7 +40,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def jax_implementation(self, f_0, f_1, boundary_map, missing_mask, timestep):
+    def jax_implementation(self, f_0, f_1, bc_id, missing_mask, timestep):
         """
         Perform a single step of the lattice boltzmann method
         """
@@ -57,7 +57,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post_stream = bc(
                     f_0,
                     f_post_stream,
-                    boundary_map,
+                    bc_id,
                     missing_mask,
                 )
 
@@ -72,12 +72,12 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:
-            f_post_collision = bc.prepare_bc_auxilary_data(f_post_stream, f_post_collision, boundary_map, missing_mask)
+            f_post_collision = bc.prepare_bc_auxilary_data(f_post_stream, f_post_collision, bc_id, missing_mask)
             if bc.implementation_step == ImplementationStep.COLLISION:
                 f_post_collision = bc(
                     f_post_stream,
                     f_post_collision,
-                    boundary_map,
+                    bc_id,
                     missing_mask,
                 )
 
@@ -269,7 +269,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         def kernel2d(
             f_0: wp.array3d(dtype=Any),
             f_1: wp.array3d(dtype=Any),
-            boundary_map: wp.array3d(dtype=Any),
+            bc_id: wp.array3d(dtype=Any),
             missing_mask: wp.array3d(dtype=Any),
             bc_struct: Any,
             timestep: int,
@@ -285,7 +285,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_post_stream = self.stream.warp_functional(f_0, index)
 
             # Prepare auxilary data for BC (if applicable)
-            _boundary_id = boundary_map[0, index[0], index[1]]
+            _boundary_id = bc_id[0, index[0], index[1]]
             f_auxiliary = get_bc_auxilary_data_2d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
@@ -317,7 +317,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         def kernel3d(
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
-            boundary_map: wp.array4d(dtype=Any),
+            bc_id: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
             bc_struct: Any,
             timestep: int,
@@ -333,7 +333,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_post_stream = self.stream.warp_functional(f_0, index)
 
             # Prepare auxilary data for BC (if applicable)
-            _boundary_id = boundary_map[0, index[0], index[1], index[2]]
+            _boundary_id = bc_id[0, index[0], index[1], index[2]]
             f_auxiliary = get_bc_auxilary_data_3d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
@@ -361,7 +361,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         return BoundaryConditionIDStruct, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_0, f_1, boundary_map, missing_mask, timestep):
+    def warp_implementation(self, f_0, f_1, bc_id, missing_mask, timestep):
         # Get the boundary condition ids
         from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
@@ -402,7 +402,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             inputs=[
                 f_0,
                 f_1,
-                boundary_map,
+                bc_id,
                 missing_mask,
                 bc_struct,
                 timestep,

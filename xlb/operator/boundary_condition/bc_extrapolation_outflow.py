@@ -94,13 +94,13 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return jnp.roll(fld, (vec[0], vec[1], vec[2]), axis=(1, 2, 3))
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def prepare_bc_auxilary_data(self, f_pre, f_post, boundary_map, missing_mask):
+    def prepare_bc_auxilary_data(self, f_pre, f_post, bc_id, missing_mask):
         """
         Prepare the auxilary distribution functions for the boundary condition.
         Since this function is called post-collisiotn: f_pre = f_post_stream and f_post = f_post_collision
         """
         sound_speed = 1.0 / jnp.sqrt(3.0)
-        boundary = boundary_map == self.id
+        boundary = bc_id == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
 
@@ -123,8 +123,8 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, boundary_map, missing_mask):
-        boundary = boundary_map == self.id
+    def apply_jax(self, f_pre, f_post, bc_id, missing_mask):
+        boundary = bc_id == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
         return jnp.where(
@@ -195,7 +195,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         def kernel2d(
             f_pre: wp.array3d(dtype=Any),
             f_post: wp.array3d(dtype=Any),
-            boundary_map: wp.array3d(dtype=wp.uint8),
+            bc_id: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
         ):
             # Get the global index
@@ -203,7 +203,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             index = wp.vec2i(i, j)
 
             # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_id, missing_mask, index)
             _f_aux = _f_vec()
 
             # special preparation of auxiliary data
@@ -236,7 +236,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         def kernel3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
-            boundary_map: wp.array4d(dtype=wp.uint8),
+            bc_id: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
         ):
             # Get the global index
@@ -244,7 +244,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_id, missing_mask, index)
             _f_aux = _f_vec()
 
             # special preparation of auxiliary data
@@ -277,11 +277,11 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         return (functional, prepare_bc_auxilary_data), kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, boundary_map, missing_mask):
+    def warp_implementation(self, f_pre, f_post, bc_id, missing_mask):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f_pre, f_post, boundary_map, missing_mask],
+            inputs=[f_pre, f_post, bc_id, missing_mask],
             dim=f_pre.shape[1:],
         )
         return f_post

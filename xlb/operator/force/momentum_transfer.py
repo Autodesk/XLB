@@ -50,13 +50,13 @@ class MomentumTransfer(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def jax_implementation(self, f, boundary_map, missing_mask):
+    def jax_implementation(self, f, bc_id, missing_mask):
         """
         Parameters
         ----------
         f : jax.numpy.ndarray
             The post-collision distribution function at each node in the grid.
-        boundary_map : jax.numpy.ndarray
+        bc_id : jax.numpy.ndarray
             A grid field with 0 everywhere except for boundary nodes which are designated
             by their respective boundary id's.
         missing_mask : jax.numpy.ndarray
@@ -71,10 +71,10 @@ class MomentumTransfer(Operator):
         # Give the input post-collision populations, streaming once and apply the BC the find post-stream values.
         f_post_collision = f
         f_post_stream = self.stream(f_post_collision)
-        f_post_stream = self.no_slip_bc_instance(f_post_collision, f_post_stream, boundary_map, missing_mask)
+        f_post_stream = self.no_slip_bc_instance(f_post_collision, f_post_stream, bc_id, missing_mask)
 
         # Compute momentum transfer
-        boundary = boundary_map == self.no_slip_bc_instance.id
+        boundary = bc_id == self.no_slip_bc_instance.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
 
@@ -103,7 +103,7 @@ class MomentumTransfer(Operator):
         @wp.kernel
         def kernel2d(
             f: wp.array3d(dtype=Any),
-            boundary_map: wp.array3d(dtype=wp.uint8),
+            bc_id: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
             force: wp.array(dtype=Any),
         ):
@@ -112,7 +112,7 @@ class MomentumTransfer(Operator):
             index = wp.vec2i(i, j)
 
             # Get the boundary id
-            _boundary_id = boundary_map[0, index[0], index[1]]
+            _boundary_id = bc_id[0, index[0], index[1]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # TODO fix vec bool
@@ -153,7 +153,7 @@ class MomentumTransfer(Operator):
         @wp.kernel
         def kernel3d(
             f: wp.array4d(dtype=Any),
-            boundary_map: wp.array4d(dtype=wp.uint8),
+            bc_id: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             force: wp.array(dtype=Any),
         ):
@@ -162,7 +162,7 @@ class MomentumTransfer(Operator):
             index = wp.vec3i(i, j, k)
 
             # Get the boundary id
-            _boundary_id = boundary_map[0, index[0], index[1], index[2]]
+            _boundary_id = bc_id[0, index[0], index[1], index[2]]
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # TODO fix vec bool
@@ -205,14 +205,14 @@ class MomentumTransfer(Operator):
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, boundary_map, missing_mask):
+    def warp_implementation(self, f, bc_id, missing_mask):
         # Allocate the force vector (the total integral value will be computed)
         force = wp.zeros((1), dtype=wp.vec3) if self.velocity_set.d == 3 else wp.zeros((1), dtype=wp.vec2)
 
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f, boundary_map, missing_mask, force],
+            inputs=[f, bc_id, missing_mask, force],
             dim=f.shape[1:],
         )
         return force.numpy()[0]

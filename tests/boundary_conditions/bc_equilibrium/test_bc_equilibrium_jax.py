@@ -32,7 +32,7 @@ def test_bc_equilibrium_jax(dim, velocity_set, grid_shape):
 
     missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
-    boundary_map = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    bc_id = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = IndicesBoundaryMasker()
 
@@ -58,7 +58,7 @@ def test_bc_equilibrium_jax(dim, velocity_set, grid_shape):
         indices=indices,
     )
 
-    boundary_map, missing_mask = indices_boundary_masker([equilibrium_bc], boundary_map, missing_mask, start_index=None)
+    bc_id, missing_mask = indices_boundary_masker([equilibrium_bc], bc_id, missing_mask, start_index=None)
 
     f_pre = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.FP32)
 
@@ -66,7 +66,7 @@ def test_bc_equilibrium_jax(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    f = equilibrium_bc(f_pre, f_post, boundary_map, missing_mask)
+    f = equilibrium_bc(f_pre, f_post, bc_id, missing_mask)
 
     assert f.shape == (velocity_set.q,) + grid_shape
 

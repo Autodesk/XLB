@@ -33,17 +33,17 @@ class MeshBoundaryMasker(Operator):
         bc,
         origin,
         spacing,
-        boundary_map,
+        bc_id,
         missing_mask,
         start_index=(0, 0, 0),
     ):
         raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
         # Use Warp backend even for this particular operation.
         wp.init()
-        boundary_map = wp.from_jax(boundary_map)
+        bc_id = wp.from_jax(bc_id)
         missing_mask = wp.from_jax(missing_mask)
-        boundary_map, missing_mask = self.warp_implementation(bc, origin, spacing, boundary_map, missing_mask, start_index)
-        return wp.to_jax(boundary_map), wp.to_jax(missing_mask)
+        bc_id, missing_mask = self.warp_implementation(bc, origin, spacing, bc_id, missing_mask, start_index)
+        return wp.to_jax(bc_id), wp.to_jax(missing_mask)
 
     def _construct_warp(self):
         # Make constants for warp
@@ -57,7 +57,7 @@ class MeshBoundaryMasker(Operator):
             origin: wp.vec3,
             spacing: wp.vec3,
             id_number: wp.int32,
-            boundary_map: wp.array4d(dtype=wp.uint8),
+            bc_id: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             start_index: wp.vec3i,
         ):
@@ -77,9 +77,9 @@ class MeshBoundaryMasker(Operator):
 
             # Compute the maximum length
             max_length = wp.sqrt(
-                (spacing[0] * wp.float32(boundary_map.shape[1])) ** 2.0
-                + (spacing[1] * wp.float32(boundary_map.shape[2])) ** 2.0
-                + (spacing[2] * wp.float32(boundary_map.shape[3])) ** 2.0
+                (spacing[0] * wp.float32(bc_id.shape[1])) ** 2.0
+                + (spacing[1] * wp.float32(bc_id.shape[2])) ** 2.0
+                + (spacing[2] * wp.float32(bc_id.shape[3])) ** 2.0
             )
 
             # evaluate if point is inside mesh
@@ -98,7 +98,7 @@ class MeshBoundaryMasker(Operator):
                             push_index[d] = index[d] + _c[d, l]
 
                         # Set the boundary id and missing_mask
-                        boundary_map[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
+                        bc_id[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
                         missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel
@@ -109,7 +109,7 @@ class MeshBoundaryMasker(Operator):
         bc,
         origin,
         spacing,
-        boundary_map,
+        bc_id,
         missing_mask,
         start_index=(0, 0, 0),
     ):
@@ -138,11 +138,11 @@ class MeshBoundaryMasker(Operator):
                 origin,
                 spacing,
                 id_number,
-                boundary_map,
+                bc_id,
                 missing_mask,
                 start_index,
             ],
-            dim=boundary_map.shape[1:],
+            dim=bc_id.shape[1:],
         )
 
-        return boundary_map, missing_mask
+        return bc_id, missing_mask
