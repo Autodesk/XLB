@@ -1,5 +1,5 @@
 from functools import partial
-from jax import jit
+from jax import jit, lax
 import warp as wp
 from typing import Any
 
@@ -63,7 +63,7 @@ class ExactDifference(Operator):
         f_postcollision: jax.numpy.ndarray
         The post-collision distribution functions with the force applied.
         """
-        delta_u = self.force_vector
+        delta_u = lax.broadcast_in_dim(self.force_vector, u.shape, (0,))
         feq_force = self.equilibrium(rho, u + delta_u)
         f_postcollision += feq_force - feq
         return f_postcollision
