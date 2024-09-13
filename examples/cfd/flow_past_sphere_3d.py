@@ -19,6 +19,7 @@ import warp as wp
 import numpy as np
 import jax.numpy as jnp
 import time
+import jax
 
 
 class FlowOverSphere:
@@ -141,6 +142,10 @@ if __name__ == "__main__":
     grid_shape = (512 // 2, 128 // 2, 128 // 2)
     backend = ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
+
+    if precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32:
+        jax.config.update("jax_enable_x64", True)
+
     velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
     omega = 1.6
 
