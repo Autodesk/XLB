@@ -137,9 +137,9 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         # Set local constants
         sound_speed = 1.0 / wp.sqrt(3.0)
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _c = self.velocity_set.wp_c
+        _c = self.velocity_set.c
         _q = self.velocity_set.q
-        _opp_indices = self.velocity_set.wp_opp_indices
+        _opp_indices = self.velocity_set.opp_indices
 
         @wp.func
         def get_normal_vectors_2d(
