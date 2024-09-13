@@ -184,7 +184,7 @@ class ZouHeBC(BoundaryCondition):
         _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])
         _opp_indices = self.velocity_set.opp_indices
         _c = self.velocity_set.c
-        _c32 = self.velocity_set.c32
+        _c_float = self.velocity_set.c32
         # TODO: this is way less than ideal. we should not be making new types
 
         @wp.func
@@ -193,7 +193,7 @@ class ZouHeBC(BoundaryCondition):
         ):
             l = lattice_direction
             if wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
-                normals = -_u_vec(_c32[0, l], _c32[1, l])
+                normals = -_u_vec(_c_float[0, l], _c_float[1, l])
             return normals
 
         @wp.func
@@ -216,7 +216,7 @@ class ZouHeBC(BoundaryCondition):
         ):
             for l in range(_q):
                 if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                    return -_u_vec(_c32[0, l], _c32[1, l], _c32[2, l])
+                    return -_u_vec(_c_float[0, l], _c_float[1, l], _c_float[2, l])
 
         @wp.func
         def bounceback_nonequilibrium(

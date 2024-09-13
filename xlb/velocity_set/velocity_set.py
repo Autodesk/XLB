@@ -53,7 +53,7 @@ class VelocitySet(object):
         self._w = np.array(w)
         self._opp_indices = self._construct_opposite_indices()
         self._cc = self._construct_lattice_moment()
-        self._c32 = self._c.astype(np.float64)
+        self._c_float = self._c.astype(np.float64)
         self._qi = self._construct_qi()
 
         # Constants in NumPy
@@ -75,7 +75,7 @@ class VelocitySet(object):
         self.w = wp.constant(wp.vec(self.q, dtype=dtype)(self._w))
         self.opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self._opp_indices))
         self.cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._cc))
-        self.c32 = wp.constant(wp.mat((self.d, self.q), dtype=dtype)(self._c32))
+        self.c32 = wp.constant(wp.mat((self.d, self.q), dtype=dtype)(self._c_float))
         self.qi = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._qi))
 
     def _init_jax_properties(self):
@@ -87,7 +87,7 @@ class VelocitySet(object):
         self.w = jnp.array(self._w, dtype=dtype)
         self.opp_indices = jnp.array(self._opp_indices, dtype=jnp.int32)
         self.cc = jnp.array(self._cc, dtype=dtype)
-        self.c32 = jnp.array(self._c32, dtype=dtype)
+        self.c32 = jnp.array(self._c_float, dtype=dtype)
         self.qi = jnp.array(self._qi, dtype=dtype)
 
     def _init_backend_constants(self):
