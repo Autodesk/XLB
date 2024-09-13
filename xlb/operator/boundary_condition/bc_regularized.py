@@ -141,9 +141,9 @@ class RegularizedBC(ZouHeBC):
         _opp_indices = self.velocity_set.opp_indices
         _w = self.velocity_set.w
         _c = self.velocity_set.c
-        _c32 = self.velocity_set.c32
+        _c_float = self.velocity_set.c_float
         _qi = self.velocity_set.qi
-        # TODO: related to _c32: this is way less than ideal. we should not be making new types
+        # TODO: related to _c_float: this is way less than ideal. we should not be making new types
 
         @wp.func
         def _get_fsum(
@@ -165,7 +165,7 @@ class RegularizedBC(ZouHeBC):
         ):
             for l in range(_q):
                 if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
-                    return -_u_vec(_c32[0, l], _c32[1, l])
+                    return -_u_vec(_c_float[0, l], _c_float[1, l])
 
         @wp.func
         def get_normal_vectors_3d(
@@ -173,7 +173,7 @@ class RegularizedBC(ZouHeBC):
         ):
             for l in range(_q):
                 if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                    return -_u_vec(_c32[0, l], _c32[1, l], _c32[2, l])
+                    return -_u_vec(_c_float[0, l], _c_float[1, l], _c_float[2, l])
 
         @wp.func
         def bounceback_nonequilibrium(
