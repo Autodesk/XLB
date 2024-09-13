@@ -180,7 +180,7 @@ class ZouHeBC(BoundaryCondition):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _rho = wp.float32(rho)
+        _rho = self.compute_dtype(rho)
         _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])
         _opp_indices = self.velocity_set.opp_indices
         _c = self.velocity_set.c
