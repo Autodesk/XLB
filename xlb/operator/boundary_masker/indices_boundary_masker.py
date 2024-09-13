@@ -97,7 +97,7 @@ class IndicesBoundaryMasker(Operator):
 
     def _construct_warp(self):
         # Make constants for warp
-        _c = self.velocity_set.wp_c
+        _c = self.velocity_set.c
         _q = wp.constant(self.velocity_set.q)
 
         # Construct the warp 2D kernel

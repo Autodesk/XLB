@@ -23,7 +23,7 @@ class BGK(Collision):
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _w = self.velocity_set.wp_w
+        _w = self.velocity_set.w
         _omega = wp.constant(self.compute_dtype(self.omega))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 

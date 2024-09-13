@@ -2,9 +2,11 @@
 
 import math
 import numpy as np
-
 import warp as wp
+import jax.numpy as jnp
 
+from xlb import DefaultConfig
+from xlb.compute_backend import ComputeBackend
 
 class VelocitySet(object):
     """
@@ -22,35 +24,86 @@ class VelocitySet(object):
         The weights of the lattice. Shape: (q,)
     """
 
-    def __init__(self, d, q, c, w):
+    def __init__(self, d, q, c, w, precision_policy, backend):
         # Store the dimension and the number of velocities
         self.d = d
         self.q = q
+        self.precision_policy = precision_policy
+        self.backend = backend
 
-        # Constants
-        self.cs = math.sqrt(3) / 3.0
-        self.cs2 = 1.0 / 3.0
-        self.inv_cs2 = 3.0
+        # Create all properties in NumPy first
+        self._init_numpy_properties(c, w)
 
-        # Construct the properties of the lattice
-        self.c = c
-        self.w = w
-        self.cc = self._construct_lattice_moment()
-        self.opp_indices = self._construct_opposite_indices()
-        self.get_opp_index = lambda i: self.opp_indices[i]
+        # Convert properties to backend-specific format
+        if self.backend == ComputeBackend.WARP:
+            self._init_warp_properties()
+        elif self.backend == ComputeBackend.JAX:
+            self._init_jax_properties()
+        else:
+            raise ValueError(f"Unsupported compute backend: {self.backend}")
+
+        # Set up backend-specific constants
+        self._init_backend_constants()
+
+    def _init_numpy_properties(self, c, w):
+        """
+        Initialize all properties in NumPy first.
+        """
+        self._c = np.array(c)
+        self._w = np.array(w)
+        self._opp_indices = self._construct_opposite_indices()
+        self._cc = self._construct_lattice_moment()
+        self._c32 = self._c.astype(np.float64)
+        self._qi = self._construct_qi()
+
+        # Constants in NumPy
+        self.cs = np.float64(math.sqrt(3) / 3.0)
+        self.cs2 = np.float64(1.0 / 3.0)
+        self.inv_cs2 = np.float64(3.0)
+
+        # Indices
         self.main_indices = self._construct_main_indices()
         self.right_indices = self._construct_right_indices()
         self.left_indices = self._construct_left_indices()
-        self.qi = self._construct_qi()
 
-        # Make warp constants for these vectors
-        # TODO: Following warp updates these may not be necessary
-        self.wp_c = wp.constant(wp.mat((self.d, self.q), dtype=wp.int32)(self.c))
-        self.wp_w = wp.constant(wp.vec(self.q, dtype=wp.float32)(self.w))  # TODO: Make type optional somehow
-        self.wp_opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self.opp_indices))
-        self.wp_cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.cc))
-        self.wp_c32 = wp.constant(wp.mat((self.d, self.q), dtype=wp.float32)(self.c))
-        self.wp_qi = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=wp.float32)(self.qi))
+    def _init_warp_properties(self):
+        """
+        Convert NumPy properties to Warp-specific properties.
+        """
+        dtype = self.precision_policy.compute_precision.wp_dtype
+        self.c = wp.constant(wp.mat((self.d, self.q), dtype=wp.int32)(self._c))
+        self.w = wp.constant(wp.vec(self.q, dtype=dtype)(self._w))
+        self.opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self._opp_indices))
+        self.cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._cc))
+        self.c32 = wp.constant(wp.mat((self.d, self.q), dtype=dtype)(self._c32))
+        self.qi = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._qi))
+
+    def _init_jax_properties(self):
+        """
+        Convert NumPy properties to JAX-specific properties.
+        """
+        dtype = self.precision_policy.compute_precision.jax_dtype
+        self.c = jnp.array(self._c, dtype=dtype)
+        self.w = jnp.array(self._w, dtype=dtype)
+        self.opp_indices = jnp.array(self._opp_indices, dtype=jnp.int32)
+        self.cc = jnp.array(self._cc, dtype=dtype)
+        self.c32 = jnp.array(self._c32, dtype=dtype)
+        self.qi = jnp.array(self._qi, dtype=dtype)
+
+    def _init_backend_constants(self):
+        """
+        Initialize the constants for the backend.
+        """
+        if self.backend == ComputeBackend.WARP:
+            dtype = self.precision_policy.compute_precision.wp_dtype
+            self.cs = wp.constant(dtype(self.cs))
+            self.cs2 = wp.constant(dtype(self.cs2))
+            self.inv_cs2 = wp.constant(dtype(self.inv_cs2))
+        elif self.backend == ComputeBackend.JAX:
+            dtype = self.precision_policy.compute_precision.jax_dtype
+            self.cs = jnp.array(self.cs, dtype=dtype)
+            self.cs2 = jnp.array(self.cs2, dtype=dtype)
+            self.inv_cs2 = jnp.array(self.inv_cs2, dtype=dtype)
 
     def warp_lattice_vec(self, dtype):
         return wp.vec(len(self.c), dtype=dtype)
@@ -64,13 +117,11 @@ class VelocitySet(object):
     def _construct_qi(self):
         # Qi = cc - cs^2*I
         dim = self.d
-        Qi = self.cc.copy()
+        Qi = self._cc.copy()
         if dim == 3:
-            diagonal = (0, 3, 5)
-            offdiagonal = (1, 2, 4)
+            diagonal, offdiagonal = (0, 3, 5), (1, 2, 4)
         elif dim == 2:
-            diagonal = (0, 2)
-            offdiagonal = (1,)
+            diagonal, offdiagonal = (0, 2), (1,)
         else:
             raise ValueError(f"dim = {dim} not supported")
 
@@ -92,19 +143,18 @@ class VelocitySet(object):
         cc: numpy.ndarray
             The moments of the lattice.
         """
-        c = self.c.T
+        c = self._c.T
         # Counter for the loop
         cntr = 0
-
+        c = self._c.T
         # nt: number of independent elements of a symmetric tensor
         nt = self.d * (self.d + 1) // 2
-
         cc = np.zeros((self.q, nt))
-        for a in range(0, self.d):
+        cntr = 0
+        for a in range(self.d):
             for b in range(a, self.d):
                 cc[:, cntr] = c[:, a] * c[:, b]
                 cntr += 1
-
         return cc
 
     def _construct_opposite_indices(self):
@@ -119,9 +169,8 @@ class VelocitySet(object):
         opposite: numpy.ndarray
             The indices of the opposite velocities.
         """
-        c = self.c.T
-        opposite = np.array([c.tolist().index((-c[i]).tolist()) for i in range(self.q)])
-        return opposite
+        c = self._c.T
+        return np.array([c.tolist().index((-c[i]).tolist()) for i in range(self.q)])
 
     def _construct_main_indices(self):
         """
@@ -134,10 +183,9 @@ class VelocitySet(object):
         numpy.ndarray
             The indices of the main velocities.
         """
-        c = self.c.T
+        c = self._c.T
         if self.d == 2:
             return np.nonzero((np.abs(c[:, 0]) + np.abs(c[:, 1]) == 1))[0]
-
         elif self.d == 3:
             return np.nonzero((np.abs(c[:, 0]) + np.abs(c[:, 1]) + np.abs(c[:, 2]) == 1))[0]
 
@@ -151,8 +199,7 @@ class VelocitySet(object):
         numpy.ndarray
             The indices of the right velocities.
         """
-        c = self.c.T
-        return np.nonzero(c[:, 0] == 1)[0]
+        return np.nonzero(self._c.T[:, 0] == 1)[0]
 
     def _construct_left_indices(self):
         """
@@ -164,8 +211,7 @@ class VelocitySet(object):
         numpy.ndarray
             The indices of the left velocities.
         """
-        c = self.c.T
-        return np.nonzero(c[:, 0] == -1)[0]
+        return np.nonzero(self._c.T[:, 0] == -1)[0]
 
     def __str__(self):
         """
@@ -178,3 +224,4 @@ class VelocitySet(object):
         This function returns the name of the lattice in the format of DxQy.
         """
         return "D{}Q{}".format(self.d, self.q)
+

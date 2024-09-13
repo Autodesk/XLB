@@ -182,9 +182,9 @@ class ZouHeBC(BoundaryCondition):
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = wp.float32(rho)
         _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])
-        _opp_indices = self.velocity_set.wp_opp_indices
-        _c = self.velocity_set.wp_c
-        _c32 = self.velocity_set.wp_c32
+        _opp_indices = self.velocity_set.opp_indices
+        _c = self.velocity_set.c
+        _c32 = self.velocity_set.c32
         # TODO: this is way less than ideal. we should not be making new types
 
         @wp.func

@@ -87,8 +87,8 @@ class MomentumTransfer(Operator):
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _c = self.velocity_set.wp_c
-        _opp_indices = self.velocity_set.wp_opp_indices
+        _c = self.velocity_set.c
+        _opp_indices = self.velocity_set.opp_indices
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
         _no_slip_id = self.no_slip_bc_instance.id

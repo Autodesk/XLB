@@ -90,9 +90,9 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
-        _c = self.velocity_set.wp_c
+        _c = self.velocity_set.c
         _q = self.velocity_set.q
-        _opp_indices = self.velocity_set.wp_opp_indices
+        _opp_indices = self.velocity_set.opp_indices
         sound_speed = 1.0 / wp.sqrt(3.0)
 
         @wp.struct

@@ -151,7 +151,11 @@ class WindTunnel3D:
         else:
             f_0 = self.f_0
 
-        macro = Macroscopic(compute_backend=ComputeBackend.JAX)
+        macro = Macroscopic(
+            compute_backend=ComputeBackend.JAX,
+            precision_policy=self.precision_policy,
+            velocity_set=xlb.velocity_set.D3Q27(precision_policy=self.precision_policy, backend=ComputeBackend.JAX),
+        )
 
         rho, u = macro(f_0)
 
@@ -215,8 +219,8 @@ if __name__ == "__main__":
 
     # Configuration
     backend = ComputeBackend.WARP
-    velocity_set = xlb.velocity_set.D3Q27()
     precision_policy = PrecisionPolicy.FP32FP32
+    velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, backend=backend)
     wind_speed = 0.02
     num_steps = 100000
     print_interval = 1000

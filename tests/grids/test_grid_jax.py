@@ -8,17 +8,18 @@ from jax.experimental import mesh_utils
 import jax.numpy as jnp
 
 
-def init_xlb_env():
+def init_xlb_env(velocity_set):
+    vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.JAX,
-        velocity_set=xlb.velocity_set.D2Q9,  # does not affect the test
+        velocity_set=vel_set,
     )
 
 
 @pytest.mark.parametrize("grid_size", [50, 100, 150])
 def test_jax_2d_grid_initialization(grid_size):
-    init_xlb_env()
+    init_xlb_env(xlb.velocity_set.D2Q9)
     grid_shape = (grid_size, grid_size)
     my_grid = grid_factory(grid_shape)
     f = my_grid.create_field(cardinality=9)
@@ -34,7 +35,7 @@ def test_jax_2d_grid_initialization(grid_size):
 
 @pytest.mark.parametrize("grid_size", [50, 100, 150])
 def test_jax_3d_grid_initialization(grid_size):
-    init_xlb_env()
+    init_xlb_env(xlb.velocity_set.D3Q19)
     grid_shape = (grid_size, grid_size, grid_size)
     my_grid = grid_factory(grid_shape)
     f = my_grid.create_field(cardinality=9)
@@ -54,7 +55,7 @@ def test_jax_3d_grid_initialization(grid_size):
 
 
 def test_jax_grid_create_field_fill_value():
-    init_xlb_env()
+    init_xlb_env(xlb.velocity_set.D2Q9)
     grid_shape = (100, 100)
     fill_value = 3.14
     my_grid = grid_factory(grid_shape)
@@ -66,7 +67,7 @@ def test_jax_grid_create_field_fill_value():
 
 @pytest.fixture(autouse=True)
 def setup_xlb_env():
-    init_xlb_env()
+    init_xlb_env(xlb.velocity_set.D2Q9)
 
 
 if __name__ == "__main__":
