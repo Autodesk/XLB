@@ -4,9 +4,11 @@ import math
 import numpy as np
 import warp as wp
 import jax.numpy as jnp
+import jax
 
 from xlb import DefaultConfig
 from xlb.compute_backend import ComputeBackend
+from xlb.precision_policy import PrecisionPolicy
 
 
 class VelocitySet(object):
@@ -31,6 +33,10 @@ class VelocitySet(object):
         self.q = q
         self.precision_policy = precision_policy
         self.backend = backend
+
+        # Updating JAX config in case fp64 is requested
+        if backend == ComputeBackend.JAX and (precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32):
+            jax.config.update("jax_enable_x64", True)
 
         # Create all properties in NumPy first
         self._init_numpy_properties(c, w)

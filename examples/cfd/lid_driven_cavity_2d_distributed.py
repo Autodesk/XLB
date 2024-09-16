@@ -1,5 +1,4 @@
 import xlb
-import jax
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
@@ -28,9 +27,6 @@ if __name__ == "__main__":
     grid_shape = (grid_size, grid_size)
     backend = ComputeBackend.JAX  # Must be JAX for distributed multi-GPU computations. Distributed computations on WARP are not supported yet!
     precision_policy = PrecisionPolicy.FP32FP32
-
-    if precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32:
-        jax.config.update("jax_enable_x64", True)
 
     velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
     omega = 1.6

@@ -8,7 +8,6 @@ from xlb.operator.boundary_condition import HalfwayBounceBackBC, EquilibriumBC
 from xlb.operator.macroscopic import Macroscopic
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
-import jax
 import jax.numpy as jnp
 import xlb.velocity_set
 
@@ -107,9 +106,6 @@ if __name__ == "__main__":
     grid_shape = (grid_size, grid_size)
     backend = ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
-
-    if precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32:
-        jax.config.update("jax_enable_x64", True)
 
     velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
     omega = 1.6

@@ -217,30 +217,34 @@ class KBC(Collision):
             s = _f_vec()
 
             # For c = (i, 0, 0), c = (0, j, 0) and c = (0, 0, k)
-            s[9] = (2.0 * nxz - nyz) / 6.0
-            s[18] = (2.0 * nxz - nyz) / 6.0
-            s[3] = (-nxz + 2.0 * nyz) / 6.0
-            s[6] = (-nxz + 2.0 * nyz) / 6.0
-            s[1] = (-nxz - nyz) / 6.0
-            s[2] = (-nxz - nyz) / 6.0
+            two = self.self.compute_dtype(2.0)
+            four = self.self.compute_dtype(4.0)
+            six = self.self.compute_dtype(6.0)
+
+            s[9] = (two * nxz - nyz) / six
+            s[18] = (two * nxz - nyz) / six
+            s[3] = (-nxz + two * nyz) / six
+            s[6] = (-nxz + two * nyz) / six
+            s[1] = (-nxz - nyz) / six
+            s[2] = (-nxz - nyz) / six
 
             # For c = (i, j, 0)
-            s[12] = pi[1] / 4.0
-            s[24] = pi[1] / 4.0
-            s[21] = -pi[1] / 4.0
-            s[15] = -pi[1] / 4.0
+            s[12] = pi[1] / four
+            s[24] = pi[1] / four
+            s[21] = -pi[1] / four
+            s[15] = -pi[1] / four
 
             # For c = (i, 0, k)
-            s[10] = pi[2] / 4.0
-            s[20] = pi[2] / 4.0
-            s[19] = -pi[2] / 4.0
-            s[11] = -pi[2] / 4.0
+            s[10] = pi[2] / four
+            s[20] = pi[2] / four
+            s[19] = -pi[2] / four
+            s[11] = -pi[2] / four
 
             # For c = (0, j, k)
-            s[8] = pi[4] / 4.0
-            s[4] = pi[4] / 4.0
-            s[7] = -pi[4] / 4.0
-            s[5] = -pi[4] / 4.0
+            s[8] = pi[4] / four
+            s[4] = pi[4] / four
+            s[7] = -pi[4] / four
+            s[5] = -pi[4] / four
 
             return s
 
@@ -272,10 +276,11 @@ class KBC(Collision):
 
             # Perform collision
             delta_h = fneq - delta_s
-            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
+            two = self.compute_dtype(2.0)
+            gamma = _inv_beta - (two - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
                 _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
             )
-            fout = f - _beta * (2.0 * delta_s + gamma * delta_h)
+            fout = f - _beta * (two * delta_s + gamma * delta_h)
 
             return fout
 
@@ -294,10 +299,11 @@ class KBC(Collision):
 
             # Perform collision
             delta_h = fneq - delta_s
-            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
+            two = self.compute_dtype(2.0)
+            gamma = _inv_beta - (two - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
                 _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
             )
-            fout = f - _beta * (2.0 * delta_s + gamma * delta_h)
+            fout = f - _beta * (two * delta_s + gamma * delta_h)
 
             return fout
 

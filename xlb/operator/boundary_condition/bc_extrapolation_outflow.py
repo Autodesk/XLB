@@ -135,7 +135,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
     def _construct_warp(self):
         # Set local constants
-        sound_speed = 1.0 / wp.sqrt(3.0)
+        sound_speed = self.compute_dtype(1.0 / wp.sqrt(3.0))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _c = self.velocity_set.c
         _q = self.velocity_set.q
@@ -187,7 +187,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             _f = f_post
             for l in range(self.velocity_set.q):
                 if missing_mask[l] == wp.uint8(1):
-                    _f[_opp_indices[l]] = (1.0 - sound_speed) * f_pre[l] + sound_speed * f_aux[l]
+                    _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux[l]
             return _f
 
         # Construct the warp kernel

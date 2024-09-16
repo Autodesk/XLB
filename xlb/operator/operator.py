@@ -1,8 +1,10 @@
 import inspect
 import traceback
+import jax
 
 from xlb.compute_backend import ComputeBackend
 from xlb import DefaultConfig
+from xlb.precision_policy import PrecisionPolicy
 
 
 class Operator:
@@ -27,6 +29,12 @@ class Operator:
         # Construct the kernel based backend functions TODO: Maybe move this to the register or something
         if self.compute_backend == ComputeBackend.WARP:
             self.warp_functional, self.warp_kernel = self._construct_warp()
+
+        # Updating JAX config in case fp64 is requested
+        if self.compute_backend == ComputeBackend.JAX and (
+            precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32
+        ):
+            jax.config.update("jax_enable_x64", True)
 
     @classmethod
     def register_backend(cls, backend_name):
