@@ -77,7 +77,8 @@ class TurbulentChannel3D:
 
     def define_boundary_indices(self):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
-        walls = [self.grid.boundingBoxIndices["bottom"][i] + self.grid.boundingBoxIndices["top"][i] for i in range(self.velocity_set.d)]
+        boundingBoxIndices = self.grid.bounding_box_indices(remove_edges=True)
+        walls = [boundingBoxIndices["bottom"][i] + boundingBoxIndices["top"][i] for i in range(self.velocity_set.d)]
         return walls
 
     def setup_boundary_conditions(self):
@@ -129,7 +130,11 @@ class TurbulentChannel3D:
         else:
             f_0 = self.f_0
 
-        macro = Macroscopic(compute_backend=ComputeBackend.JAX)
+        macro = Macroscopic(
+            compute_backend=ComputeBackend.JAX,
+            precision_policy=self.precision_policy,
+            velocity_set=xlb.velocity_set.D3Q27(precision_policy=self.precision_policy, backend=ComputeBackend.JAX),
+        )
 
         rho, u = macro(f_0)
 
@@ -182,10 +187,10 @@ if __name__ == "__main__":
 
     # Runtime & backend configurations
     backend = ComputeBackend.WARP
-    velocity_set = xlb.velocity_set.D3Q27()
-    precision_policy = PrecisionPolicy.FP32FP32
-    num_steps = 100000
-    print_interval = 1000
+    precision_policy = PrecisionPolicy.FP64FP64
+    velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, backend=backend)
+    num_steps = 10000000
+    print_interval = 100000
 
     # Print simulation info
     print("\n" + "=" * 50 + "\n")
@@ -199,4 +204,4 @@ if __name__ == "__main__":
     print("\n" + "=" * 50 + "\n")
 
     simulation = TurbulentChannel3D(channel_half_width, Re_tau, u_tau, grid_shape, velocity_set, backend, precision_policy)
-    simulation.run(num_steps, print_interval, post_process_interval=1000)
+    simulation.run(num_steps, print_interval, post_process_interval=100000)
