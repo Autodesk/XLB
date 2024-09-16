@@ -84,7 +84,7 @@ class VelocitySet(object):
         Convert NumPy properties to JAX-specific properties.
         """
         dtype = self.precision_policy.compute_precision.jax_dtype
-        self.c = jnp.array(self._c, dtype=dtype)
+        self.c = jnp.array(self._c, dtype=jnp.int32)
         self.w = jnp.array(self._w, dtype=dtype)
         self.opp_indices = jnp.array(self._opp_indices, dtype=jnp.int32)
         self.cc = jnp.array(self._cc, dtype=dtype)

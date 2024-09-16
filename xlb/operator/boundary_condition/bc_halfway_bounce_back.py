@@ -49,6 +49,9 @@ class HalfwayBounceBackBC(BoundaryCondition):
             mesh_vertices,
         )
 
+        # This BC needs padding for finding missing directions when imposed on a geometry that is in the domain interior
+        self.needs_padding = True
+
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
     def apply_jax(self, f_pre, f_post, bc_id, missing_mask):

@@ -4,13 +4,14 @@ import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb import DefaultConfig
 from xlb.grid import grid_factory
+from xlb.operator.boundary_masker import IndicesBoundaryMasker
 
 
 def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
-        default_backend=ComputeBackend.JAX,
+        default_backend=ComputeBackend.WARP,
         velocity_set=vel_set,
     )
 
@@ -35,7 +36,7 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
 
     bc_id = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
-    indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
+    indices_boundary_masker = IndicesBoundaryMasker()
 
     # Make indices for boundary conditions (sphere)
     sphere_radius = grid_shape[0] // 4

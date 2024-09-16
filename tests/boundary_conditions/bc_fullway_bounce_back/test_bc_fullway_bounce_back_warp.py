@@ -12,7 +12,7 @@ def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
-        default_backend=ComputeBackend.JAX,
+        default_backend=ComputeBackend.WARP,
         velocity_set=vel_set,
     )
 
@@ -75,7 +75,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
 
     for i in range(velocity_set.q):
         np.allclose(
-            f[velocity_set.get_opp_index(i)][tuple(indices)],
+            f[velocity_set.opp_indices[i]][tuple(indices)],
             f_post[i][tuple(indices)],
         )
 

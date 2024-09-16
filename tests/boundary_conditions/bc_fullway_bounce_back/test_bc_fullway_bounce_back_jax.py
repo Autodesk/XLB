@@ -6,6 +6,7 @@ import jax
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
 from xlb import DefaultConfig
+from xlb.operator.boundary_masker import IndicesBoundaryMasker
 
 
 def init_xlb_env(velocity_set):
@@ -37,7 +38,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
 
     bc_id = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
-    indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
+    indices_boundary_masker = IndicesBoundaryMasker()
 
     # Make indices for boundary conditions (sphere)
     sphere_radius = grid_shape[0] // 4
@@ -74,7 +75,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
 
     for i in range(velocity_set.q):
         jnp.allclose(
-            f[velocity_set.get_opp_index(i)][tuple(indices)],
+            f[velocity_set.opp_indices[i]][tuple(indices)],
             f_pre[i][tuple(indices)],
         )
 

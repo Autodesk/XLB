@@ -73,7 +73,7 @@ class IndicesBoundaryMasker(Operator):
             local_indices = np.array(bc.indices) - np.array(start_index)[:, np.newaxis]
             padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
             bmap = bmap.at[tuple(padded_indices)].set(id_number)
-            if any(self.are_indices_in_interior(bc.indices, domain_shape)):
+            if any(self.are_indices_in_interior(bc.indices, domain_shape)) and bc.needs_padding:
                 # checking if all indices associated with this BC are in the interior of the domain (not at the boundary).
                 # This flag is needed e.g. if the no-slip geometry is anywhere but at the boundaries of the computational domain.
                 if dim == 2:
@@ -83,7 +83,7 @@ class IndicesBoundaryMasker(Operator):
 
                 # Assign the boundary id to the push indices
                 push_indices = padded_indices[:, :, None] + self.velocity_set.c[:, None, :]
-                push_indices = push_indices.reshape(3, -1)
+                push_indices = push_indices.reshape(dim, -1)
                 bmap = bmap.at[tuple(push_indices)].set(id_number)
 
             # We are done with bc.indices. Remove them from BC objects
@@ -132,12 +132,14 @@ class IndicesBoundaryMasker(Operator):
                         pull_index[d] = index[d] - _c[d, l]
                         push_index[d] = index[d] + _c[d, l]
 
+                    # set bc_id for all bc indices
+                    bc_id[0, index[0], index[1]] = id_number[ii]
+
                     # check if pull index is out of bound
                     # These directions will have missing information after streaming
                     if pull_index[0] < 0 or pull_index[0] >= missing_mask.shape[1] or pull_index[1] < 0 or pull_index[1] >= missing_mask.shape[2]:
                         # Set the missing mask
                         missing_mask[l, index[0], index[1]] = True
-                        bc_id[0, index[0], index[1]] = id_number[ii]
 
                     # handling geometries in the interior of the computational domain
                     elif (
@@ -188,6 +190,9 @@ class IndicesBoundaryMasker(Operator):
                         pull_index[d] = index[d] - _c[d, l]
                         push_index[d] = index[d] + _c[d, l]
 
+                    # set bc_id for all bc indices
+                    bc_id[0, index[0], index[1], index[2]] = id_number[ii]
+
                     # check if pull index is out of bound
                     # These directions will have missing information after streaming
                     if (
@@ -200,7 +205,6 @@ class IndicesBoundaryMasker(Operator):
                     ):
                         # Set the missing mask
                         missing_mask[l, index[0], index[1], index[2]] = True
-                        bc_id[0, index[0], index[1], index[2]] = id_number[ii]
 
                     # handling geometries in the interior of the computational domain
                     elif (
@@ -232,7 +236,7 @@ class IndicesBoundaryMasker(Operator):
             for d in range(dim):
                 index_list[d] += bc.indices[d]
             id_list += [bc.id] * len(bc.indices[0])
-            is_interior += self.are_indices_in_interior(bc.indices, bc_id[0].shape)
+            is_interior += self.are_indices_in_interior(bc.indices, bc_id[0].shape) if bc.needs_padding else [False] * len(bc.indices[0])
 
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)

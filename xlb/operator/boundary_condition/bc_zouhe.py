@@ -69,6 +69,9 @@ class ZouHeBC(BoundaryCondition):
             self.prescribed_value = jnp.atleast_1d(prescribed_value)[(slice(None),) + (None,) * dim]
             # TODO: this won't work if the prescribed values are a profile with the length of bdry indices!
 
+        # This BC needs padding for finding missing directions when imposed on a geometry that is in the domain interior
+        self.needs_padding = True
+
     @partial(jit, static_argnums=(0,), inline=True)
     def _get_known_middle_mask(self, missing_mask):
         known_mask = missing_mask[self.velocity_set.opp_indices]

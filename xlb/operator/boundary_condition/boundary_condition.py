@@ -48,6 +48,10 @@ class BoundaryCondition(Operator):
         # Set the implementation step
         self.implementation_step = implementation_step
 
+        # A flag to indicate whether bc indices need to be padded in both normal directions to identify missing directions
+        # when inside/outside of the geoemtry is not known
+        self.needs_padding = False
+
         if self.compute_backend == ComputeBackend.WARP:
             # Set local constants TODO: This is a hack and should be fixed with warp update
             _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
