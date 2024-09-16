@@ -36,7 +36,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
 
     missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
-    bc_id = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    bc_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = IndicesBoundaryMasker()
 
@@ -56,7 +56,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
     fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
 
-    bc_id, missing_mask = indices_boundary_masker([fullway_bc], bc_id, missing_mask, start_index=None)
+    bc_mask, missing_mask = indices_boundary_masker([fullway_bc], bc_mask, missing_mask, start_index=None)
 
     f_pre = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=0.0)
     # Generate a random field with the same shape
@@ -69,7 +69,7 @@ def test_fullway_bounce_back_jax(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    f = fullway_bc(f_pre, f_post, bc_id, missing_mask)
+    f = fullway_bc(f_pre, f_post, bc_mask, missing_mask)
 
     assert f.shape == (velocity_set.q,) + grid_shape
 

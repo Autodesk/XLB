@@ -14,6 +14,6 @@ def create_nse_fields(grid_shape: Tuple[int, int, int], velocity_set=None, compu
     f_0 = grid.create_field(cardinality=velocity_set.q, dtype=precision_policy.store_precision)
     f_1 = grid.create_field(cardinality=velocity_set.q, dtype=precision_policy.store_precision)
     missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
-    bc_id = grid.create_field(cardinality=1, dtype=Precision.UINT8)
+    bc_mask = grid.create_field(cardinality=1, dtype=Precision.UINT8)
 
-    return grid, f_0, f_1, missing_mask, bc_id
+    return grid, f_0, f_1, missing_mask, bc_mask

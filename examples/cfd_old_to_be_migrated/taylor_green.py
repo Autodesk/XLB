@@ -113,7 +113,7 @@ def run_taylor_green(backend, compute_mlup=True):
     u = grid.create_field(cardinality=velocity_set.d, precision=xlb.Precision.FP32)
     f0 = grid.create_field(cardinality=velocity_set.q, precision=xlb.Precision.FP32)
     f1 = grid.create_field(cardinality=velocity_set.q, precision=xlb.Precision.FP32)
-    bc_id = grid.create_field(cardinality=1, precision=xlb.Precision.UINT8)
+    bc_mask = grid.create_field(cardinality=1, precision=xlb.Precision.UINT8)
     missing_mask = grid.create_field(cardinality=velocity_set.q, precision=xlb.Precision.BOOL)
 
     # Make operators
@@ -149,10 +149,10 @@ def run_taylor_green(backend, compute_mlup=True):
     for _ in tqdm(range(num_steps)):
         # Time step
         if backend == "warp":
-            f1 = stepper(f0, f1, bc_id, missing_mask, _)
+            f1 = stepper(f0, f1, bc_mask, missing_mask, _)
             f1, f0 = f0, f1
         elif backend == "jax":
-            f0 = stepper(f0, bc_id, missing_mask, _)
+            f0 = stepper(f0, bc_mask, missing_mask, _)
 
         # Plot if needed
         if (_ % plot_freq == 0) and (not compute_mlup):

@@ -55,7 +55,7 @@ class TurbulentChannel3D:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_id = create_nse_fields(grid_shape)
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -92,7 +92,7 @@ class TurbulentChannel3D:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.bc_id, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.bc_id, self.missing_mask)
+        self.bc_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.bc_mask, self.missing_mask)
 
     def initialize_fields(self):
         shape = (self.velocity_set.d,) + (self.grid_shape)
@@ -113,7 +113,7 @@ class TurbulentChannel3D:
     def run(self, num_steps, print_interval, post_process_interval=100):
         start_time = time.time()
         for i in range(num_steps):
-            self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_id, self.missing_mask, i)
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if (i + 1) % print_interval == 0:

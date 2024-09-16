@@ -42,9 +42,9 @@ def setup_simulation(args):
 
 def create_grid_and_fields(cube_edge):
     grid_shape = (cube_edge, cube_edge, cube_edge)
-    grid, f_0, f_1, missing_mask, bc_id = create_nse_fields(grid_shape)
+    grid, f_0, f_1, missing_mask, bc_mask = create_nse_fields(grid_shape)
 
-    return grid, f_0, f_1, missing_mask, bc_id
+    return grid, f_0, f_1, missing_mask, bc_mask
 
 
 def define_boundary_indices(grid):
@@ -67,7 +67,7 @@ def setup_boundary_conditions(grid):
     return [bc_top, bc_walls]
 
 
-def run(f_0, f_1, backend, precision_policy, grid, bc_id, missing_mask, num_steps):
+def run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, num_steps):
     omega = 1.0
     stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=setup_boundary_conditions(grid))
 
@@ -81,7 +81,7 @@ def run(f_0, f_1, backend, precision_policy, grid, bc_id, missing_mask, num_step
     start_time = time.time()
 
     for i in range(num_steps):
-        f_1 = stepper(f_0, f_1, bc_id, missing_mask, i)
+        f_1 = stepper(f_0, f_1, bc_mask, missing_mask, i)
         f_0, f_1 = f_1, f_0
     wp.synchronize()
 
@@ -99,10 +99,10 @@ def main():
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
     velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
-    grid, f_0, f_1, missing_mask, bc_id = create_grid_and_fields(args.cube_edge)
+    grid, f_0, f_1, missing_mask, bc_mask = create_grid_and_fields(args.cube_edge)
     f_0 = initialize_eq(f_0, grid, velocity_set, backend)
 
-    elapsed_time = run(f_0, f_1, backend, precision_policy, grid, bc_id, missing_mask, args.num_steps)
+    elapsed_time = run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
 
     print(f"Simulation completed in {elapsed_time:.2f} seconds")
