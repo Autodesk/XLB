@@ -32,7 +32,7 @@ def setup_simulation(args):
         raise ValueError("Invalid precision")
 
     xlb.init(
-        velocity_set=xlb.velocity_set.D3Q19(),
+        velocity_set=xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend),
         default_backend=backend,
         default_precision_policy=precision_policy,
     )
@@ -55,7 +55,7 @@ def define_boundary_indices(grid):
         + grid.boundingBoxIndices["right"][i]
         + grid.boundingBoxIndices["front"][i]
         + grid.boundingBoxIndices["back"][i]
-        for i in range(xlb.velocity_set.D3Q19().d)
+        for i in range(len(grid.shape))
     ]
     return lid, walls
 
@@ -67,7 +67,7 @@ def setup_boundary_conditions(grid):
     return [bc_top, bc_walls]
 
 
-def run(f_0, f_1, backend, grid, bc_id, missing_mask, num_steps):
+def run(f_0, f_1, backend, precision_policy, grid, bc_id, missing_mask, num_steps):
     omega = 1.0
     stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=setup_boundary_conditions(grid))
 
@@ -75,7 +75,7 @@ def run(f_0, f_1, backend, grid, bc_id, missing_mask, num_steps):
         stepper = distribute(
             stepper,
             grid,
-            xlb.velocity_set.D3Q19(),
+            xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend),
         )
 
     start_time = time.time()
@@ -98,10 +98,11 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time):
 def main():
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
+    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
     grid, f_0, f_1, missing_mask, bc_id = create_grid_and_fields(args.cube_edge)
-    f_0 = initialize_eq(f_0, grid, xlb.velocity_set.D3Q19(), backend)
+    f_0 = initialize_eq(f_0, grid, velocity_set, backend)
 
-    elapsed_time = run(f_0, f_1, backend, grid, bc_id, missing_mask, args.num_steps)
+    elapsed_time = run(f_0, f_1, backend, precision_policy, grid, bc_id, missing_mask, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
 
     print(f"Simulation completed in {elapsed_time:.2f} seconds")

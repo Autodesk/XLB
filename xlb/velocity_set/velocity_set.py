@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from xlb import DefaultConfig
 from xlb.compute_backend import ComputeBackend
 
+
 class VelocitySet(object):
     """
     Base class for the velocity set of the Lattice Boltzmann Method (LBM), e.g. D2Q9, D3Q27, etc.
@@ -224,4 +225,3 @@ class VelocitySet(object):
         This function returns the name of the lattice in the format of DxQy.
         """
         return "D{}Q{}".format(self.d, self.q)
-

@@ -15,6 +15,7 @@ def init_xlb_env(velocity_set):
         velocity_set=vel_set,
     )
 
+
 @pytest.mark.parametrize("grid_size", [50, 100, 150])
 def test_warp_grid_create_field(grid_size):
     for grid_shape in [(grid_size, grid_size), (grid_size, grid_size, grid_size)]:

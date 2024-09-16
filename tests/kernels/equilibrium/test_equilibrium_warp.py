@@ -14,6 +14,8 @@ def init_xlb_env(velocity_set):
         default_backend=ComputeBackend.JAX,
         velocity_set=vel_set,
     )
+
+
 @pytest.mark.parametrize(
     "dim,velocity_set,grid_shape",
     [
