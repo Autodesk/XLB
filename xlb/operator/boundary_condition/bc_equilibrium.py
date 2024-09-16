@@ -73,7 +73,7 @@ class EquilibriumBC(BoundaryCondition):
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _rho = wp.float32(self.rho)
+        _rho = self.compute_dtype(self.rho)
         _u = _u_vec(self.u[0], self.u[1], self.u[2]) if self.velocity_set.d == 3 else _u_vec(self.u[0], self.u[1])
 
         # Construct the functional for this BC

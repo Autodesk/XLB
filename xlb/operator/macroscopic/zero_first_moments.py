@@ -46,7 +46,7 @@ class ZeroAndFirstMoments(Operator):
 
     def _construct_warp(self):
         # Make constants for warp
-        _c = self.velocity_set.wp_c
+        _c = self.velocity_set.c
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
 

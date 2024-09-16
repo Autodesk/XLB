@@ -1,5 +1,7 @@
+import jax
 from xlb.compute_backend import ComputeBackend
 from dataclasses import dataclass
+from xlb.precision_policy import PrecisionPolicy
 
 
 @dataclass
@@ -17,7 +19,7 @@ def init(velocity_set, default_backend, default_precision_policy):
     if default_backend == ComputeBackend.WARP:
         import warp as wp
 
-        wp.init()
+        wp.init()  # TODO: Must be removed in the future versions of WARP
     elif default_backend == ComputeBackend.JAX:
         check_multi_gpu_support()
     else:
@@ -29,8 +31,6 @@ def default_backend() -> ComputeBackend:
 
 
 def check_multi_gpu_support():
-    import jax
-
     gpus = jax.devices("gpu")
     if len(gpus) > 1:
         print("Multi-GPU support is available: {} GPUs detected.".format(len(gpus)))

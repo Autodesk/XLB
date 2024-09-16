@@ -19,6 +19,7 @@ import warp as wp
 import numpy as np
 import jax.numpy as jnp
 import time
+import jax
 
 
 class FlowOverSphere:
@@ -118,7 +119,11 @@ class FlowOverSphere:
         else:
             f_0 = self.f_0
 
-        macro = Macroscopic(compute_backend=ComputeBackend.JAX)
+        macro = Macroscopic(
+            compute_backend=ComputeBackend.JAX,
+            precision_policy=self.precision_policy,
+            velocity_set=xlb.velocity_set.D3Q19(precision_policy=self.precision_policy, backend=ComputeBackend.JAX),
+        )
         rho, u = macro(f_0)
 
         # remove boundary cells
@@ -135,9 +140,13 @@ class FlowOverSphere:
 if __name__ == "__main__":
     # Running the simulation
     grid_shape = (512 // 2, 128 // 2, 128 // 2)
-    velocity_set = xlb.velocity_set.D3Q19()
     backend = ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
+
+    if precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32:
+        jax.config.update("jax_enable_x64", True)
+
+    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
     omega = 1.6
 
     simulation = FlowOverSphere(omega, grid_shape, velocity_set, backend, precision_policy)

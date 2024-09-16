@@ -252,7 +252,7 @@ class KBC(Collision):
             feq: Any,
         ):
             e = wp.cw_div(wp.cw_mul(x, y), feq)
-            e_sum = wp.float32(0.0)
+            e_sum = self.compute_dtype(0.0)
             for i in range(self.velocity_set.q):
                 e_sum += e[i]
             return e_sum

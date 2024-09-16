@@ -63,7 +63,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
     def _construct_warp(self):
         # Set local constants
-        _opp_indices = self.velocity_set.wp_opp_indices
+        _opp_indices = self.velocity_set.opp_indices
 
         # Construct the functional for this BC
         @wp.func

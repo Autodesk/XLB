@@ -8,7 +8,9 @@ from xlb.operator.boundary_condition import HalfwayBounceBackBC, EquilibriumBC
 from xlb.operator.macroscopic import Macroscopic
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
+import jax
 import jax.numpy as jnp
+import xlb.velocity_set
 
 
 class LidDrivenCavity2D:
@@ -80,7 +82,11 @@ class LidDrivenCavity2D:
         else:
             f_0 = self.f_0
 
-        macro = Macroscopic(compute_backend=ComputeBackend.JAX)
+        macro = Macroscopic(
+            compute_backend=ComputeBackend.JAX,
+            precision_policy=self.precision_policy,
+            velocity_set=xlb.velocity_set.D2Q9(precision_policy=self.precision_policy, backend=ComputeBackend.JAX),
+        )
 
         rho, u = macro(f_0)
 
@@ -100,8 +106,12 @@ if __name__ == "__main__":
     grid_size = 500
     grid_shape = (grid_size, grid_size)
     backend = ComputeBackend.WARP
-    velocity_set = xlb.velocity_set.D2Q9()
     precision_policy = PrecisionPolicy.FP32FP32
+
+    if precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32:
+        jax.config.update("jax_enable_x64", True)
+
+    velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
     omega = 1.6
 
     simulation = LidDrivenCavity2D(omega, grid_shape, velocity_set, backend, precision_policy)
