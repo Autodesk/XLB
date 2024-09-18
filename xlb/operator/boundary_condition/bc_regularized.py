@@ -105,9 +105,9 @@ class RegularizedBC(ZouHeBC):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, boundary_map, missing_mask):
+    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
         # creat a mask to slice boundary cells
-        boundary = boundary_map == self.id
+        boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
 
@@ -154,7 +154,7 @@ class RegularizedBC(ZouHeBC):
             fsum_middle = self.compute_dtype(0.0)
             for l in range(_q):
                 if missing_mask[_opp_indices[l]] == wp.uint8(1):
-                    fsum_known += 2.0 * fpop[l]
+                    fsum_known += self.compute_dtype(2.0) * fpop[l]
                 elif missing_mask[l] != wp.uint8(1):
                     fsum_middle += fpop[l]
             return fsum_known + fsum_middle
@@ -202,13 +202,13 @@ class RegularizedBC(ZouHeBC):
             nt = _d * (_d + 1) // 2
             QiPi1 = _f_vec()
             for l in range(_q):
-                QiPi1[l] = 0.0
+                QiPi1[l] = self.compute_dtype(0.0)
                 for t in range(nt):
                     QiPi1[l] += _qi[l, t] * PiNeq[t]
 
                 # assign all populations based on eq 45 of Latt et al (2008)
                 # fneq ~ f^1
-                fpop1 = 9.0 / 2.0 * _w[l] * QiPi1[l]
+                fpop1 = self.compute_dtype(4.5) * _w[l] * QiPi1[l]
                 fpop[l] = feq[l] + fpop1
             return fpop
 
@@ -230,7 +230,7 @@ class RegularizedBC(ZouHeBC):
             unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
-            _rho = fsum / (1.0 + unormal)
+            _rho = fsum / (self.compute_dtype(1.0) + unormal)
 
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
@@ -255,7 +255,7 @@ class RegularizedBC(ZouHeBC):
 
             # calculate velocity
             fsum = _get_fsum(_f, missing_mask)
-            unormal = -1.0 + fsum / _rho
+            unormal = -self.compute_dtype(1.0) + fsum / _rho
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
@@ -284,7 +284,7 @@ class RegularizedBC(ZouHeBC):
             unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
-            _rho = fsum / (1.0 + unormal)
+            _rho = fsum / (self.compute_dtype(1.0) + unormal)
 
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
@@ -309,7 +309,7 @@ class RegularizedBC(ZouHeBC):
 
             # calculate velocity
             fsum = _get_fsum(_f, missing_mask)
-            unormal = -1.0 + fsum / _rho
+            unormal = -self.compute_dtype(1.0) + fsum / _rho
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
@@ -325,7 +325,7 @@ class RegularizedBC(ZouHeBC):
         def kernel2d(
             f_pre: wp.array3d(dtype=Any),
             f_post: wp.array3d(dtype=Any),
-            boundary_map: wp.array3d(dtype=wp.uint8),
+            bc_mask: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
         ):
             # Get the global index
@@ -333,10 +333,10 @@ class RegularizedBC(ZouHeBC):
             index = wp.vec2i(i, j)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(self.id):
+            if _boundary_id == wp.uint8(self.id):
                 _f_aux = _f_vec()
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
@@ -351,7 +351,7 @@ class RegularizedBC(ZouHeBC):
         def kernel3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
-            boundary_map: wp.array4d(dtype=wp.uint8),
+            bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
         ):
             # Get the global index
@@ -359,10 +359,10 @@ class RegularizedBC(ZouHeBC):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(self.id):
+            if _boundary_id == wp.uint8(self.id):
                 _f_aux = _f_vec()
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
@@ -385,11 +385,11 @@ class RegularizedBC(ZouHeBC):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, boundary_map, missing_mask):
+    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f_pre, f_post, boundary_map, missing_mask],
+            inputs=[f_pre, f_post, bc_mask, missing_mask],
             dim=f_pre.shape[1:],
         )
         return f_post

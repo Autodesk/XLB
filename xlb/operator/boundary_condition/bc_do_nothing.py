@@ -48,8 +48,8 @@ class DoNothingBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def jax_implementation(self, f_pre, f_post, boundary_map, missing_mask):
-        boundary = boundary_map == self.id
+    def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        boundary = bc_mask == self.id
         return jnp.where(boundary, f_pre, f_post)
 
     def _construct_warp(self):
@@ -67,7 +67,7 @@ class DoNothingBC(BoundaryCondition):
         def kernel2d(
             f_pre: wp.array3d(dtype=Any),
             f_post: wp.array3d(dtype=Any),
-            boundary_map: wp.array3d(dtype=wp.uint8),
+            bc_mask: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.uint8),
         ):
             # Get the global index
@@ -75,10 +75,10 @@ class DoNothingBC(BoundaryCondition):
             index = wp.vec2i(i, j)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(DoNothingBC.id):
+            if _boundary_id == wp.uint8(DoNothingBC.id):
                 _f_aux = _f_post
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
@@ -93,7 +93,7 @@ class DoNothingBC(BoundaryCondition):
         def kernel3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
-            boundary_map: wp.array4d(dtype=wp.uint8),
+            bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
         ):
             # Get the global index
@@ -101,10 +101,10 @@ class DoNothingBC(BoundaryCondition):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(DoNothingBC.id):
+            if _boundary_id == wp.uint8(DoNothingBC.id):
                 _f_aux = _f_post
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
@@ -119,11 +119,11 @@ class DoNothingBC(BoundaryCondition):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, boundary_map, missing_mask):
+    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f_pre, f_post, boundary_map, missing_mask],
+            inputs=[f_pre, f_post, bc_mask, missing_mask],
             dim=f_pre.shape[1:],
         )
         return f_post

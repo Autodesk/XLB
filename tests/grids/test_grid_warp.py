@@ -11,9 +11,10 @@ def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
-        default_backend=ComputeBackend.JAX,
+        default_backend=ComputeBackend.WARP,
         velocity_set=vel_set,
     )
+
 
 @pytest.mark.parametrize("grid_size", [50, 100, 150])
 def test_warp_grid_create_field(grid_size):

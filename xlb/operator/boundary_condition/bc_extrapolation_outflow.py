@@ -94,13 +94,13 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return jnp.roll(fld, (vec[0], vec[1], vec[2]), axis=(1, 2, 3))
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def prepare_bc_auxilary_data(self, f_pre, f_post, boundary_map, missing_mask):
+    def prepare_bc_auxilary_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
         Prepare the auxilary distribution functions for the boundary condition.
         Since this function is called post-collisiotn: f_pre = f_post_stream and f_post = f_post_collision
         """
         sound_speed = 1.0 / jnp.sqrt(3.0)
-        boundary = boundary_map == self.id
+        boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
 
@@ -123,8 +123,8 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, boundary_map, missing_mask):
-        boundary = boundary_map == self.id
+    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
+        boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
         return jnp.where(
@@ -135,7 +135,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
     def _construct_warp(self):
         # Set local constants
-        sound_speed = 1.0 / wp.sqrt(3.0)
+        sound_speed = self.compute_dtype(1.0 / wp.sqrt(3.0))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _c = self.velocity_set.c
         _q = self.velocity_set.q
@@ -187,7 +187,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             _f = f_post
             for l in range(self.velocity_set.q):
                 if missing_mask[l] == wp.uint8(1):
-                    _f[_opp_indices[l]] = (1.0 - sound_speed) * f_pre[l] + sound_speed * f_aux[l]
+                    _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux[l]
             return _f
 
         # Construct the warp kernel
@@ -195,7 +195,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         def kernel2d(
             f_pre: wp.array3d(dtype=Any),
             f_post: wp.array3d(dtype=Any),
-            boundary_map: wp.array3d(dtype=wp.uint8),
+            bc_mask: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
         ):
             # Get the global index
@@ -203,11 +203,11 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             index = wp.vec2i(i, j)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
             _f_aux = _f_vec()
 
             # special preparation of auxiliary data
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 nv = get_normal_vectors_2d(_missing_mask)
                 for l in range(self.velocity_set.q):
                     if _missing_mask[l] == wp.uint8(1):
@@ -220,7 +220,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                         _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1]]
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 # TODO: is there any way for this BC to have a meaningful kernel given that it has two steps after both
                 # collision and streaming?
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
@@ -236,7 +236,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         def kernel3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
-            boundary_map: wp.array4d(dtype=wp.uint8),
+            bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
         ):
             # Get the global index
@@ -244,11 +244,11 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
             _f_aux = _f_vec()
 
             # special preparation of auxiliary data
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 nv = get_normal_vectors_3d(_missing_mask)
                 for l in range(self.velocity_set.q):
                     if _missing_mask[l] == wp.uint8(1):
@@ -261,7 +261,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                         _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1], pull_index[2]]
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(ExtrapolationOutflowBC.id):
+            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
                 # collision and streaming?
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
@@ -277,11 +277,11 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         return (functional, prepare_bc_auxilary_data), kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, boundary_map, missing_mask):
+    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f_pre, f_post, boundary_map, missing_mask],
+            inputs=[f_pre, f_post, bc_mask, missing_mask],
             dim=f_pre.shape[1:],
         )
         return f_post

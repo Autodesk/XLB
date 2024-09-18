@@ -15,6 +15,7 @@ def init_xlb_env(velocity_set):
         velocity_set=vel_set,
     )
 
+
 @pytest.mark.parametrize(
     "dim,velocity_set,grid_shape",
     [
@@ -34,7 +35,7 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
 
     missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
-    boundary_map = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    bc_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
 
@@ -56,26 +57,26 @@ def test_indices_masker_jax(dim, velocity_set, grid_shape):
     assert len(indices) == dim
     test_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
     test_bc.id = 5
-    boundary_map, missing_mask = indices_boundary_masker([test_bc], boundary_map, missing_mask, start_index=None)
+    bc_mask, missing_mask = indices_boundary_masker([test_bc], bc_mask, missing_mask, start_index=None)
 
     assert missing_mask.dtype == xlb.Precision.BOOL.jax_dtype
 
-    assert boundary_map.dtype == xlb.Precision.UINT8.jax_dtype
+    assert bc_mask.dtype == xlb.Precision.UINT8.jax_dtype
 
-    assert boundary_map.shape == (1,) + grid_shape
+    assert bc_mask.shape == (1,) + grid_shape
 
     assert missing_mask.shape == (velocity_set.q,) + grid_shape
 
     if dim == 2:
-        assert jnp.all(boundary_map[0, indices[0], indices[1]] == test_bc.id)
-        # assert that the rest of the boundary_map is zero
-        boundary_map = boundary_map.at[0, indices[0], indices[1]].set(0)
-        assert jnp.all(boundary_map == 0)
+        assert jnp.all(bc_mask[0, indices[0], indices[1]] == test_bc.id)
+        # assert that the rest of the bc_mask is zero
+        bc_mask = bc_mask.at[0, indices[0], indices[1]].set(0)
+        assert jnp.all(bc_mask == 0)
     if dim == 3:
-        assert jnp.all(boundary_map[0, indices[0], indices[1], indices[2]] == test_bc.id)
-        # assert that the rest of the boundary_map is zero
-        boundary_map = boundary_map.at[0, indices[0], indices[1], indices[2]].set(0)
-        assert jnp.all(boundary_map == 0)
+        assert jnp.all(bc_mask[0, indices[0], indices[1], indices[2]] == test_bc.id)
+        # assert that the rest of the bc_mask is zero
+        bc_mask = bc_mask.at[0, indices[0], indices[1], indices[2]].set(0)
+        assert jnp.all(bc_mask == 0)
 
 
 if __name__ == "__main__":

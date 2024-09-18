@@ -69,6 +69,9 @@ class ZouHeBC(BoundaryCondition):
             self.prescribed_value = jnp.atleast_1d(prescribed_value)[(slice(None),) + (None,) * dim]
             # TODO: this won't work if the prescribed values are a profile with the length of bdry indices!
 
+        # This BC needs padding for finding missing directions when imposed on a geometry that is in the domain interior
+        self.needs_padding = True
+
     @partial(jit, static_argnums=(0,), inline=True)
     def _get_known_middle_mask(self, missing_mask):
         known_mask = missing_mask[self.velocity_set.opp_indices]
@@ -156,9 +159,9 @@ class ZouHeBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, boundary_map, missing_mask):
+    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
         # creat a mask to slice boundary cells
-        boundary = boundary_map == self.id
+        boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
 
@@ -205,7 +208,7 @@ class ZouHeBC(BoundaryCondition):
             fsum_middle = self.compute_dtype(0.0)
             for l in range(_q):
                 if missing_mask[_opp_indices[l]] == wp.uint8(1):
-                    fsum_known += 2.0 * fpop[l]
+                    fsum_known += self.compute_dtype(2.0) * fpop[l]
                 elif missing_mask[l] != wp.uint8(1):
                     fsum_middle += fpop[l]
             return fsum_known + fsum_middle
@@ -247,7 +250,7 @@ class ZouHeBC(BoundaryCondition):
             unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
-            _rho = fsum / (1.0 + unormal)
+            _rho = fsum / (self.compute_dtype(1.0) + unormal)
 
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
@@ -269,7 +272,7 @@ class ZouHeBC(BoundaryCondition):
 
             # calculate velocity
             fsum = _get_fsum(_f, missing_mask)
-            unormal = -1.0 + fsum / _rho
+            unormal = -self.compute_dtype(1.0) + fsum / _rho
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
@@ -295,7 +298,7 @@ class ZouHeBC(BoundaryCondition):
             unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
-            _rho = fsum / (1.0 + unormal)
+            _rho = fsum / (self.compute_dtype(1.0) + unormal)
 
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
@@ -317,7 +320,7 @@ class ZouHeBC(BoundaryCondition):
 
             # calculate velocity
             fsum = _get_fsum(_f, missing_mask)
-            unormal = -1.0 + fsum / _rho
+            unormal = -self.compute_dtype(1.0) + fsum / _rho
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
@@ -330,7 +333,7 @@ class ZouHeBC(BoundaryCondition):
         def kernel2d(
             f_pre: wp.array3d(dtype=Any),
             f_post: wp.array3d(dtype=Any),
-            boundary_map: wp.array3d(dtype=wp.uint8),
+            bc_mask: wp.array3d(dtype=wp.uint8),
             missing_mask: wp.array3d(dtype=wp.bool),
         ):
             # Get the global index
@@ -338,10 +341,10 @@ class ZouHeBC(BoundaryCondition):
             index = wp.vec2i(i, j)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_2d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(self.id):
+            if _boundary_id == wp.uint8(self.id):
                 _f_aux = _f_post
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
@@ -356,7 +359,7 @@ class ZouHeBC(BoundaryCondition):
         def kernel3d(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
-            boundary_map: wp.array4d(dtype=wp.uint8),
+            bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
         ):
             # Get the global index
@@ -364,10 +367,10 @@ class ZouHeBC(BoundaryCondition):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_map, _missing_mask = self._get_thread_data_3d(f_pre, f_post, boundary_map, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
-            if _boundary_map == wp.uint8(self.id):
+            if _boundary_id == wp.uint8(self.id):
                 _f_aux = _f_post
                 _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
             else:
@@ -390,11 +393,11 @@ class ZouHeBC(BoundaryCondition):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, boundary_map, missing_mask):
+    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[f_pre, f_post, boundary_map, missing_mask],
+            inputs=[f_pre, f_post, bc_mask, missing_mask],
             dim=f_pre.shape[1:],
         )
         return f_post

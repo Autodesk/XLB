@@ -72,7 +72,7 @@ class SecondMoment(Operator):
             # Get second order moment (a symmetric tensore shaped into a vector)
             pi = _pi_vec()
             for d in range(_pi_dim):
-                pi[d] = 0.0
+                pi[d] = self.compute_dtype(0.0)
                 for q in range(self.velocity_set.q):
                     pi[d] += _cc[q, d] * fneq[q]
             return pi

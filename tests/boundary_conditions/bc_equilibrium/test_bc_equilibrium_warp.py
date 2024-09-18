@@ -11,7 +11,7 @@ def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
-        default_backend=ComputeBackend.JAX,
+        default_backend=ComputeBackend.WARP,
         velocity_set=vel_set,
     )
 
@@ -32,7 +32,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
 
     missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
-    boundary_map = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    bc_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = IndicesBoundaryMasker()
 
@@ -59,7 +59,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
         indices=indices,
     )
 
-    boundary_map, missing_mask = indices_boundary_masker([equilibrium_bc], boundary_map, missing_mask, start_index=None)
+    bc_mask, missing_mask = indices_boundary_masker([equilibrium_bc], bc_mask, missing_mask, start_index=None)
 
     f = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.FP32)
     f_pre = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.FP32)
@@ -67,7 +67,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    f = equilibrium_bc(f_pre, f_post, boundary_map, missing_mask)
+    f = equilibrium_bc(f_pre, f_post, bc_mask, missing_mask)
 
     f = f.numpy()
     f_post = f_post.numpy()

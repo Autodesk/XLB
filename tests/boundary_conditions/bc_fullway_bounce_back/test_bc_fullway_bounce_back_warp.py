@@ -12,7 +12,7 @@ def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
-        default_backend=ComputeBackend.JAX,
+        default_backend=ComputeBackend.WARP,
         velocity_set=vel_set,
     )
 
@@ -35,7 +35,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
 
     missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
-    boundary_map = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    bc_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
     indices_boundary_masker = IndicesBoundaryMasker()
 
@@ -55,7 +55,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
     indices = [tuple(indices[i]) for i in range(velocity_set.d)]
     fullway_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
 
-    boundary_map, missing_mask = indices_boundary_masker([fullway_bc], boundary_map, missing_mask, start_index=None)
+    bc_mask, missing_mask = indices_boundary_masker([fullway_bc], bc_mask, missing_mask, start_index=None)
 
     # Generate a random field with the same shape
     random_field = np.random.rand(velocity_set.q, *grid_shape).astype(np.float32)
@@ -66,7 +66,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
         cardinality=velocity_set.q, dtype=xlb.Precision.FP32, fill_value=2.0
     )  # Arbitrary value so that we can check if the values are changed outside the boundary
 
-    f_pre = fullway_bc(f_pre, f_post, boundary_map, missing_mask)
+    f_pre = fullway_bc(f_pre, f_post, bc_mask, missing_mask)
 
     f = f_pre.numpy()
     f_post = f_post.numpy()
@@ -75,7 +75,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
 
     for i in range(velocity_set.q):
         np.allclose(
-            f[velocity_set.get_opp_index(i)][tuple(indices)],
+            f[velocity_set.opp_indices[i]][tuple(indices)],
             f_post[i][tuple(indices)],
         )
 

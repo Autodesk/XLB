@@ -8,7 +8,6 @@ from xlb.operator.boundary_condition import HalfwayBounceBackBC, EquilibriumBC
 from xlb.operator.macroscopic import Macroscopic
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
-import jax
 import jax.numpy as jnp
 import xlb.velocity_set
 
@@ -26,7 +25,7 @@ class LidDrivenCavity2D:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_map = create_nse_fields(grid_shape)
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -59,7 +58,7 @@ class LidDrivenCavity2D:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        self.boundary_map, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.boundary_map, self.missing_mask)
+        self.bc_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.bc_mask, self.missing_mask)
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
@@ -69,7 +68,7 @@ class LidDrivenCavity2D:
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):
-            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_map, self.missing_mask, i)
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if i % post_process_interval == 0 or i == num_steps - 1:
@@ -107,9 +106,6 @@ if __name__ == "__main__":
     grid_shape = (grid_size, grid_size)
     backend = ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
-
-    if precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32:
-        jax.config.update("jax_enable_x64", True)
 
     velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
     omega = 1.6

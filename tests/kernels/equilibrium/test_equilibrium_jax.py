@@ -8,12 +8,13 @@ from xlb import DefaultConfig
 
 
 def init_xlb_env(velocity_set):
-    vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
+    vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.JAX)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
         default_backend=ComputeBackend.JAX,
         velocity_set=vel_set,
     )
+
 
 @pytest.mark.parametrize(
     "dim,velocity_set,grid_shape",

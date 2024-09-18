@@ -36,7 +36,7 @@ class WindTunnel3D:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.boundary_map = create_nse_fields(grid_shape)
+        self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
 
@@ -118,8 +118,8 @@ class WindTunnel3D:
         bc_mesh = self.boundary_conditions[-1]
         dx = self.grid_spacing
         origin, spacing = (0, 0, 0), (dx, dx, dx)
-        self.boundary_map, self.missing_mask = indices_boundary_masker(bclist_other, self.boundary_map, self.missing_mask)
-        self.boundary_map, self.missing_mask = mesh_boundary_masker(bc_mesh, origin, spacing, self.boundary_map, self.missing_mask)
+        self.bc_mask, self.missing_mask = indices_boundary_masker(bclist_other, self.bc_mask, self.missing_mask)
+        self.bc_mask, self.missing_mask = mesh_boundary_masker(bc_mesh, origin, spacing, self.bc_mask, self.missing_mask)
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
@@ -134,7 +134,7 @@ class WindTunnel3D:
 
         start_time = time.time()
         for i in range(num_steps):
-            self.f_1 = self.stepper(self.f_0, self.f_1, self.boundary_map, self.missing_mask, i)
+            self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if (i + 1) % print_interval == 0:
@@ -169,7 +169,7 @@ class WindTunnel3D:
         save_image(fields["u_magnitude"][:, grid_size_y // 2, :], timestep=i)
 
         # Compute lift and drag
-        boundary_force = self.momentum_transfer(self.f_0, self.boundary_map, self.missing_mask)
+        boundary_force = self.momentum_transfer(self.f_0, self.bc_mask, self.missing_mask)
         drag = np.sqrt(boundary_force[0] ** 2 + boundary_force[1] ** 2)  # xy-plane
         lift = boundary_force[2]
         c_d = 2.0 * drag / (self.wind_speed**2 * self.car_cross_section)

@@ -182,6 +182,7 @@ class KBC(Collision):
             raise NotImplementedError("Velocity set not supported for warp backend: {}".format(type(self.velocity_set)))
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _epsilon = wp.constant(self.compute_dtype(self.epsilon))
         _beta = wp.constant(self.compute_dtype(self.beta))
@@ -216,30 +217,34 @@ class KBC(Collision):
             s = _f_vec()
 
             # For c = (i, 0, 0), c = (0, j, 0) and c = (0, 0, k)
-            s[9] = (2.0 * nxz - nyz) / 6.0
-            s[18] = (2.0 * nxz - nyz) / 6.0
-            s[3] = (-nxz + 2.0 * nyz) / 6.0
-            s[6] = (-nxz + 2.0 * nyz) / 6.0
-            s[1] = (-nxz - nyz) / 6.0
-            s[2] = (-nxz - nyz) / 6.0
+            two = self.self.compute_dtype(2.0)
+            four = self.self.compute_dtype(4.0)
+            six = self.self.compute_dtype(6.0)
+
+            s[9] = (two * nxz - nyz) / six
+            s[18] = (two * nxz - nyz) / six
+            s[3] = (-nxz + two * nyz) / six
+            s[6] = (-nxz + two * nyz) / six
+            s[1] = (-nxz - nyz) / six
+            s[2] = (-nxz - nyz) / six
 
             # For c = (i, j, 0)
-            s[12] = pi[1] / 4.0
-            s[24] = pi[1] / 4.0
-            s[21] = -pi[1] / 4.0
-            s[15] = -pi[1] / 4.0
+            s[12] = pi[1] / four
+            s[24] = pi[1] / four
+            s[21] = -pi[1] / four
+            s[15] = -pi[1] / four
 
             # For c = (i, 0, k)
-            s[10] = pi[2] / 4.0
-            s[20] = pi[2] / 4.0
-            s[19] = -pi[2] / 4.0
-            s[11] = -pi[2] / 4.0
+            s[10] = pi[2] / four
+            s[20] = pi[2] / four
+            s[19] = -pi[2] / four
+            s[11] = -pi[2] / four
 
             # For c = (0, j, k)
-            s[8] = pi[4] / 4.0
-            s[4] = pi[4] / 4.0
-            s[7] = -pi[4] / 4.0
-            s[5] = -pi[4] / 4.0
+            s[8] = pi[4] / four
+            s[4] = pi[4] / four
+            s[7] = -pi[4] / four
+            s[5] = -pi[4] / four
 
             return s
 
@@ -271,10 +276,11 @@ class KBC(Collision):
 
             # Perform collision
             delta_h = fneq - delta_s
-            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
+            two = self.compute_dtype(2.0)
+            gamma = _inv_beta - (two - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
                 _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
             )
-            fout = f - _beta * (2.0 * delta_s + gamma * delta_h)
+            fout = f - _beta * (two * delta_s + gamma * delta_h)
 
             return fout
 
@@ -293,10 +299,11 @@ class KBC(Collision):
 
             # Perform collision
             delta_h = fneq - delta_s
-            gamma = _inv_beta - (2.0 - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
+            two = self.compute_dtype(2.0)
+            gamma = _inv_beta - (two - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
                 _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
             )
-            fout = f - _beta * (2.0 * delta_s + gamma * delta_h)
+            fout = f - _beta * (two * delta_s + gamma * delta_h)
 
             return fout
 
@@ -305,9 +312,9 @@ class KBC(Collision):
         def kernel2d(
             f: wp.array3d(dtype=Any),
             feq: wp.array3d(dtype=Any),
+            fout: wp.array3d(dtype=Any),
             rho: wp.array3d(dtype=Any),
             u: wp.array3d(dtype=Any),
-            fout: wp.array3d(dtype=Any),
         ):
             # Get the global index
             i, j = wp.tid()
@@ -320,7 +327,7 @@ class KBC(Collision):
             for l in range(self.velocity_set.q):
                 _f[l] = f[l, index[0], index[1]]
                 _feq[l] = feq[l, index[0], index[1]]
-            _u = self.warp_u_vec()
+            _u = _u_vec()
             for l in range(_d):
                 _u[l] = u[l, index[0], index[1]]
             _rho = rho[0, index[0], index[1]]
@@ -337,9 +344,9 @@ class KBC(Collision):
         def kernel3d(
             f: wp.array4d(dtype=Any),
             feq: wp.array4d(dtype=Any),
+            fout: wp.array4d(dtype=Any),
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
-            fout: wp.array4d(dtype=Any),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -352,7 +359,7 @@ class KBC(Collision):
             for l in range(self.velocity_set.q):
                 _f[l] = f[l, index[0], index[1], index[2]]
                 _feq[l] = feq[l, index[0], index[1], index[2]]
-            _u = self.warp_u_vec()
+            _u = _u_vec()
             for l in range(_d):
                 _u[l] = u[l, index[0], index[1], index[2]]
             _rho = rho[0, index[0], index[1], index[2]]

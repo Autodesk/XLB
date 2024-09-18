@@ -4,13 +4,14 @@ import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb import DefaultConfig
 from xlb.grid import grid_factory
+from xlb.operator.boundary_masker import IndicesBoundaryMasker
 
 
 def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, backend=ComputeBackend.WARP)
     xlb.init(
         default_precision_policy=xlb.PrecisionPolicy.FP32FP32,
-        default_backend=ComputeBackend.JAX,
+        default_backend=ComputeBackend.WARP,
         velocity_set=vel_set,
     )
 
@@ -33,9 +34,9 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
 
     missing_mask = my_grid.create_field(cardinality=velocity_set.q, dtype=xlb.Precision.BOOL)
 
-    boundary_map = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
+    bc_mask = my_grid.create_field(cardinality=1, dtype=xlb.Precision.UINT8)
 
-    indices_boundary_masker = xlb.operator.boundary_masker.IndicesBoundaryMasker()
+    indices_boundary_masker = IndicesBoundaryMasker()
 
     # Make indices for boundary conditions (sphere)
     sphere_radius = grid_shape[0] // 4
@@ -55,33 +56,33 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
     assert len(indices) == dim
     test_bc = xlb.operator.boundary_condition.FullwayBounceBackBC(indices=indices)
     test_bc.id = 5
-    boundary_map, missing_mask = indices_boundary_masker(
+    bc_mask, missing_mask = indices_boundary_masker(
         [test_bc],
-        boundary_map,
+        bc_mask,
         missing_mask,
         start_index=(0, 0, 0) if dim == 3 else (0, 0),
     )
     assert missing_mask.dtype == xlb.Precision.BOOL.wp_dtype
 
-    assert boundary_map.dtype == xlb.Precision.UINT8.wp_dtype
+    assert bc_mask.dtype == xlb.Precision.UINT8.wp_dtype
 
-    boundary_map = boundary_map.numpy()
+    bc_mask = bc_mask.numpy()
     missing_mask = missing_mask.numpy()
 
-    assert boundary_map.shape == (1,) + grid_shape
+    assert bc_mask.shape == (1,) + grid_shape
 
     assert missing_mask.shape == (velocity_set.q,) + grid_shape
 
     if dim == 2:
-        assert np.all(boundary_map[0, indices[0], indices[1]] == test_bc.id)
-        # assert that the rest of the boundary_map is zero
-        boundary_map[0, indices[0], indices[1]] = 0
-        assert np.all(boundary_map == 0)
+        assert np.all(bc_mask[0, indices[0], indices[1]] == test_bc.id)
+        # assert that the rest of the bc_mask is zero
+        bc_mask[0, indices[0], indices[1]] = 0
+        assert np.all(bc_mask == 0)
     if dim == 3:
-        assert np.all(boundary_map[0, indices[0], indices[1], indices[2]] == test_bc.id)
-        # assert that the rest of the boundary_map is zero
-        boundary_map[0, indices[0], indices[1], indices[2]] = 0
-        assert np.all(boundary_map == 0)
+        assert np.all(bc_mask[0, indices[0], indices[1], indices[2]] == test_bc.id)
+        # assert that the rest of the bc_mask is zero
+        bc_mask[0, indices[0], indices[1], indices[2]] = 0
+        assert np.all(bc_mask == 0)
 
 
 if __name__ == "__main__":
