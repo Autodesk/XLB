@@ -9,6 +9,7 @@ from xlb.operator.operator import Operator
 from xlb.operator.macroscopic.zero_moment import ZeroMoment
 from xlb.operator.macroscopic.first_moment import FirstMoment
 
+
 class Macroscopic(Operator):
     """A class to compute both zero and first moments of distribution functions (rho, u)."""
 

@@ -7,6 +7,7 @@ from typing import Any
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
+
 class FirstMoment(Operator):
     """A class to compute the first moment (velocity) of distribution functions."""
 
@@ -22,7 +23,10 @@ class FirstMoment(Operator):
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
 
         @wp.func
-        def functional(f: _f_vec, rho: float):
+        def functional(
+            f: _f_vec,
+            rho: Any,
+        ):
             u = _u_vec()
             for l in range(self.velocity_set.q):
                 for d in range(self.velocity_set.d):

@@ -7,6 +7,7 @@ from typing import Any
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
+
 class ZeroMoment(Operator):
     """A class to compute the zeroth moment (density) of distribution functions."""
 
@@ -61,9 +62,5 @@ class ZeroMoment(Operator):
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, rho):
-        wp.launch(
-            self.warp_kernel,
-            inputs=[f, rho],
-            dim=rho.shape[1:],
-        )
+        wp.launch(self.warp_kernel, inputs=[f, rho], dim=rho.shape[1:])
         return rho
