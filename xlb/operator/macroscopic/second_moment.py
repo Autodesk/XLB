@@ -123,12 +123,5 @@ class SecondMoment(Operator):
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, pi):
         # Launch the warp kernel
-        wp.launch(
-            self.warp_kernel,
-            inputs=[
-                f,
-                pi,
-            ],
-            dim=pi.shape[1:],
-        )
+        wp.launch(self.warp_kernel, inputs=[f, pi], dim=pi.shape[1:])
         return pi
