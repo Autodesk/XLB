@@ -190,18 +190,18 @@ class IncompressibleNavierStokesStepper(Stepper):
             index: Any,
         ):
             # Get the boundary id and missing mask
-            f_post_collision = _f_vec()
+            _f_post_collision = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of pre-streaming populations
-                f_post_collision[l] = f_0[l, index[0], index[1]]
+                _f_post_collision[l] = self.compute_dtype(f_0[l, index[0], index[1]])
 
                 # TODO fix vec bool
                 if missing_mask[l, index[0], index[1]]:
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return f_post_collision, _missing_mask
+            return _f_post_collision, _missing_mask
 
         @wp.func
         def get_thread_data_3d(
@@ -210,18 +210,18 @@ class IncompressibleNavierStokesStepper(Stepper):
             index: Any,
         ):
             # Get the boundary id and missing mask
-            f_post_collision = _f_vec()
+            _f_post_collision = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of pre-streaming populations
-                f_post_collision[l] = f_0[l, index[0], index[1], index[2]]
+                _f_post_collision[l] = self.compute_dtype(f_0[l, index[0], index[1], index[2]])
 
                 # TODO fix vec bool
                 if missing_mask[l, index[0], index[1], index[2]]:
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return f_post_collision, _missing_mask
+            return _f_post_collision, _missing_mask
 
         @wp.func
         def get_bc_auxilary_data_2d(
@@ -243,7 +243,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                         for d in range(self.velocity_set.d):
                             pull_index[d] = index[d] - (_c[d, l] + nv[d])
                         # The following is the post-streaming values of the neighbor cell
-                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1]]
+                        f_auxiliary[l] = self.compute_dtype(f_0[l, pull_index[0], pull_index[1]])
             return f_auxiliary
 
         @wp.func
@@ -266,7 +266,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                         for d in range(self.velocity_set.d):
                             pull_index[d] = index[d] - (_c[d, l] + nv[d])
                         # The following is the post-streaming values of the neighbor cell
-                        f_auxiliary[l] = f_0[l, pull_index[0], pull_index[1], pull_index[2]]
+                        f_auxiliary[l] = self.compute_dtype(f_0[l, pull_index[0], pull_index[1], pull_index[2]])
             return f_auxiliary
 
         @wp.kernel
@@ -283,38 +283,33 @@ class IncompressibleNavierStokesStepper(Stepper):
             index = wp.vec2i(i, j)  # TODO warp should fix this
 
             # Read thread data for populations and missing mask
-            f_post_collision, _missing_mask = get_thread_data_2d(f_0, missing_mask, index)
+            _f_post_collision, _missing_mask = get_thread_data_2d(f_0, missing_mask, index)
 
             # Apply streaming (pull method)
-            f_post_stream = self.stream.warp_functional(f_0, index)
+            _f_post_stream = self.stream.warp_functional(f_0, index)
 
             # Prepare auxilary data for BC (if applicable)
             _boundary_id = bc_mask[0, index[0], index[1]]
-            f_auxiliary = get_bc_auxilary_data_2d(f_0, index, _boundary_id, _missing_mask, bc_struct)
+            _f_auxiliary = get_bc_auxilary_data_2d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
-            f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
+            _f_post_stream = apply_post_streaming_bc(_f_post_collision, _f_post_stream, _f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Compute rho and u
-            rho, u = self.macroscopic.warp_functional(f_post_stream)
+            _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
 
             # Compute equilibrium
-            feq = self.equilibrium.warp_functional(rho, u)
+            _feq = self.equilibrium.warp_functional(_rho, _u)
 
             # Apply collision
-            f_post_collision = self.collision.warp_functional(
-                f_post_stream,
-                feq,
-                rho,
-                u,
-            )
+            _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
 
             # Apply post-collision type boundary conditions
-            f_post_collision = apply_post_collision_bc(f_post_stream, f_post_collision, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
+            _f_post_collision = apply_post_collision_bc(_f_post_stream, _f_post_collision, _f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Set the output
             for l in range(self.velocity_set.q):
-                f_1[l, index[0], index[1]] = f_post_collision[l]
+                f_1[l, index[0], index[1]] = self.store_dtype(_f_post_collision[l])
 
         # Construct the kernel
         @wp.kernel
@@ -331,33 +326,33 @@ class IncompressibleNavierStokesStepper(Stepper):
             index = wp.vec3i(i, j, k)  # TODO warp should fix this
 
             # Read thread data for populations and missing mask
-            f_post_collision, _missing_mask = get_thread_data_3d(f_0, missing_mask, index)
+            _f_post_collision, _missing_mask = get_thread_data_3d(f_0, missing_mask, index)
 
             # Apply streaming (pull method)
-            f_post_stream = self.stream.warp_functional(f_0, index)
+            _f_post_stream = self.stream.warp_functional(f_0, index)
 
             # Prepare auxilary data for BC (if applicable)
             _boundary_id = bc_mask[0, index[0], index[1], index[2]]
-            f_auxiliary = get_bc_auxilary_data_3d(f_0, index, _boundary_id, _missing_mask, bc_struct)
+            _f_auxiliary = get_bc_auxilary_data_3d(f_0, index, _boundary_id, _missing_mask, bc_struct)
 
             # Apply post-streaming type boundary conditions
-            f_post_stream = apply_post_streaming_bc(f_post_collision, f_post_stream, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
+            _f_post_stream = apply_post_streaming_bc(_f_post_collision, _f_post_stream, _f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Compute rho and u
-            rho, u = self.macroscopic.warp_functional(f_post_stream)
+            _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
 
             # Compute equilibrium
-            feq = self.equilibrium.warp_functional(rho, u)
+            _feq = self.equilibrium.warp_functional(_rho, _u)
 
             # Apply collision
-            f_post_collision = self.collision.warp_functional(f_post_stream, feq, rho, u)
+            _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
 
             # Apply post-collision type boundary conditions
-            f_post_collision = apply_post_collision_bc(f_post_stream, f_post_collision, f_auxiliary, _missing_mask, _boundary_id, bc_struct)
+            _f_post_collision = apply_post_collision_bc(_f_post_stream, _f_post_collision, _f_auxiliary, _missing_mask, _boundary_id, bc_struct)
 
             # Set the output
             for l in range(self.velocity_set.q):
-                f_1[l, index[0], index[1], index[2]] = f_post_collision[l]
+                f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
 
         # Return the correct kernel
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d

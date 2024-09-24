@@ -337,7 +337,7 @@ class KBC(Collision):
 
             # Write the result
             for l in range(self.velocity_set.q):
-                fout[l, index[0], index[1]] = _fout[l]
+                fout[l, index[0], index[1]] = self.store_dtype(_fout[l])
 
         # Construct the warp kernel
         @wp.kernel
@@ -369,7 +369,7 @@ class KBC(Collision):
 
             # Write the result
             for l in range(self.velocity_set.q):
-                fout[l, index[0], index[1], index[2]] = _fout[l]
+                fout[l, index[0], index[1], index[2]] = self.store_dtype(_fout[l])
 
         functional = functional3d if self.velocity_set.d == 3 else functional2d
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d

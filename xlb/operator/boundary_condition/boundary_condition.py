@@ -81,8 +81,8 @@ class BoundaryCondition(Operator):
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of populations
-                _f_pre[l] = f_pre[l, index[0], index[1]]
-                _f_post[l] = f_post[l, index[0], index[1]]
+                _f_pre[l] = self.compute_dtype(f_pre[l, index[0], index[1]])
+                _f_post[l] = self.compute_dtype(f_post[l, index[0], index[1]])
 
                 # TODO fix vec bool
                 if missing_mask[l, index[0], index[1]]:
@@ -106,8 +106,8 @@ class BoundaryCondition(Operator):
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of populations
-                _f_pre[l] = f_pre[l, index[0], index[1], index[2]]
-                _f_post[l] = f_post[l, index[0], index[1], index[2]]
+                _f_pre[l] = self.compute_dtype(f_pre[l, index[0], index[1], index[2]])
+                _f_post[l] = self.compute_dtype(f_post[l, index[0], index[1], index[2]])
 
                 # TODO fix vec bool
                 if missing_mask[l, index[0], index[1], index[2]]:

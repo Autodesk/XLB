@@ -95,7 +95,7 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Write the result to the output
             for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1]] = _f[l]
+                f_post[l, index[0], index[1]] = self.store_dtype(_f[l])
 
         # Construct the warp kernel
         @wp.kernel
@@ -121,7 +121,7 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Write the result to the output
             for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1], index[2]] = _f[l]
+                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 

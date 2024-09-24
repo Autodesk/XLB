@@ -53,7 +53,7 @@ class FirstMoment(Operator):
             _u = functional(_f, _rho)
 
             for d in range(self.velocity_set.d):
-                u[d, index[0], index[1], index[2]] = _u[d]
+                u[d, index[0], index[1], index[2]] = self.store_dtype(_u[d])
 
         @wp.kernel
         def kernel2d(
@@ -71,7 +71,7 @@ class FirstMoment(Operator):
             _u = functional(_f, _rho)
 
             for d in range(self.velocity_set.d):
-                u[d, index[0], index[1]] = _u[d]
+                u[d, index[0], index[1]] = self.store_dtype(_u[d])
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
