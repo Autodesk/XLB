@@ -1,7 +1,6 @@
 # Enum for precision policy
 
 from enum import Enum, auto
-
 import jax.numpy as jnp
 import warp as wp
 
@@ -88,11 +87,3 @@ class PrecisionPolicy(Enum):
     def cast_to_store_jax(self, array):
         store_precision = self.store_precision
         return jnp.array(array, dtype=store_precision.jax_dtype)
-
-    def cast_to_compute_warp(self, array):
-        compute_precision = self.compute_precision
-        return wp.array(array, dtype=compute_precision.wp_dtype)
-
-    def cast_to_store_warp(self, array):
-        store_precision = self.store_precision
-        return wp.array(array, dtype=store_precision.wp_dtype)

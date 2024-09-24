@@ -76,7 +76,7 @@ class Stream(Operator):
                         pull_index[d] = 0
 
                 # Read the distribution function
-                _f[l] = f[l, pull_index[0], pull_index[1]]
+                _f[l] = self.compute_dtype(f[l, pull_index[0], pull_index[1]])
 
             return _f
 
@@ -94,7 +94,7 @@ class Stream(Operator):
 
             # Write the output
             for l in range(self.velocity_set.q):
-                f_1[l, index[0], index[1]] = _f[l]
+                f_1[l, index[0], index[1]] = self.store_dtype(_f[l])
 
         # Construct the funcional to get streamed indices
         @wp.func
@@ -117,7 +117,8 @@ class Stream(Operator):
                         pull_index[d] = 0
 
                 # Read the distribution function
-                _f[l] = f[l, pull_index[0], pull_index[1], pull_index[2]]
+                # Unlike other functionals, we need to cast the type here since we read from the buffer
+                _f[l] = self.compute_dtype(f[l, pull_index[0], pull_index[1], pull_index[2]])
 
             return _f
 
@@ -136,7 +137,7 @@ class Stream(Operator):
 
             # Write the output
             for l in range(self.velocity_set.q):
-                f_1[l, index[0], index[1], index[2]] = _f[l]
+                f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
 
         functional = functional3d if self.velocity_set.d == 3 else functional2d
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d

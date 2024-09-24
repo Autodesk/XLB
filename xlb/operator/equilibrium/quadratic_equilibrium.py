@@ -79,7 +79,7 @@ class QuadraticEquilibrium(Equilibrium):
 
             # Set the output
             for l in range(self.velocity_set.q):
-                f[l, index[0], index[1], index[2]] = feq[l]
+                f[l, index[0], index[1], index[2]] = self.store_dtype(feq[l])
 
         @wp.kernel
         def kernel2d(
@@ -100,7 +100,7 @@ class QuadraticEquilibrium(Equilibrium):
 
             # Set the output
             for l in range(self.velocity_set.q):
-                f[l, index[0], index[1]] = feq[l]
+                f[l, index[0], index[1]] = self.store_dtype(feq[l])
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 

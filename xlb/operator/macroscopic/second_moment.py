@@ -95,7 +95,7 @@ class SecondMoment(Operator):
 
             # Set the output
             for d in range(_pi_dim):
-                pi[d, index[0], index[1], index[2]] = _pi[d]
+                pi[d, index[0], index[1], index[2]] = self.store_dtype(_pi[d])
 
         @wp.kernel
         def kernel2d(
@@ -114,7 +114,7 @@ class SecondMoment(Operator):
 
             # Set the output
             for d in range(_pi_dim):
-                pi[d, index[0], index[1]] = _pi[d]
+                pi[d, index[0], index[1]] = self.store_dtype(_pi[d])
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 

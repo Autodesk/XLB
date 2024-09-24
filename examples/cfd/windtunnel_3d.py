@@ -122,7 +122,7 @@ class WindTunnel3D:
         self.bc_mask, self.missing_mask = mesh_boundary_masker(bc_mesh, origin, spacing, self.bc_mask, self.missing_mask)
 
     def initialize_fields(self):
-        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
+        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend)
 
     def setup_stepper(self):
         self.stepper = IncompressibleNavierStokesStepper(self.omega, boundary_conditions=self.boundary_conditions, collision_type="KBC")

@@ -61,7 +61,7 @@ class LidDrivenCavity2D:
         self.bc_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.bc_mask, self.missing_mask)
 
     def initialize_fields(self):
-        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend)
+        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend)
 
     def setup_stepper(self, omega):
         self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)

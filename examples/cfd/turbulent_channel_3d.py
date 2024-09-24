@@ -102,7 +102,7 @@ class TurbulentChannel3D:
             u_init = jnp.full(shape=shape, fill_value=1e-2 * u_init)
         else:
             u_init = wp.array(1e-2 * u_init, dtype=self.precision_policy.compute_precision.wp_dtype)
-        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.backend, u=u_init)
+        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend, u=u_init)
 
     def setup_stepper(self):
         force = self.get_force()

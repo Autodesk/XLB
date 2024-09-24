@@ -100,7 +100,7 @@ def main():
     backend, precision_policy = setup_simulation(args)
     velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
     grid, f_0, f_1, missing_mask, bc_mask = create_grid_and_fields(args.cube_edge)
-    f_0 = initialize_eq(f_0, grid, velocity_set, backend)
+    f_0 = initialize_eq(f_0, grid, velocity_set, precision_policy, backend)
 
     elapsed_time = run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
