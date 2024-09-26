@@ -105,7 +105,7 @@ class RegularizedBC(ZouHeBC):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
+    def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         # creat a mask to slice boundary cells
         boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]

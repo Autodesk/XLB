@@ -123,7 +123,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
+    def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
@@ -182,7 +182,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             missing_mask: Any,
         ):
             # Preparing the formulation for this BC using the neighbour's populations stored in f_aux and
-            # f_pre (posti-streaming values of the current voxel). We use directions that leave the domain
+            # f_pre (post-streaming values of the current voxel). We use directions that leave the domain
             # for storing this prepared data.
             _f = f_post
             for l in range(self.velocity_set.q):
