@@ -10,7 +10,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 
 
-class MeshGridBoundaryDistance(Operator):
+class MeshDistanceBoundaryMasker(Operator):
     """
     Operator for creating a boundary missing_mask from an STL file
     """
@@ -37,7 +37,7 @@ class MeshGridBoundaryDistance(Operator):
         id_number,
         bc_mask,
         missing_mask,
-        f_0,
+        f_field,
         start_index=(0, 0, 0),
     ):
         raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
@@ -65,7 +65,7 @@ class MeshGridBoundaryDistance(Operator):
             id_number: wp.int32,
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
-            f_0: wp.array4d(dtype=Any),
+            f_field: wp.array4d(dtype=Any),
             start_index: wp.vec3i,
         ):
             # get index
@@ -111,7 +111,7 @@ class MeshGridBoundaryDistance(Operator):
                             # get position of the mesh triangle that intersects with the solid cell
                             pos_mesh = wp.mesh_eval_position(mesh_id, query.face, query.u, query.v)
                             weight = wp.length(pos_fluid_cell - pos_mesh) / wp.length(pos_fluid_cell - pos_solid_cell)
-                            f_0[_opp_indices[l], push_index[0], push_index[1], push_index[2]] = weight
+                            f_field[_opp_indices[l], push_index[0], push_index[1], push_index[2]] = self.store_dtype(weight)
 
         return None, kernel
 
@@ -123,17 +123,17 @@ class MeshGridBoundaryDistance(Operator):
         spacing,
         bc_mask,
         missing_mask,
-        f_0,
+        f_field,
         start_index=(0, 0, 0),
     ):
         assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
-        assert bc.indices is None, f"The boundary_distance of {bc.__class__.__name__} cannot be found without a mesh!"
+        assert bc.indices is None, f"Cannot find the implicit distance to the boundary for {bc.__class__.__name__} without a mesh!"
         assert (
             bc.mesh_vertices.shape[1] == self.velocity_set.d
         ), "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
         assert (
-            f_0 is not None and f_0.shape == missing_mask.shape
-        ), 'To compute and store the "boundary_distance" for this BC, input the population field "f_0"!'
+            f_field is not None and f_field.shape == missing_mask.shape
+        ), 'To compute and store the implicit distance to the boundary for this BC, use a population field!'
         mesh_vertices = bc.mesh_vertices
         id_number = bc.id
 
@@ -162,10 +162,10 @@ class MeshGridBoundaryDistance(Operator):
                 id_number,
                 bc_mask,
                 missing_mask,
-                f_0,
+                f_field,
                 start_index,
             ],
             dim=missing_mask.shape[1:],
         )
 
-        return bc_mask, missing_mask, f_0
+        return bc_mask, missing_mask, f_field
