@@ -33,6 +33,7 @@ class MeshBoundaryMasker(Operator):
         bc,
         origin,
         spacing,
+        id_number,
         bc_mask,
         missing_mask,
         start_index=(0, 0, 0),
@@ -110,7 +111,7 @@ class MeshBoundaryMasker(Operator):
         missing_mask,
         start_index=(0, 0, 0),
     ):
-        assert bc.mesh_vertices is not None, f'Please provide the mesh points for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
+        assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
         assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
         assert (
             bc.mesh_vertices.shape[1] == self.velocity_set.d

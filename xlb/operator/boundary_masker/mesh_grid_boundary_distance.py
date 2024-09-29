@@ -3,6 +3,7 @@
 import numpy as np
 import warp as wp
 import jax
+from typing import Any
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
@@ -30,11 +31,13 @@ class MeshGridBoundaryDistance(Operator):
     @Operator.register_backend(ComputeBackend.JAX)
     def jax_implementation(
         self,
-        mesh_vertices,
+        bc,
         origin,
         spacing,
+        id_number,
+        bc_mask,
         missing_mask,
-        boundary_distance,
+        f_0,
         start_index=(0, 0, 0),
     ):
         raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
@@ -43,6 +46,7 @@ class MeshGridBoundaryDistance(Operator):
         # Make constants for warp
         _c = self.velocity_set.c
         _q = wp.constant(self.velocity_set.q)
+        _opp_indices = self.velocity_set.opp_indices
 
         @wp.func
         def index_to_position(index: wp.vec3i, origin: wp.vec3, spacing: wp.vec3):
@@ -58,8 +62,10 @@ class MeshGridBoundaryDistance(Operator):
             mesh_id: wp.uint64,
             origin: wp.vec3,
             spacing: wp.vec3,
+            id_number: wp.int32,
+            bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
-            boundary_distance: wp.array4d(dtype=wp.float32),
+            f_0: wp.array4d(dtype=Any),
             start_index: wp.vec3i,
         ):
             # get index
@@ -86,10 +92,8 @@ class MeshGridBoundaryDistance(Operator):
             if query.result:
                 # set point to be solid
                 if query.sign <= 0:  # TODO: fix this
-                    # get position of the mesh triangle that intersects with the solid cell
-                    pos_mesh = wp.mesh_eval_position(mesh_id, query.face, query.u, query.v)
-
                     # Stream indices
+                    missing_mask[0, index[0], index[1], index[2]] = True
                     for l in range(1, _q):
                         # Get the index of the streaming direction
                         push_index = wp.vec3i()
@@ -97,32 +101,44 @@ class MeshGridBoundaryDistance(Operator):
                             push_index[d] = index[d] + _c[d, l]
 
                         # Set the boundary id and missing_mask
-                        if missing_mask[l, push_index[0], push_index[1], push_index[2]]:
-                            pos_fluid_cell = index_to_position(push_index, origin, spacing)
-                            query = wp.mesh_query_point_sign_winding_number(mesh_id, pos_fluid_cell, max_length)
-                            if query.result and query.sign > 0:
-                                # get signed-distance field of the fluid voxel (i.e. sdf_f)
-                                pos_mesh = wp.mesh_eval_position(mesh_id, query.face, query.u, query.v)
-                                weight = wp.length(pos_fluid_cell - pos_mesh) / wp.length(pos_fluid_cell - pos_solid_cell)
-                                boundary_distance[l, push_index[0], push_index[1], push_index[2]] = weight
+                        bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
+                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
+
+                        # find neighbouring fluid cell
+                        pos_fluid_cell = index_to_position(push_index, origin, spacing)
+                        query = wp.mesh_query_point_sign_winding_number(mesh_id, pos_fluid_cell, max_length)
+                        if query.result and query.sign > 0:
+                            # get position of the mesh triangle that intersects with the solid cell
+                            pos_mesh = wp.mesh_eval_position(mesh_id, query.face, query.u, query.v)
+                            weight = wp.length(pos_fluid_cell - pos_mesh) / wp.length(pos_fluid_cell - pos_solid_cell)
+                            f_0[_opp_indices[l], push_index[0], push_index[1], push_index[2]] = weight
 
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
         self,
-        mesh_vertices,
+        bc,
         origin,
         spacing,
+        bc_mask,
         missing_mask,
-        boundary_distance,
+        f_0,
         start_index=(0, 0, 0),
     ):
-        assert mesh_vertices is not None, "Please provide the mesh vertices for which the boundary_distace wrt grid is sought!"
-        assert mesh_vertices.shape[1] == self.velocity_set.d, "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
+        assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
+        assert bc.indices is None, f"The boundary_distance of {bc.__class__.__name__} cannot be found without a mesh!"
         assert (
-            boundary_distance is not None and boundary_distance.shape == missing_mask.shape
-        ), 'To compute "boundary_distance" for this BC a field with the same shape as "missing_mask" must be prvided!'
+            bc.mesh_vertices.shape[1] == self.velocity_set.d
+        ), "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
+        assert (
+            f_0 is not None and f_0.shape == missing_mask.shape
+        ), 'To compute and store the "boundary_distance" for this BC, input the population field "f_0"!'
+        mesh_vertices = bc.mesh_vertices
+        id_number = bc.id
+
+        # We are done with bc.mesh_vertices. Remove them from BC objects
+        bc.__dict__.pop("mesh_vertices", None)
 
         mesh_indices = np.arange(mesh_vertices.shape[0])
         mesh = wp.Mesh(
@@ -130,18 +146,26 @@ class MeshGridBoundaryDistance(Operator):
             indices=wp.array(mesh_indices, dtype=int),
         )
 
+        # Convert input tuples to warp vectors
+        origin = wp.vec3(origin[0], origin[1], origin[2])
+        spacing = wp.vec3(spacing[0], spacing[1], spacing[2])
+        start_index = wp.vec3i(start_index[0], start_index[1], start_index[2])
+        mesh_id = wp.uint64(mesh.id)
+
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
             inputs=[
-                mesh.id,
+                mesh_id,
                 origin,
                 spacing,
+                id_number,
+                bc_mask,
                 missing_mask,
-                boundary_distance,
+                f_0,
                 start_index,
             ],
             dim=missing_mask.shape[1:],
         )
 
-        return boundary_distance
+        return bc_mask, missing_mask, f_0
