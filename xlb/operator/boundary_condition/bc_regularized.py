@@ -200,15 +200,14 @@ class RegularizedBC(ZouHeBC):
 
             # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
             nt = _d * (_d + 1) // 2
-            QiPi1 = _f_vec()
             for l in range(_q):
-                QiPi1[l] = self.compute_dtype(0.0)
+                QiPi1 = self.compute_dtype(0.0)
                 for t in range(nt):
-                    QiPi1[l] += _qi[l, t] * PiNeq[t]
+                    QiPi1 += _qi[l, t] * PiNeq[t]
 
                 # assign all populations based on eq 45 of Latt et al (2008)
                 # fneq ~ f^1
-                fpop1 = self.compute_dtype(4.5) * _w[l] * QiPi1[l]
+                fpop1 = self.compute_dtype(4.5) * _w[l] * QiPi1
                 fpop[l] = feq[l] + fpop1
             return fpop
 

@@ -1,0 +1,344 @@
+"""
+Base class for boundary conditions in a LBM simulation.
+"""
+
+import jax.numpy as jnp
+from jax import jit
+import jax.lax as lax
+from functools import partial
+import warp as wp
+from typing import Any
+from collections import Counter
+import numpy as np
+
+from xlb.velocity_set.velocity_set import VelocitySet
+from xlb.precision_policy import PrecisionPolicy
+from xlb.compute_backend import ComputeBackend
+from xlb.operator.operator import Operator
+from xlb.operator.macroscopic import Macroscopic
+from xlb.operator.macroscopic.zero_moment import ZeroMoment
+from xlb.operator.macroscopic.second_moment import SecondMoment as MomentumFlux
+from xlb.operator.equilibrium import QuadraticEquilibrium
+from xlb.operator.boundary_condition.boundary_condition import (
+    ImplementationStep,
+    BoundaryCondition,
+)
+from xlb.operator.boundary_condition.boundary_condition_registry import (
+    boundary_condition_registry,
+)
+
+
+class GradsApproximationBC(BoundaryCondition):
+    """
+    Purpose: Using Grad's approximation to represent fpop based on macroscopic inputs used for outflow [1] and
+    Dirichlet BCs [2]
+    [1] S. Chikatamarla, S. Ansumali, and I. Karlin, "Grad's approximation for missing data in lattice Boltzmann
+        simulations", Europhys. Lett. 74, 215 (2006).
+    [2] Dorschner, B., Chikatamarla, S. S., Bösch, F., & Karlin, I. V. (2015). Grad's approximation for moving and
+        stationary walls in entropic lattice Boltzmann simulations. Journal of Computational Physics, 295, 340-354.
+
+    """
+
+    id = boundary_condition_registry.register_boundary_condition(__qualname__)
+
+    def __init__(
+        self,
+        velocity_set: VelocitySet = None,
+        precision_policy: PrecisionPolicy = None,
+        compute_backend: ComputeBackend = None,
+        indices=None,
+        mesh_vertices=None,
+    ):
+        # Call the parent constructor
+        super().__init__(
+            ImplementationStep.STREAMING,
+            velocity_set,
+            precision_policy,
+            compute_backend,
+            indices,
+            mesh_vertices,
+        )
+
+        # Instantiate the operator for computing macroscopic values
+        self.macroscopic = Macroscopic()
+        self.zero_moment = ZeroMoment()
+        self.equilibrium = QuadraticEquilibrium()
+        self.momentum_flux = MomentumFlux()
+
+        # if indices is not None:
+        #     # this BC would be limited to stationary boundaries
+        #     # assert mesh_vertices is None
+        # if mesh_vertices is not None:
+        #     # this BC would be applicable for stationary and moving boundaries
+        #     assert indices is None
+        #     if mesh_velocity_function is not None:
+        #         # mesh is moving and/or deforming
+
+        assert self.compute_backend == ComputeBackend.WARP, "This BC is currently only implemented with the Warp backend!"
+
+        # Unpack the two warp functionals needed for this BC!
+        if self.compute_backend == ComputeBackend.WARP:
+            self.warp_functional, self.prepare_bc_auxilary_data = self.warp_functional
+
+    @Operator.register_backend(ComputeBackend.JAX)
+    @partial(jit, static_argnums=(0))
+    def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # TODO
+        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
+        return
+
+    def _construct_warp(self):
+        # Set local variables and constants
+        _c = self.velocity_set.c
+        _q = self.velocity_set.q
+        _d = self.velocity_set.d
+        _w = self.velocity_set.w
+        _qi = self.velocity_set.qi
+        _opp_indices = self.velocity_set.opp_indices
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _u_wall = _u_vec(self.u[0], self.u[1], self.u[2]) if _d == 3 else _u_vec(self.u[0], self.u[1])
+        diagonal = wp.vec3i(0, 3, 5) if _d == 3 else wp.vec2i(0, 2)
+
+        @wp.func
+        def grads_approximate_fpop(
+            f_post: Any,
+            missing_mask: Any,
+        ):
+            """
+            Purpose: Using Grad's approximation to represent fpop based on macroscopic inputs used for outflow [1] and
+            Dirichlet BCs [2]
+            [1] S. Chikatax`marla, S. Ansumali, and I. Karlin, "Grad's approximation for missing data in lattice Boltzmann
+                simulations", Europhys. Lett. 74, 215 (2006).
+            [2] Dorschner, B., Chikatamarla, S. S., Bösch, F., & Karlin, I. V. (2015). Grad's approximation for moving and
+                stationary walls in entropic lattice Boltzmann simulations. Journal of Computational Physics, 295, 340-354.
+
+            Note: See also self.regularize_fpop function which is somewhat similar.
+            """
+            # Compute density, velocity and pressure tensor Pi using all f_post-streaming values
+            rho, u = self.macroscopic.warp_functional(f_post)
+            Pi = self.momentum_flux.warp_functional(f_post)
+
+            # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
+            nt = _d * (_d + 1) // 2
+            for l in range(_q):
+                # If the mask is missing then use f_post
+                if missing_mask[l] == wp.uint8(1):
+                    QiPi = self.compute_dtype(0.0)
+                    for t in range(nt):
+                        if t in diagonal:
+                            Pi[t] -= rho/3.
+                        QiPi += _qi[l, t] * Pi[t]
+
+                    # Compute c.u
+                    cu = self.compute_dtype(0.0)
+                    for d in range(self.velocity_set.d):
+                        if _c[d, l] == 1:
+                            cu += u[d]
+                        elif _c[d, l] == -1:
+                            cu -= u[d]
+                    cu *= self.compute_dtype(3.0)
+
+                    # change f_post using the Grad's approximation
+                    f_post[l] = rho * _w[l] * (self.compute_dtype(1.0) + cu + self.compute_dtype(4.5) * QiPi / rho)
+
+            return f_post
+
+        # Construct the functionals for this BC
+        @wp.func
+        def functional(
+            f_pre: Any,
+            f_post: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
+            index: Any,
+        ):
+            # NOTE: this BC has been reformulated to become entirely local and so has differences compared to the original paper.
+            #       Here we use the current time-step populations (f_pre = f_post_collision and f_post = f_post_streaming).
+            # NOTE: f_aux should contain populations at "x_f" (see their fig 1) in the missign direction of the BC which amounts
+            #       to post-collision values being pulled from appropriate cells like ExtrapolationBC
+            #
+            # here I need to compute all terms in Eq (10)
+            # Strategy:
+            # 1) "weights" should have been stored somewhere to be used here.
+            # 2) Given "weights", "u_w" (input to the BC) and "u_f" (computed from f_aux), compute "u_target" as per Eq (14)
+            #    NOTE: in the original paper "u_target" is associated with the previous time step not current time.
+            # 3) Given "weights" use differentiable interpolated BB to find f_missing as I had before:
+            #    fmissing = ((1. - weights) * f_poststreaming_iknown + weights * (f_postcollision_imissing + f_postcollision_iknown)) / (1.0 + weights)
+            # 4) Add contribution due to u_w to f_missing as is usual in regular Bouzidi BC (ie. -6.0 * self.lattice.w * jnp.dot(self.vel, c)
+            # 5) Compute rho_target = \sum(f_ibb) based on these values
+            # 6) Compute feq using feq = self.equilibrium(rho_target, u_target)
+            # 7) Compute Pi_neq and Pi_eq using all f_post-streaming values as per:
+            #       Pi_neq = self.momentum_flux(fneq) and Pi_eq = self.momentum_flux(feq)
+            # 8) Compute Grad's appriximation using full equation as in Eq (10)
+            #    NOTE: this is very similar to the regularization procedure.
+
+            # _f_nbr = _f_vec()
+            # u_target = _u_vec(0.0, 0.0, 0.0) if _d == 3 else _u_vec(0.0, 0.0)
+            # num_missing = 0
+            one = self.compute_dtype(1.0)
+            for l in range(_q):
+                # If the mask is missing then take the opposite index
+                if missing_mask[l] == wp.uint8(1):
+
+                    # # Find the neighbour and its velocity value
+                    # for ll in range(_q):
+                    #     # f_0 is the post-collision values of the current time-step
+                    #     # Get index associated with the fluid neighbours
+                    #     fluid_nbr_index = type(index)()
+                    #     for d in range(_d):
+                    #         fluid_nbr_index[d] = index[d] + _c[d, l]
+                    #     # The following is the post-collision values of the fluid neighbor cell
+                    #     _f_nbr[ll] = self.compute_dtype(f_0[ll, fluid_nbr_index[0], fluid_nbr_index[1], fluid_nbr_index[2]])
+
+                    # # Compute the velocity vector at the fluid neighbouring cells
+                    # _, u_f = self.macroscopic.warp_functional(_f_nbr)
+
+                    # # Record the number of missing directions
+                    # num_missing += 1
+
+                    # The implicit distance to the boundary or "weights" have been stored in known directions of f_1
+                    weight = f_1[_opp_indices[l], index[0], index[1], index[2]]
+
+                    # # Given "weights", "u_w" (input to the BC) and "u_f" (computed from f_aux), compute "u_target" as per Eq (14)
+                    # for d in range(_d):
+                    #     u_target[d] += (weight * u_f[d] + _u_wall[d]) / (one + weight)
+
+                    # Use differentiable interpolated BB to find f_missing:
+                    f_post[l] = ((one - weight) * f_post[_opp_indices[l]] + weight * (f_pre[l] + f_pre[_opp_indices[l]])) / (one + weight)
+
+                    # Add contribution due to moving_wall to f_missing as is usual in regular Bouzidi BC
+                    for ll in range(_q):
+                        # Compute cu
+                        cu = self.compute_dtype(0.0)
+                        for d in range(_d):
+                            if _c[d, l] == 1:
+                                cu += _u_wall[d]
+                            elif _c[d, l] == -1:
+                                cu -= _u_wall[d]
+                        cu *= self.compute_dtype(-6.0) * self.velocity_set.w
+                    f_post[l] += cu
+
+            # Compute rho_target = \sum(f_ibb) based on these values
+            # rho_target = self.zero_moment.warp_functional(f_post)
+            # for d in range(_d):
+            #     u_target[d] /= num_missing
+
+            # Compute Grad's appriximation using full equation as in Eq (10) of Dorschner et al.
+            f_post = grads_approximate_fpop(f_post, missing_mask)
+
+            return f_post
+
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel2d(
+            f_pre: wp.array3d(dtype=Any),
+            f_post: wp.array3d(dtype=Any),
+            bc_mask: wp.array3d(dtype=wp.uint8),
+            missing_mask: wp.array3d(dtype=wp.bool),
+        ):
+            # Get the global index
+            i, j = wp.tid()
+            index = wp.vec2i(i, j)
+
+            # read tid data
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
+            _f_aux = _f_vec()
+
+            # special preparation of auxiliary data
+            if _boundary_id == wp.uint8(GradsApproximation.id):
+                nv = get_normal_vectors_2d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1]]
+
+            # Apply the boundary condition
+            if _boundary_id == wp.uint8(GradsApproximation.id):
+                # TODO: is there any way for this BC to have a meaningful kernel given that it has two steps after both
+                # collision and streaming?
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+            else:
+                _f = _f_post
+
+            # Write the distribution function
+            for l in range(self.velocity_set.q):
+                f_post[l, index[0], index[1]] = self.store_dtype(_f[l])
+
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel3d(
+            f_pre: wp.array4d(dtype=Any),
+            f_post: wp.array4d(dtype=Any),
+            bc_mask: wp.array4d(dtype=wp.uint8),
+            missing_mask: wp.array4d(dtype=wp.bool),
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            # we need to store fractional distance during the initialization
+            mesh_indices = np.arange(mesh_vertices.shape[0])
+            mesh = wp.Mesh(
+                points=wp.array(mesh_vertices, dtype=wp.vec3),
+                indices=wp.array(mesh_indices, dtype=int),
+            )
+            # Compute the maximum length
+            max_length = wp.sqrt(
+                (grid_spacing[0] * wp.float32(grid_shape[0])) ** 2.0
+                + (grid_spacing[1] * wp.float32(grid_shape[1])) ** 2.0
+                + (grid_spacing[2] * wp.float32(grid_shape[2])) ** 2.0
+            )
+
+            query = wp.mesh_query_point_sign_normal(mesh.id, xpred, max_length)
+            if query.result:
+                p = wp.mesh_eval_position(mesh, query.face, query.u, query.v)
+
+            # read tid data
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
+            _f_aux = _f_vec()
+
+            # special preparation of auxiliary data
+            if _boundary_id == wp.uint8(GradsApproximation.id):
+                nv = get_normal_vectors_3d(_missing_mask)
+                for l in range(self.velocity_set.q):
+                    if _missing_mask[l] == wp.uint8(1):
+                        # f_0 is the post-collision values of the current time-step
+                        # Get pull index associated with the "neighbours" pull_index
+                        pull_index = type(index)()
+                        for d in range(self.velocity_set.d):
+                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                        # The following is the post-streaming values of the neighbor cell
+                        _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1], pull_index[2]]
+
+            # Apply the boundary condition
+            if _boundary_id == wp.uint8(GradsApproximation.id):
+                # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
+                # collision and streaming?
+                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+            else:
+                _f = _f_post
+
+            # Write the distribution function
+            for l in range(self.velocity_set.q):
+                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
+
+        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
+
+        return functional, kernel
+
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # Launch the warp kernel
+        wp.launch(
+            self.warp_kernel,
+            inputs=[f_pre, f_post, bc_mask, missing_mask],
+            dim=f_pre.shape[1:],
+        )
+        return f_post
