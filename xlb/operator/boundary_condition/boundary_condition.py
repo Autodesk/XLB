@@ -59,10 +59,13 @@ class BoundaryCondition(Operator):
 
         @wp.func
         def prepare_bc_auxilary_data(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             return f_post
 

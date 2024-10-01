@@ -152,7 +152,7 @@ class MomentumTransfer(Operator):
         # Construct the warp kernel
         @wp.kernel
         def kernel3d(
-            f: wp.array4d(dtype=Any),
+            fpop: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             force: wp.array(dtype=Any),
@@ -183,11 +183,12 @@ class MomentumTransfer(Operator):
                 # Get the distribution function
                 f_post_collision = _f_vec()
                 for l in range(self.velocity_set.q):
-                    f_post_collision[l] = f[l, index[0], index[1], index[2]]
+                    f_post_collision[l] = fpop[l, index[0], index[1], index[2]]
 
                 # Apply streaming (pull method)
-                f_post_stream = self.stream.warp_functional(f, index)
-                f_post_stream = self.no_slip_bc_instance.warp_functional(f_post_collision, f_post_stream, _f_vec(), _missing_mask)
+                timestep = 0
+                f_post_stream = self.stream.warp_functional(fpop, index)
+                f_post_stream = self.no_slip_bc_instance.warp_functional(index, timestep, _missing_mask, fpop, fpop, f_post_collision, f_post_stream)
 
                 # Compute the momentum transfer
                 for d in range(self.velocity_set.d):

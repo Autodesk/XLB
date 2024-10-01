@@ -234,10 +234,13 @@ class ZouHeBC(BoundaryCondition):
 
         @wp.func
         def functional3d_velocity(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -259,10 +262,13 @@ class ZouHeBC(BoundaryCondition):
 
         @wp.func
         def functional3d_pressure(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -282,10 +288,13 @@ class ZouHeBC(BoundaryCondition):
 
         @wp.func
         def functional2d_velocity(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -307,10 +316,13 @@ class ZouHeBC(BoundaryCondition):
 
         @wp.func
         def functional2d_pressure(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -345,8 +357,8 @@ class ZouHeBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f_aux = _f_post
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 
@@ -371,8 +383,8 @@ class ZouHeBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f_aux = _f_post
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 

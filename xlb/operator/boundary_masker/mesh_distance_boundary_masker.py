@@ -133,7 +133,7 @@ class MeshDistanceBoundaryMasker(Operator):
         ), "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
         assert (
             f_field is not None and f_field.shape == missing_mask.shape
-        ), 'To compute and store the implicit distance to the boundary for this BC, use a population field!'
+        ), "To compute and store the implicit distance to the boundary for this BC, use a population field!"
         mesh_vertices = bc.mesh_vertices
         id_number = bc.id
 

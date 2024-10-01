@@ -63,10 +63,13 @@ class FullwayBounceBackBC(BoundaryCondition):
         # Construct the functional for this BC
         @wp.func
         def functional(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             fliped_f = _f_vec()
             for l in range(_q):
@@ -88,8 +91,8 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f_aux = _f_vec()
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 
@@ -114,8 +117,8 @@ class FullwayBounceBackBC(BoundaryCondition):
 
             # Check if the boundary is active
             if _boundary_id == wp.uint8(FullwayBounceBackBC.id):
-                _f_aux = _f_vec()
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 

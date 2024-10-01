@@ -127,7 +127,7 @@ class GradsApproximationBC(BoundaryCondition):
                     QiPi = self.compute_dtype(0.0)
                     for t in range(nt):
                         if t in diagonal:
-                            Pi[t] -= rho/3.
+                            Pi[t] -= rho / 3.0
                         QiPi += _qi[l, t] * Pi[t]
 
                     # Compute c.u
@@ -181,7 +181,6 @@ class GradsApproximationBC(BoundaryCondition):
             for l in range(_q):
                 # If the mask is missing then take the opposite index
                 if missing_mask[l] == wp.uint8(1):
-
                     # # Find the neighbour and its velocity value
                     # for ll in range(_q):
                     #     # f_0 is the post-collision values of the current time-step
