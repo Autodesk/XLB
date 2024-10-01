@@ -153,6 +153,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
                 # Regularized boundary condition (bc type = velocity)
                 f_post = self.ExtrapolationOutflowBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+            elif _boundary_id == bc_struct.id_GradsApproximationBC:
+                # Reformulated Grads boundary condition
+                f_post = self.GradsApproximationBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
             return f_post
 
         @wp.func
@@ -174,7 +177,6 @@ class IncompressibleNavierStokesStepper(Stepper):
             elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
                 # Storing post-streaming data in directions that leave the domain
                 f_post = self.ExtrapolationOutflowBC.prepare_bc_auxilary_data(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
             return f_post
 
         @wp.func
