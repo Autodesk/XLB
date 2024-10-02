@@ -49,6 +49,11 @@ class MeshDistanceBoundaryMasker(Operator):
         _opp_indices = self.velocity_set.opp_indices
 
         @wp.func
+        def check_index_bounds(index: wp.vec3i, shape: wp.vec3i):
+            is_in_bounds = index[0] >= 0 and index[0] < shape[0] and index[1] >= 0 and index[1] < shape[1] and index[2] >= 0 and index[2] < shape[2]
+            return is_in_bounds
+
+        @wp.func
         def index_to_position(index: wp.vec3i, origin: wp.vec3, spacing: wp.vec3):
             # position of the point
             ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
@@ -89,25 +94,26 @@ class MeshDistanceBoundaryMasker(Operator):
 
             # evaluate if point is inside mesh
             query = wp.mesh_query_point_sign_winding_number(mesh_id, pos_solid_cell, max_length)
-            if query.result:
-                # set point to be solid
-                if query.sign <= 0:  # TODO: fix this
-                    # Stream indices
-                    missing_mask[0, index[0], index[1], index[2]] = True
-                    for l in range(1, _q):
-                        # Get the index of the streaming direction
-                        push_index = wp.vec3i()
-                        for d in range(self.velocity_set.d):
-                            push_index[d] = index[d] + _c[d, l]
+            if query.result and query.sign <= 0:  # TODO: fix this
+                # Set bc_mask of solid to a large number to enable skipping LBM operations
+                bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
 
-                        # Set the boundary id and missing_mask
-                        bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
-                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
-
+                # Find neighboring fluid cells along each lattice direction and the their fractional distance to the mesh
+                for l in range(1, _q):
+                    # Get the index of the streaming direction
+                    push_index = wp.vec3i()
+                    for d in range(self.velocity_set.d):
+                        push_index[d] = index[d] + _c[d, l]
+                    shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
+                    if check_index_bounds(push_index, shape):
                         # find neighbouring fluid cell
                         pos_fluid_cell = index_to_position(push_index, origin, spacing)
                         query = wp.mesh_query_point_sign_winding_number(mesh_id, pos_fluid_cell, max_length)
                         if query.result and query.sign > 0:
+                            # Set the boundary id and missing_mask
+                            bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
+                            missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
+
                             # get position of the mesh triangle that intersects with the solid cell
                             pos_mesh = wp.mesh_eval_position(mesh_id, query.face, query.u, query.v)
                             weight = wp.length(pos_fluid_cell - pos_mesh) / wp.length(pos_fluid_cell - pos_solid_cell)
