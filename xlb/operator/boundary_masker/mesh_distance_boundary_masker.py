@@ -146,6 +146,9 @@ class MeshDistanceBoundaryMasker(Operator):
         # We are done with bc.mesh_vertices. Remove them from BC objects
         bc.__dict__.pop("mesh_vertices", None)
 
+        # Ensure this masker is called only for BCs that need implicit distance to the mesh
+        assert bc.needs_mesh_distance, 'Please use "MeshBoundaryMasker" if this BC does NOT need mesh distance!'
+
         mesh_indices = np.arange(mesh_vertices.shape[0])
         mesh = wp.Mesh(
             points=wp.array(mesh_vertices, dtype=wp.vec3),

@@ -65,6 +65,9 @@ class GradsApproximationBC(BoundaryCondition):
         self.equilibrium = QuadraticEquilibrium()
         self.momentum_flux = MomentumFlux()
 
+        # This BC needs implicit distance to the mesh
+        self.needs_mesh_distance = True
+
         # if indices is not None:
         #     # this BC would be limited to stationary boundaries
         #     # assert mesh_vertices is None
@@ -75,7 +78,6 @@ class GradsApproximationBC(BoundaryCondition):
         #         # mesh is moving and/or deforming
 
         assert self.compute_backend == ComputeBackend.WARP, "This BC is currently only implemented with the Warp backend!"
-
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
