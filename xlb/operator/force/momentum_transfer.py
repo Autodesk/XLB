@@ -90,6 +90,7 @@ class MomentumTransfer(Operator):
         _c = self.velocity_set.c
         _opp_indices = self.velocity_set.opp_indices
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
         _no_slip_id = self.no_slip_bc_instance.id
 
@@ -128,7 +129,7 @@ class MomentumTransfer(Operator):
                     is_edge = wp.bool(True)
 
             # If the boundary is an edge then add the momentum transfer
-            m = wp.vec2()
+            m = _u_vec()
             if is_edge:
                 # Get the distribution function
                 f_post_collision = _f_vec()
@@ -145,7 +146,10 @@ class MomentumTransfer(Operator):
                     for l in range(self.velocity_set.q):
                         if _missing_mask[l] == wp.uint8(1):
                             phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
-                            m[d] += phi * self.compute_dtype(_c[d, _opp_indices[l]])
+                            if _c[d, _opp_indices[l]] == 1:
+                                m[d] += phi
+                            elif _c[d, _opp_indices[l]] == -1:
+                                m[d] -= phi
 
             wp.atomic_add(force, 0, m)
 
@@ -178,7 +182,7 @@ class MomentumTransfer(Operator):
                     is_edge = wp.bool(True)
 
             # If the boundary is an edge then add the momentum transfer
-            m = wp.vec3()
+            m = _u_vec()
             if is_edge:
                 # Get the distribution function
                 f_post_collision = _f_vec()
@@ -196,7 +200,10 @@ class MomentumTransfer(Operator):
                     for l in range(self.velocity_set.q):
                         if _missing_mask[l] == wp.uint8(1):
                             phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
-                            m[d] += phi * self.compute_dtype(_c[d, _opp_indices[l]])
+                            if _c[d, _opp_indices[l]] == 1:
+                                m[d] += phi
+                            elif _c[d, _opp_indices[l]] == -1:
+                                m[d] -= phi
 
             wp.atomic_add(force, 0, m)
 
@@ -208,7 +215,8 @@ class MomentumTransfer(Operator):
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, bc_mask, missing_mask):
         # Allocate the force vector (the total integral value will be computed)
-        force = wp.zeros((1), dtype=wp.vec3) if self.velocity_set.d == 3 else wp.zeros((1), dtype=wp.vec2)
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        force = wp.zeros((1), dtype=_u_vec)
 
         # Launch the warp kernel
         wp.launch(

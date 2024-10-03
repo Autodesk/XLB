@@ -89,7 +89,7 @@ class MeshBoundaryMasker(Operator):
                 # set point to be solid
                 if query.sign <= 0:  # TODO: fix this
                     # Stream indices
-                    for l in range(_q):
+                    for l in range(1, _q):
                         # Get the index of the streaming direction
                         push_index = wp.vec3i()
                         for d in range(self.velocity_set.d):
