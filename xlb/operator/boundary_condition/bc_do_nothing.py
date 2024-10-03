@@ -56,10 +56,13 @@ class DoNothingBC(BoundaryCondition):
         # Construct the functional for this BC
         @wp.func
         def functional(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             return f_pre
 
@@ -79,8 +82,8 @@ class DoNothingBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(DoNothingBC.id):
-                _f_aux = _f_post
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 
@@ -105,8 +108,8 @@ class DoNothingBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(DoNothingBC.id):
-                _f_aux = _f_post
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 

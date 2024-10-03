@@ -54,7 +54,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
+    def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
@@ -71,10 +71,13 @@ class HalfwayBounceBackBC(BoundaryCondition):
         # Construct the functional for this BC
         @wp.func
         def functional(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -103,8 +106,8 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(HalfwayBounceBackBC.id):
-                _f_aux = _f_post
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 
@@ -129,8 +132,8 @@ class HalfwayBounceBackBC(BoundaryCondition):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(HalfwayBounceBackBC.id):
-                _f_aux = _f_post
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 

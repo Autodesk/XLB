@@ -217,9 +217,9 @@ class KBC(Collision):
             s = _f_vec()
 
             # For c = (i, 0, 0), c = (0, j, 0) and c = (0, 0, k)
-            two = self.self.compute_dtype(2.0)
-            four = self.self.compute_dtype(4.0)
-            six = self.self.compute_dtype(6.0)
+            two = self.compute_dtype(2.0)
+            four = self.compute_dtype(4.0)
+            six = self.compute_dtype(6.0)
 
             s[9] = (two * nxz - nyz) / six
             s[18] = (two * nxz - nyz) / six

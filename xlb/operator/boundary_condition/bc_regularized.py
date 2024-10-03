@@ -105,7 +105,7 @@ class RegularizedBC(ZouHeBC):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
+    def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         # creat a mask to slice boundary cells
         boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
@@ -200,24 +200,26 @@ class RegularizedBC(ZouHeBC):
 
             # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
             nt = _d * (_d + 1) // 2
-            QiPi1 = _f_vec()
             for l in range(_q):
-                QiPi1[l] = self.compute_dtype(0.0)
+                QiPi1 = self.compute_dtype(0.0)
                 for t in range(nt):
-                    QiPi1[l] += _qi[l, t] * PiNeq[t]
+                    QiPi1 += _qi[l, t] * PiNeq[t]
 
                 # assign all populations based on eq 45 of Latt et al (2008)
                 # fneq ~ f^1
-                fpop1 = self.compute_dtype(4.5) * _w[l] * QiPi1[l]
+                fpop1 = self.compute_dtype(4.5) * _w[l] * QiPi1
                 fpop[l] = feq[l] + fpop1
             return fpop
 
         @wp.func
         def functional3d_velocity(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -242,10 +244,13 @@ class RegularizedBC(ZouHeBC):
 
         @wp.func
         def functional3d_pressure(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -268,10 +273,13 @@ class RegularizedBC(ZouHeBC):
 
         @wp.func
         def functional2d_velocity(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -296,10 +304,13 @@ class RegularizedBC(ZouHeBC):
 
         @wp.func
         def functional2d_pressure(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -337,8 +348,8 @@ class RegularizedBC(ZouHeBC):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f_aux = _f_vec()
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 
@@ -363,8 +374,8 @@ class RegularizedBC(ZouHeBC):
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(self.id):
-                _f_aux = _f_vec()
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 

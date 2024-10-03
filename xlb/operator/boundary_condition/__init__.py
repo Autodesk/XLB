@@ -9,3 +9,4 @@ from xlb.operator.boundary_condition.bc_fullway_bounce_back import FullwayBounce
 from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC as ZouHeBC
 from xlb.operator.boundary_condition.bc_regularized import RegularizedBC as RegularizedBC
 from xlb.operator.boundary_condition.bc_extrapolation_outflow import ExtrapolationOutflowBC as ExtrapolationOutflowBC
+from xlb.operator.boundary_condition.bc_grads_approximation import GradsApproximationBC as GradsApproximationBC

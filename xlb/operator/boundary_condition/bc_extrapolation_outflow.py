@@ -123,7 +123,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def apply_jax(self, f_pre, f_post, bc_mask, missing_mask):
+    def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
         boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
@@ -160,10 +160,13 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         # Construct the functionals for this BC
         @wp.func
         def functional(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Post-streaming values are only modified at missing direction
             _f = f_post
@@ -171,23 +174,60 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                 # If the mask is missing then take the opposite index
                 if missing_mask[l] == wp.uint8(1):
                     _f[l] = f_pre[_opp_indices[l]]
-
             return _f
 
         @wp.func
-        def prepare_bc_auxilary_data(
+        def prepare_bc_auxilary_data_2d(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
             f_pre: Any,
             f_post: Any,
-            f_aux: Any,
-            missing_mask: Any,
         ):
             # Preparing the formulation for this BC using the neighbour's populations stored in f_aux and
-            # f_pre (posti-streaming values of the current voxel). We use directions that leave the domain
+            # f_pre (post-streaming values of the current voxel). We use directions that leave the domain
             # for storing this prepared data.
             _f = f_post
+            nv = get_normal_vectors_2d(missing_mask)
             for l in range(self.velocity_set.q):
                 if missing_mask[l] == wp.uint8(1):
-                    _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux[l]
+                    # f_0 is the post-collision values of the current time-step
+                    # Get pull index associated with the "neighbours" pull_index
+                    pull_index = type(index)()
+                    for d in range(self.velocity_set.d):
+                        pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                    # The following is the post-streaming values of the neighbor cell
+                    f_aux = self.compute_dtype(f_0[l, pull_index[0], pull_index[1]])
+                    _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux
+            return _f
+
+        @wp.func
+        def prepare_bc_auxilary_data_3d(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
+            f_pre: Any,
+            f_post: Any,
+        ):
+            # Preparing the formulation for this BC using the neighbour's populations stored in f_aux and
+            # f_pre (post-streaming values of the current voxel). We use directions that leave the domain
+            # for storing this prepared data.
+            _f = f_post
+            nv = get_normal_vectors_3d(missing_mask)
+            for l in range(self.velocity_set.q):
+                if missing_mask[l] == wp.uint8(1):
+                    # f_0 is the post-collision values of the current time-step
+                    # Get pull index associated with the "neighbours" pull_index
+                    pull_index = type(index)()
+                    for d in range(self.velocity_set.d):
+                        pull_index[d] = index[d] - (_c[d, l] + nv[d])
+                    # The following is the post-streaming values of the neighbor cell
+                    f_aux = self.compute_dtype(f_0[l, pull_index[0], pull_index[1], pull_index[2]])
+                    _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux
             return _f
 
         # Construct the warp kernel
@@ -201,29 +241,20 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             # Get the global index
             i, j = wp.tid()
             index = wp.vec2i(i, j)
+            timestep = 0
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
-            _f_aux = _f_vec()
 
             # special preparation of auxiliary data
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                nv = get_normal_vectors_2d(_missing_mask)
-                for l in range(self.velocity_set.q):
-                    if _missing_mask[l] == wp.uint8(1):
-                        # f_0 is the post-collision values of the current time-step
-                        # Get pull index associated with the "neighbours" pull_index
-                        pull_index = type(index)()
-                        for d in range(self.velocity_set.d):
-                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
-                        # The following is the post-streaming values of the neighbor cell
-                        _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1]]
+                _f_pre = prepare_bc_auxilary_data_2d(index, timestep, missing_mask, f_pre, f_post, f_pre, f_post)
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 # TODO: is there any way for this BC to have a meaningful kernel given that it has two steps after both
                 # collision and streaming?
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 
@@ -242,6 +273,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             # Get the global index
             i, j, k = wp.tid()
             index = wp.vec3i(i, j, k)
+            timestep = 0
 
             # read tid data
             _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
@@ -249,22 +281,13 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
             # special preparation of auxiliary data
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                nv = get_normal_vectors_3d(_missing_mask)
-                for l in range(self.velocity_set.q):
-                    if _missing_mask[l] == wp.uint8(1):
-                        # f_0 is the post-collision values of the current time-step
-                        # Get pull index associated with the "neighbours" pull_index
-                        pull_index = type(index)()
-                        for d in range(self.velocity_set.d):
-                            pull_index[d] = index[d] - (_c[d, l] + nv[d])
-                        # The following is the post-streaming values of the neighbor cell
-                        _f_aux[l] = _f_pre[l, pull_index[0], pull_index[1], pull_index[2]]
+                _f_pre = prepare_bc_auxilary_data_3d(index, timestep, missing_mask, f_pre, f_post, f_pre, f_post)
 
             # Apply the boundary condition
             if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
                 # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
                 # collision and streaming?
-                _f = functional(_f_pre, _f_post, _f_aux, _missing_mask)
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
             else:
                 _f = _f_post
 
@@ -273,6 +296,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                 f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
 
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
+        prepare_bc_auxilary_data = prepare_bc_auxilary_data_3d if self.velocity_set.d == 3 else prepare_bc_auxilary_data_2d
 
         return (functional, prepare_bc_auxilary_data), kernel
 
