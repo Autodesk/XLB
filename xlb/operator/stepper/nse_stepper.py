@@ -88,14 +88,13 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Copy back to store precision
         f_1 = self.precision_policy.cast_to_store_jax(f_post_collision)
 
-        return f_1
+        return f_0, f_1
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _q = self.velocity_set.q
-        _d = self.velocity_set.d
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
+        _opp_indices = self.velocity_set.opp_indices
 
         @wp.struct
         class BoundaryConditionIDStruct:
@@ -181,39 +180,45 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         @wp.func
         def get_thread_data_2d(
-            f_buffer: wp.array3d(dtype=Any),
+            f0_buffer: wp.array3d(dtype=Any),
+            f1_buffer: wp.array3d(dtype=Any),
             missing_mask: wp.array3d(dtype=Any),
             index: Any,
         ):
             # Read thread data for populations and missing mask
-            f_thread = _f_vec()
+            f0_thread = _f_vec()
+            f1_thread = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
-                f_thread[l] = self.compute_dtype(f_buffer[l, index[0], index[1]])
+                f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1]])
+                f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1]])
                 if missing_mask[l, index[0], index[1]]:
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return f_thread, _missing_mask
+            return f0_thread, f1_thread, _missing_mask
 
         @wp.func
         def get_thread_data_3d(
-            f_buffer: wp.array4d(dtype=Any),
+            f0_buffer: wp.array4d(dtype=Any),
+            f1_buffer: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
             index: Any,
         ):
             # Read thread data for populations
-            f_thread = _f_vec()
+            f0_thread = _f_vec()
+            f1_thread = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of pre-streaming populations
-                f_thread[l] = self.compute_dtype(f_buffer[l, index[0], index[1], index[2]])
+                f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1], index[2]])
+                f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1], index[2]])
                 if missing_mask[l, index[0], index[1], index[2]]:
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
 
-            return f_thread, _missing_mask
+            return f0_thread, f1_thread, _missing_mask
 
         @wp.kernel
         def kernel2d(
@@ -230,12 +235,15 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Get the boundary id
             _boundary_id = bc_mask[0, index[0], index[1]]
+            if _boundary_id == wp.uint8(255):
+                return
 
             # Apply streaming (pull method)
             _f_post_stream = self.stream.warp_functional(f_0, index)
 
             # Apply post-streaming type boundary conditions
-            _f_post_collision, _missing_mask = get_thread_data_2d(f_0, missing_mask, index)
+            f0_thread, f1_thread, _missing_mask = get_thread_data_2d(f_0, f_1, missing_mask, index)
+            _f_post_collision = f0_thread
             _f_post_stream = apply_post_streaming_bc(
                 index, timestep, _boundary_id, bc_struct, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream
             )
@@ -274,12 +282,15 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Get the boundary id
             _boundary_id = bc_mask[0, index[0], index[1], index[2]]
+            if _boundary_id == wp.uint8(255):
+                return
 
             # Apply streaming (pull method)
             _f_post_stream = self.stream.warp_functional(f_0, index)
 
             # Apply post-streaming type boundary conditions
-            _f_post_collision, _missing_mask = get_thread_data_3d(f_0, missing_mask, index)
+            f0_thread, f1_thread, _missing_mask = get_thread_data_3d(f_0, f_1, missing_mask, index)
+            _f_post_collision = f0_thread
             _f_post_stream = apply_post_streaming_bc(
                 index, timestep, _boundary_id, bc_struct, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream
             )
@@ -300,6 +311,11 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             # Set the output
             for l in range(self.velocity_set.q):
+                # TODO 1: fix the perf drop due to l324-l236 even in cases where this BC is not used.
+                # TODO 2: is there better way to move these lines to a function inside BC class like "restore_bc_data"
+                if _boundary_id == bc_struct.id_GradsApproximationBC:
+                    if _missing_mask[l] == wp.uint8(1):
+                        f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(f1_thread[_opp_indices[l]])
                 f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
 
         # Return the correct kernel
@@ -356,4 +372,4 @@ class IncompressibleNavierStokesStepper(Stepper):
             ],
             dim=f_0.shape[1:],
         )
-        return f_1
+        return f_0, f_1

@@ -12,10 +12,11 @@ from xlb.operator.boundary_condition import (
     RegularizedBC,
     HalfwayBounceBackBC,
     ExtrapolationOutflowBC,
+    GradsApproximationBC,
 )
 from xlb.operator.force.momentum_transfer import MomentumTransfer
 from xlb.operator.macroscopic import Macroscopic
-from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
+from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker, MeshDistanceBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
 import warp as wp
 import numpy as np
@@ -51,9 +52,10 @@ class WindTunnel3D:
         self.lift_coefficients = []
 
     def _setup(self):
+        # NOTE: it is important to initialize fields before setup_boundary_masker is called because f_0 or f_1 might be used to store BC information
+        self.initialize_fields()
         self.setup_boundary_conditions()
         self.setup_boundary_masker()
-        self.initialize_fields()
         self.setup_stepper()
 
     def voxelize_stl(self, stl_filename, length_lbm_unit):
@@ -99,7 +101,8 @@ class WindTunnel3D:
         # bc_left = RegularizedBC('velocity', (self.wind_speed, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
         bc_do_nothing = ExtrapolationOutflowBC(indices=outlet)
-        bc_car = HalfwayBounceBackBC(mesh_vertices=car)
+        # bc_car = HalfwayBounceBackBC(mesh_vertices=car)
+        bc_car = GradsApproximationBC(mesh_vertices=car)
         # bc_car = FullwayBounceBackBC(mesh_vertices=car)
         self.boundary_conditions = [bc_left, bc_do_nothing, bc_walls, bc_car]
 
@@ -109,7 +112,12 @@ class WindTunnel3D:
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
         )
-        mesh_boundary_masker = MeshBoundaryMasker(
+        # mesh_boundary_masker = MeshBoundaryMasker(
+        #     velocity_set=self.velocity_set,
+        #     precision_policy=self.precision_policy,
+        #     compute_backend=self.backend,
+        # )
+        mesh_distance_boundary_masker = MeshDistanceBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
             compute_backend=self.backend,
@@ -119,10 +127,12 @@ class WindTunnel3D:
         dx = self.grid_spacing
         origin, spacing = (0, 0, 0), (dx, dx, dx)
         self.bc_mask, self.missing_mask = indices_boundary_masker(bclist_other, self.bc_mask, self.missing_mask)
-        self.bc_mask, self.missing_mask = mesh_boundary_masker(bc_mesh, origin, spacing, self.bc_mask, self.missing_mask)
+        # self.bc_mask, self.missing_mask = mesh_boundary_masker(bc_mesh, origin, spacing, self.bc_mask, self.missing_mask)
+        self.bc_mask, self.missing_mask, self.f_1 = mesh_distance_boundary_masker(bc_mesh, origin, spacing, self.bc_mask, self.missing_mask, self.f_1)
 
     def initialize_fields(self):
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend)
+        self.f_1 = initialize_eq(self.f_1, self.grid, self.velocity_set, self.precision_policy, self.backend)
 
     def setup_stepper(self):
         self.stepper = IncompressibleNavierStokesStepper(self.omega, boundary_conditions=self.boundary_conditions, collision_type="KBC")
@@ -134,7 +144,7 @@ class WindTunnel3D:
 
         start_time = time.time()
         for i in range(num_steps):
-            self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
+            self.f_0, self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if (i + 1) % print_interval == 0:
@@ -226,7 +236,8 @@ if __name__ == "__main__":
     print_interval = 1000
 
     # Set up Reynolds number and deduce relaxation time (omega)
-    Re = 50000.0
+    # Re = 50000.0
+    Re = 500000000000.0
     clength = grid_size_x - 1
     visc = wind_speed * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
