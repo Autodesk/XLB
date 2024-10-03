@@ -49,6 +49,9 @@ class GradsApproximationBC(BoundaryCondition):
         indices=None,
         mesh_vertices=None,
     ):
+        # TODO: the input velocity must be suitably stored elesewhere when mesh is moving.
+        self.u = (0, 0, 0)
+
         # Call the parent constructor
         super().__init__(
             ImplementationStep.STREAMING,
@@ -97,7 +100,35 @@ class GradsApproximationBC(BoundaryCondition):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _u_wall = _u_vec(self.u[0], self.u[1], self.u[2]) if _d == 3 else _u_vec(self.u[0], self.u[1])
-        diagonal = wp.vec3i(0, 3, 5) if _d == 3 else wp.vec2i(0, 2)
+        # diagonal = wp.vec3i(0, 3, 5) if _d == 3 else wp.vec2i(0, 2)
+
+        @wp.func
+        def regularize_fpop(
+            missing_mask: Any,
+            rho: Any,
+            u: Any,
+            fpop: Any,
+        ):
+            """
+            Regularizes the distribution functions by adding non-equilibrium contributions based on second moments of fpop.
+            """
+            # Compute momentum flux of off-equilibrium populations for regularization: Pi^1 = Pi^{neq}
+            feq = self.equilibrium.warp_functional(rho, u)
+            f_neq = fpop - feq
+            PiNeq = self.momentum_flux.warp_functional(f_neq)
+
+            # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
+            nt = _d * (_d + 1) // 2
+            for l in range(_q):
+                QiPi1 = self.compute_dtype(0.0)
+                for t in range(nt):
+                    QiPi1 += _qi[l, t] * PiNeq[t]
+
+                # assign all populations based on eq 45 of Latt et al (2008)
+                # fneq ~ f^1
+                fpop1 = self.compute_dtype(4.5) * _w[l] * QiPi1
+                fpop[l] = feq[l] + fpop1
+            return fpop
 
         @wp.func
         def grads_approximate_fpop(
@@ -121,25 +152,25 @@ class GradsApproximationBC(BoundaryCondition):
             # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
             nt = _d * (_d + 1) // 2
             for l in range(_q):
-                # If the mask is missing then use f_post
-                if missing_mask[l] == wp.uint8(1):
-                    QiPi = self.compute_dtype(0.0)
-                    for t in range(nt):
-                        if t in diagonal:
-                            Pi[t] -= rho / 3.0
+                # if missing_mask[l] == wp.uint8(1):
+                QiPi = self.compute_dtype(0.0)
+                for t in range(nt):
+                    if t == 0 or t == 3 or t == 5:
+                        QiPi += _qi[l, t] * (Pi[t] - rho / self.compute_dtype(3.0))
+                    else:
                         QiPi += _qi[l, t] * Pi[t]
 
-                    # Compute c.u
-                    cu = self.compute_dtype(0.0)
-                    for d in range(self.velocity_set.d):
-                        if _c[d, l] == 1:
-                            cu += u[d]
-                        elif _c[d, l] == -1:
-                            cu -= u[d]
-                    cu *= self.compute_dtype(3.0)
+                # Compute c.u
+                cu = self.compute_dtype(0.0)
+                for d in range(self.velocity_set.d):
+                    if _c[d, l] == 1:
+                        cu += u[d]
+                    elif _c[d, l] == -1:
+                        cu -= u[d]
+                cu *= self.compute_dtype(3.0)
 
-                    # change f_post using the Grad's approximation
-                    f_post[l] = rho * _w[l] * (self.compute_dtype(1.0) + cu + self.compute_dtype(4.5) * QiPi / rho)
+                # change f_post using the Grad's approximation
+                f_post[l] = rho * _w[l] * (self.compute_dtype(1.0) + cu) + _w[l] * self.compute_dtype(4.5) * QiPi
 
             return f_post
 
@@ -161,26 +192,28 @@ class GradsApproximationBC(BoundaryCondition):
                 # If the mask is missing then take the opposite index
                 if missing_mask[l] == wp.uint8(1):
                     # The implicit distance to the boundary or "weights" have been stored in known directions of f_1
-                    weight = f_1[_opp_indices[l], index[0], index[1], index[2]]
+                    # weight = f_1[_opp_indices[l], index[0], index[1], index[2]]
+                    weight = self.compute_dtype(0.5)
 
                     # Use differentiable interpolated BB to find f_missing:
                     f_post[l] = ((one - weight) * f_post[_opp_indices[l]] + weight * (f_pre[l] + f_pre[_opp_indices[l]])) / (one + weight)
 
-                    # Add contribution due to moving_wall to f_missing as is usual in regular Bouzidi BC
-                    cu = self.compute_dtype(0.0)
-                    for d in range(_d):
-                        if _c[d, l] == 1:
-                            cu += _u_wall[d]
-                        elif _c[d, l] == -1:
-                            cu -= _u_wall[d]
-                    cu *= self.compute_dtype(-6.0) * self.velocity_set.w
-                    f_post[l] += cu
+            #         # Add contribution due to moving_wall to f_missing as is usual in regular Bouzidi BC
+            #         cu = self.compute_dtype(0.0)
+            #         for d in range(_d):
+            #             if _c[d, l] == 1:
+            #                 cu += _u_wall[d]
+            #             elif _c[d, l] == -1:
+            #                 cu -= _u_wall[d]
+            #         cu *= self.compute_dtype(-6.0) * _w[l]
+            #         f_post[l] += cu
 
             # Compute density, velocity using all f_post-streaming values
             rho, u = self.macroscopic.warp_functional(f_post)
 
             # Compute Grad's appriximation using full equation as in Eq (10) of Dorschner et al.
-            f_post = grads_approximate_fpop(missing_mask, rho, u, f_post)
+            f_post = regularize_fpop(missing_mask, rho, u, f_post)
+            # f_post = grads_approximate_fpop(missing_mask, rho, u, f_post)
             return f_post
 
         # Construct the functionals for this BC
