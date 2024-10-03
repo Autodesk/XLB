@@ -196,8 +196,8 @@ class GradsApproximationBC(BoundaryCondition):
                 # If the mask is missing then take the opposite index
                 if missing_mask[l] == wp.uint8(1):
                     # The implicit distance to the boundary or "weights" have been stored in known directions of f_1
-                    weight = f_1[_opp_indices[l], index[0], index[1], index[2]]
-                    # weight = self.compute_dtype(0.5)
+                    # weight = f_1[_opp_indices[l], index[0], index[1], index[2]]
+                    weight = self.compute_dtype(0.5)
 
                     # Use differentiable interpolated BB to find f_missing:
                     f_post[l] = ((one - weight) * f_post[_opp_indices[l]] + weight * (f_pre[l] + f_pre[_opp_indices[l]])) / (one + weight)
@@ -242,7 +242,7 @@ class GradsApproximationBC(BoundaryCondition):
             # 2) Given "weights", "u_w" (input to the BC) and "u_f" (computed from f_aux), compute "u_target" as per Eq (14)
             #    NOTE: in the original paper "u_target" is associated with the previous time step not current time.
             # 3) Given "weights" use differentiable interpolated BB to find f_missing as I had before:
-            #    fmissing = ((1. - weights) * f_poststreaming_iknown + weights * (f_postcollision_imissing + f_postcollision_iknown)) / (1.0 + weights)
+            # fmissing = ((1. - weights) * f_poststreaming_iknown + weights * (f_postcollision_imissing + f_postcollision_iknown)) / (1.0 + weights)
             # 4) Add contribution due to u_w to f_missing as is usual in regular Bouzidi BC (ie. -6.0 * self.lattice.w * jnp.dot(self.vel, c)
             # 5) Compute rho_target = \sum(f_ibb) based on these values
             # 6) Compute feq using feq = self.equilibrium(rho_target, u_target)

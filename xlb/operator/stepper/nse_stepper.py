@@ -313,9 +313,9 @@ class IncompressibleNavierStokesStepper(Stepper):
             for l in range(self.velocity_set.q):
                 # TODO 1: fix the perf drop due to l324-l236 even in cases where this BC is not used.
                 # TODO 2: is there better way to move these lines to a function inside BC class like "restore_bc_data"
-                if _boundary_id == bc_struct.id_GradsApproximationBC:
-                    if _missing_mask[l] == wp.uint8(1):
-                        f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(f1_thread[_opp_indices[l]])
+                # if _boundary_id == bc_struct.id_GradsApproximationBC:
+                #     if _missing_mask[l] == wp.uint8(1):
+                #         f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(f1_thread[_opp_indices[l]])
                 f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
 
         # Return the correct kernel
