@@ -24,6 +24,10 @@ class MeshDistanceBoundaryMasker(Operator):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+        # Raise error if used for 2d examples:
+        if self.velocity_set.d == 2:
+            raise NotImplementedError("This Operator is not implemented in 2D!")
+
         # Also using Warp kernels for JAX implementation
         if self.compute_backend == ComputeBackend.JAX:
             self.warp_functional, self.warp_kernel = self._construct_warp()

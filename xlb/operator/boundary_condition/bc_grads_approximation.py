@@ -71,6 +71,10 @@ class GradsApproximationBC(BoundaryCondition):
         # This BC needs implicit distance to the mesh
         self.needs_mesh_distance = True
 
+        # Raise error if used for 2d examples:
+        if self.velocity_set.d == 2:
+            raise NotImplementedError("This BC is not implemented in 2D!")
+
         # if indices is not None:
         #     # this BC would be limited to stationary boundaries
         #     # assert mesh_vertices is None
@@ -192,21 +196,21 @@ class GradsApproximationBC(BoundaryCondition):
                 # If the mask is missing then take the opposite index
                 if missing_mask[l] == wp.uint8(1):
                     # The implicit distance to the boundary or "weights" have been stored in known directions of f_1
-                    # weight = f_1[_opp_indices[l], index[0], index[1], index[2]]
-                    weight = self.compute_dtype(0.5)
+                    weight = f_1[_opp_indices[l], index[0], index[1], index[2]]
+                    # weight = self.compute_dtype(0.5)
 
                     # Use differentiable interpolated BB to find f_missing:
                     f_post[l] = ((one - weight) * f_post[_opp_indices[l]] + weight * (f_pre[l] + f_pre[_opp_indices[l]])) / (one + weight)
 
-            #         # Add contribution due to moving_wall to f_missing as is usual in regular Bouzidi BC
-            #         cu = self.compute_dtype(0.0)
-            #         for d in range(_d):
-            #             if _c[d, l] == 1:
-            #                 cu += _u_wall[d]
-            #             elif _c[d, l] == -1:
-            #                 cu -= _u_wall[d]
-            #         cu *= self.compute_dtype(-6.0) * _w[l]
-            #         f_post[l] += cu
+                    # # Add contribution due to moving_wall to f_missing as is usual in regular Bouzidi BC
+                    # cu = self.compute_dtype(0.0)
+                    # for d in range(_d):
+                    #     if _c[d, l] == 1:
+                    #         cu += _u_wall[d]
+                    #     elif _c[d, l] == -1:
+                    #         cu -= _u_wall[d]
+                    # cu *= self.compute_dtype(-6.0) * _w[l]
+                    # f_post[l] += cu
 
             # Compute density, velocity using all f_post-streaming values
             rho, u = self.macroscopic.warp_functional(f_post)
@@ -301,36 +305,7 @@ class GradsApproximationBC(BoundaryCondition):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel2d(
-            f_pre: wp.array3d(dtype=Any),
-            f_post: wp.array3d(dtype=Any),
-            bc_mask: wp.array3d(dtype=wp.uint8),
-            missing_mask: wp.array3d(dtype=wp.bool),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-            timestep = 0
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
-            _f_aux = _f_vec()
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(GradsApproximationBC.id):
-                # TODO: is there any way for this BC to have a meaningful kernel given that it has two steps after both
-                # collision and streaming?
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the distribution function
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1]] = self.store_dtype(_f[l])
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
+        def kernel(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
@@ -357,7 +332,6 @@ class GradsApproximationBC(BoundaryCondition):
             for l in range(self.velocity_set.q):
                 f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
 
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
         functional = functional_method1
 
         return functional, kernel
