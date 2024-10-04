@@ -71,6 +71,12 @@ class GradsApproximationBC(BoundaryCondition):
         # This BC needs implicit distance to the mesh
         self.needs_mesh_distance = True
 
+        # If this BC is defined using indices, it would need padding in order to find missing directions
+        # when imposed on a geometry that is in the domain interior
+        if self.mesh_vertices is None:
+            assert self.indices is not None
+            self.needs_padding = True
+
         # Raise error if used for 2d examples:
         if self.velocity_set.d == 2:
             raise NotImplementedError("This BC is not implemented in 2D!")
