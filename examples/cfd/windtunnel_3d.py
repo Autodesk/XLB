@@ -179,7 +179,7 @@ class WindTunnel3D:
         save_image(fields["u_magnitude"][:, grid_size_y // 2, :], timestep=i)
 
         # Compute lift and drag
-        boundary_force = self.momentum_transfer(self.f_0, self.bc_mask, self.missing_mask)
+        boundary_force = self.momentum_transfer(self.f_0, self.f_1, self.bc_mask, self.missing_mask)
         drag = np.sqrt(boundary_force[0] ** 2 + boundary_force[1] ** 2)  # xy-plane
         lift = boundary_force[2]
         c_d = 2.0 * drag / (self.wind_speed**2 * self.car_cross_section)
