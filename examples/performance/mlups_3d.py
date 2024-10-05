@@ -81,7 +81,7 @@ def run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, num_st
     start_time = time.time()
 
     for i in range(num_steps):
-        f_1 = stepper(f_0, f_1, bc_mask, missing_mask, i)
+        f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, i)
         f_0, f_1 = f_1, f_0
     wp.synchronize()
 

@@ -23,6 +23,10 @@ class MeshBoundaryMasker(Operator):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+        # Raise error if used for 2d examples:
+        if self.velocity_set.d == 2:
+            raise NotImplementedError("This Operator is not implemented in 2D!")
+
         # Also using Warp kernels for JAX implementation
         if self.compute_backend == ComputeBackend.JAX:
             self.warp_functional, self.warp_kernel = self._construct_warp()
@@ -33,6 +37,7 @@ class MeshBoundaryMasker(Operator):
         bc,
         origin,
         spacing,
+        id_number,
         bc_mask,
         missing_mask,
         start_index=(0, 0, 0),
@@ -83,15 +88,12 @@ class MeshBoundaryMasker(Operator):
             )
 
             # evaluate if point is inside mesh
-            face_index = int(0)
-            face_u = float(0.0)
-            face_v = float(0.0)
-            sign = float(0.0)
-            if wp.mesh_query_point_sign_winding_number(mesh_id, pos, max_length, sign, face_index, face_u, face_v):
+            query = wp.mesh_query_point_sign_winding_number(mesh_id, pos, max_length)
+            if query.result:
                 # set point to be solid
-                if sign <= 0:  # TODO: fix this
+                if query.sign <= 0:  # TODO: fix this
                     # Stream indices
-                    for l in range(_q):
+                    for l in range(1, _q):
                         # Get the index of the streaming direction
                         push_index = wp.vec3i()
                         for d in range(self.velocity_set.d):
@@ -113,7 +115,7 @@ class MeshBoundaryMasker(Operator):
         missing_mask,
         start_index=(0, 0, 0),
     ):
-        assert bc.mesh_vertices is not None, f'Please provide the mesh points for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
+        assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
         assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
         assert (
             bc.mesh_vertices.shape[1] == self.velocity_set.d
@@ -123,6 +125,9 @@ class MeshBoundaryMasker(Operator):
 
         # We are done with bc.mesh_vertices. Remove them from BC objects
         bc.__dict__.pop("mesh_vertices", None)
+
+        # Ensure this masker is called only for BCs that need implicit distance to the mesh
+        assert not bc.needs_mesh_distance, 'Please use "MeshDistanceBoundaryMasker" if this BC needs mesh distance!'
 
         mesh_indices = np.arange(mesh_vertices.shape[0])
         mesh = wp.Mesh(
