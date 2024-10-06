@@ -14,7 +14,7 @@ from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
-from xlb.operator.boundary_condition import DoNothingBC as DummyBC
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.collision import ForcedCollision
 
 
@@ -39,6 +39,9 @@ class IncompressibleNavierStokesStepper(Stepper):
         self.macroscopic = Macroscopic(velocity_set, precision_policy, compute_backend)
 
         operators = [self.macroscopic, self.equilibrium, self.collision, self.stream]
+
+        self.boundary_conditions = boundary_conditions
+        self.active_bcs = set(type(bc).__name__ for bc in boundary_conditions)
 
         super().__init__(operators, boundary_conditions)
 
@@ -91,92 +94,84 @@ class IncompressibleNavierStokesStepper(Stepper):
         return f_0, f_1
 
     def _construct_warp(self):
-        # Set local constants TODO: This is a hack and should be fixed with warp update
+        # Set local constants
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
         _opp_indices = self.velocity_set.opp_indices
 
-        @wp.struct
-        class BoundaryConditionIDStruct:
-            # Note the names are hardcoded here based on various BC operator names with "id_" at the beginning
-            # One needs to manually add the names of additional BC's as they are added.
-            # TODO: Any way to improve this?
-            id_EquilibriumBC: wp.uint8
-            id_DoNothingBC: wp.uint8
-            id_HalfwayBounceBackBC: wp.uint8
-            id_FullwayBounceBackBC: wp.uint8
-            id_ZouHeBC_velocity: wp.uint8
-            id_ZouHeBC_pressure: wp.uint8
-            id_RegularizedBC_velocity: wp.uint8
-            id_RegularizedBC_pressure: wp.uint8
-            id_ExtrapolationOutflowBC: wp.uint8
-            id_GradsApproximationBC: wp.uint8
+        # Read the list of bc_to_id created upon instantiation
+        bc_to_id = boundary_condition_registry.bc_to_id
+        id_to_bc = boundary_condition_registry.id_to_bc
+
+        for bc in self.boundary_conditions:
+            bc_name = id_to_bc[bc.id]
+            setattr(self, bc_name, bc)
 
         @wp.func
         def apply_post_streaming_bc(
             index: Any,
             timestep: Any,
             _boundary_id: Any,
-            bc_struct: Any,
             missing_mask: Any,
             f_0: Any,
             f_1: Any,
             f_pre: Any,
             f_post: Any,
         ):
-            # Apply post-streaming type boundary conditions
-            # NOTE: 'f_pre' is included here as an input to the BC functionals for consistency with the BC API,
-            # particularly when compared to post-collision boundary conditions (see below).
+            f_result = f_post
 
-            if _boundary_id == bc_struct.id_EquilibriumBC:
-                # Equilibrium boundary condition
-                f_post = self.EquilibriumBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_DoNothingBC:
-                # Do nothing boundary condition
-                f_post = self.DoNothingBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_HalfwayBounceBackBC:
-                # Half way boundary condition
-                f_post = self.HalfwayBounceBackBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_ZouHeBC_velocity:
-                # Zouhe boundary condition (bc type = velocity)
-                f_post = self.ZouHeBC_velocity.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_ZouHeBC_pressure:
-                # Zouhe boundary condition (bc type = pressure)
-                f_post = self.ZouHeBC_pressure.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_RegularizedBC_velocity:
-                # Regularized boundary condition (bc type = velocity)
-                f_post = self.RegularizedBC_velocity.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_RegularizedBC_pressure:
-                # Regularized boundary condition (bc type = velocity)
-                f_post = self.RegularizedBC_pressure.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
-                # Regularized boundary condition (bc type = velocity)
-                f_post = self.ExtrapolationOutflowBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_GradsApproximationBC:
-                # Reformulated Grads boundary condition
-                f_post = self.GradsApproximationBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            return f_post
+            if wp.static("EquilibriumBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["EquilibriumBC"]):
+                    f_result = self.EquilibriumBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            if wp.static("DoNothingBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["DoNothingBC"]):
+                    f_result = self.DoNothingBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            if wp.static("HalfwayBounceBackBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["HalfwayBounceBackBC"]):
+                    f_result = self.HalfwayBounceBackBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            if wp.static("ZouHeBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["ZouHeBC"]):
+                    f_result = self.ZouHeBC_velocity.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            if wp.static("RegularizedBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["RegularizedBC"]):
+                    f_result = self.RegularizedBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            if wp.static("ExtrapolationOutflowBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["ExtrapolationOutflowBC"]):
+                    f_result = self.ExtrapolationOutflowBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            if wp.static("GradsApproximationBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["GradsApproximationBC"]):
+                    f_result = self.GradsApproximationBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            return f_result
 
         @wp.func
         def apply_post_collision_bc(
             index: Any,
             timestep: Any,
             _boundary_id: Any,
-            bc_struct: Any,
             missing_mask: Any,
             f_0: Any,
             f_1: Any,
             f_pre: Any,
             f_post: Any,
         ):
-            # Apply post-collision type boundary conditions or special boundary preparations
-            if _boundary_id == bc_struct.id_FullwayBounceBackBC:
-                # Full way boundary condition
-                f_post = self.FullwayBounceBackBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            elif _boundary_id == bc_struct.id_ExtrapolationOutflowBC:
-                # Storing post-streaming data in directions that leave the domain
-                f_post = self.ExtrapolationOutflowBC.prepare_bc_auxilary_data(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-            return f_post
+            f_result = f_post
+
+            if wp.static("FullwayBounceBackBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["FullwayBounceBackBC"]):
+                    f_result = self.FullwayBounceBackBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            if wp.static("ExtrapolationOutflowBC" in self.active_bcs):
+                if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["ExtrapolationOutflowBC"]):
+                    f_result = self.ExtrapolationOutflowBC.prepare_bc_auxilary_data(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+
+            return f_result
 
         @wp.func
         def get_thread_data_2d(
@@ -186,17 +181,17 @@ class IncompressibleNavierStokesStepper(Stepper):
             index: Any,
         ):
             # Read thread data for populations and missing mask
-            f0_thread = _f_vec()
-            f1_thread = _f_vec()
+            _f0_thread = _f_vec()
+            _f1_thread = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
-                f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1]])
-                f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1]])
+                _f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1]])
+                _f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1]])
                 if missing_mask[l, index[0], index[1]]:
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
-            return f0_thread, f1_thread, _missing_mask
+            return _f0_thread, _f1_thread, _missing_mask
 
         @wp.func
         def get_thread_data_3d(
@@ -206,19 +201,19 @@ class IncompressibleNavierStokesStepper(Stepper):
             index: Any,
         ):
             # Read thread data for populations
-            f0_thread = _f_vec()
-            f1_thread = _f_vec()
+            _f0_thread = _f_vec()
+            _f1_thread = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of pre-streaming populations
-                f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1], index[2]])
-                f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1], index[2]])
+                _f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1], index[2]])
+                _f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1], index[2]])
                 if missing_mask[l, index[0], index[1], index[2]]:
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
 
-            return f0_thread, f1_thread, _missing_mask
+            return _f0_thread, _f1_thread, _missing_mask
 
         @wp.kernel
         def kernel2d(
@@ -226,27 +221,23 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: wp.array3d(dtype=Any),
             bc_mask: wp.array3d(dtype=Any),
             missing_mask: wp.array3d(dtype=Any),
-            bc_struct: Any,
             timestep: int,
         ):
-            # Get the global index
             i, j = wp.tid()
-            index = wp.vec2i(i, j)  # TODO warp should fix this
+            index = wp.vec2i(i, j)
 
-            # Get the boundary id
             _boundary_id = bc_mask[0, index[0], index[1]]
             if _boundary_id == wp.uint8(255):
                 return
 
-            # Apply streaming (pull method)
+            # Apply streaming
             _f_post_stream = self.stream.warp_functional(f_0, index)
 
-            # Apply post-streaming type boundary conditions
-            f0_thread, f1_thread, _missing_mask = get_thread_data_2d(f_0, f_1, missing_mask, index)
-            _f_post_collision = f0_thread
-            _f_post_stream = apply_post_streaming_bc(
-                index, timestep, _boundary_id, bc_struct, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream
-            )
+            _f0_thread, _f1_thread, _missing_mask = get_thread_data_2d(f_0, f_1, missing_mask, index)
+            _f_post_collision = _f0_thread
+
+            # Apply post-streaming boundary conditions
+            _f_post_stream = apply_post_streaming_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream)
 
             # Compute rho and u
             _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
@@ -257,119 +248,62 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply collision
             _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
 
-            # Apply post-collision type boundary conditions
-            _f_post_collision = apply_post_collision_bc(
-                index, timestep, _boundary_id, bc_struct, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision
-            )
+            # Apply post-collision boundary conditions
+            _f_post_collision = apply_post_collision_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision)
 
-            # Set the output
+            # Store the result in f_1
             for l in range(self.velocity_set.q):
                 f_1[l, index[0], index[1]] = self.store_dtype(_f_post_collision[l])
 
-        # Construct the kernel
         @wp.kernel
         def kernel3d(
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
-            bc_struct: Any,
             timestep: int,
         ):
-            # Get the global index
             i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)  # TODO warp should fix this
+            index = wp.vec3i(i, j, k)
 
-            # Get the boundary id
             _boundary_id = bc_mask[0, index[0], index[1], index[2]]
             if _boundary_id == wp.uint8(255):
                 return
 
-            # Apply streaming (pull method)
+            # Apply streaming
             _f_post_stream = self.stream.warp_functional(f_0, index)
 
-            # Apply post-streaming type boundary conditions
-            f0_thread, f1_thread, _missing_mask = get_thread_data_3d(f_0, f_1, missing_mask, index)
-            _f_post_collision = f0_thread
-            _f_post_stream = apply_post_streaming_bc(
-                index, timestep, _boundary_id, bc_struct, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream
-            )
+            _f0_thread, _f1_thread, _missing_mask = get_thread_data_3d(f_0, f_1, missing_mask, index)
+            _f_post_collision = _f0_thread
 
-            # Compute rho and u
+            # Apply post-streaming boundary conditions
+            _f_post_stream = apply_post_streaming_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream)
+
             _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
-
-            # Compute equilibrium
             _feq = self.equilibrium.warp_functional(_rho, _u)
-
-            # Apply collision
             _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
 
-            # Apply post-collision type boundary conditions
-            _f_post_collision = apply_post_collision_bc(
-                index, timestep, _boundary_id, bc_struct, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision
-            )
+            # Apply post-collision boundary conditions
+            _f_post_collision = apply_post_collision_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision)
 
-            # Set the output
+            # Store the result in f_1
             for l in range(self.velocity_set.q):
-                # TODO 1: fix the perf drop due to l324-l236 even in cases where this BC is not used.
-                # TODO 2: is there better way to move these lines to a function inside BC class like "restore_bc_data"
-                # if _boundary_id == bc_struct.id_GradsApproximationBC:
-                #     if _missing_mask[l] == wp.uint8(1):
-                #         f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(f1_thread[_opp_indices[l]])
+                if wp.static("GradsApproximationBC" in self.active_bcs):
+                    if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["GradsApproximationBC"]):
+                        if _missing_mask[l] == wp.uint8(1):
+                            f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(_f1_thread[_opp_indices[l]])
                 f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
 
         # Return the correct kernel
         kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
-        return BoundaryConditionIDStruct, kernel
+        return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f_0, f_1, bc_mask, missing_mask, timestep):
-        # Get the boundary condition ids
-        from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
-
-        # Read the list of bc_to_id created upon instantiation
-        bc_to_id = boundary_condition_registry.bc_to_id
-        id_to_bc = boundary_condition_registry.id_to_bc
-        bc_struct = self.warp_functional()
-        active_bc_list = []
-        for bc in self.boundary_conditions:
-            # Setting the Struct attributes and active BC classes based on the BC class names
-            bc_name = id_to_bc[bc.id]
-            setattr(self, bc_name, bc)
-            setattr(bc_struct, "id_" + bc_name, bc_to_id[bc_name])
-            active_bc_list.append("id_" + bc_name)
-
-        # Check if boundary_conditions is an empty list (e.g. all periodic and no BC)
-        # TODO: There is a huge issue here with perf. when boundary_conditions list
-        #       is empty and is initialized with a dummy BC. If it is not empty, no perf
-        #       loss ocurrs. The following code at least prevents syntax error for periodic examples.
-        if self.boundary_conditions:
-            bc_dummy = self.boundary_conditions[0]
-        else:
-            bc_dummy = DummyBC()
-
-        # Setting the Struct attributes for inactive BC classes
-        for var in vars(bc_struct):
-            if var not in active_bc_list and not var.startswith("_"):
-                # set unassigned boundaries to the maximum integer in uint8
-                setattr(bc_struct, var, 255)
-
-                # Assing a fall-back BC for inactive BCs. This is just to ensure Warp codegen does not
-                # produce error when a particular BC is not used in an example.
-                setattr(self, var.replace("id_", ""), bc_dummy)
-
-        # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            inputs=[
-                f_0,
-                f_1,
-                bc_mask,
-                missing_mask,
-                bc_struct,
-                timestep,
-            ],
+            inputs=[f_0, f_1, bc_mask, missing_mask, timestep],
             dim=f_0.shape[1:],
         )
         return f_0, f_1
