@@ -35,6 +35,8 @@ class ZouHeBC(BoundaryCondition):
     Reynolds numbers. One needs to use "Regularized" BC at higher Reynolds.
     """
 
+
+
     def __init__(
         self,
         bc_type,
@@ -48,7 +50,6 @@ class ZouHeBC(BoundaryCondition):
         # Important Note: it is critical to add id inside __init__ for this BC because different instantiations of this BC
         # may have different types (velocity or pressure).
         assert bc_type in ["velocity", "pressure"], f"type = {bc_type} not supported! Use 'pressure' or 'velocity'."
-        self.id = boundary_condition_registry.register_boundary_condition(__class__.__name__ + "_" + bc_type)
         self.bc_type = bc_type
         self.equilibrium_operator = QuadraticEquilibrium()
         self.prescribed_value = prescribed_value
@@ -62,6 +63,9 @@ class ZouHeBC(BoundaryCondition):
             indices,
             mesh_vertices,
         )
+
+        # Overwrite the boundary condition registry id with the bc_type in the name
+        self.id = boundary_condition_registry.register_boundary_condition(self.__class__.__name__ + "_" + bc_type)
 
         # Set the prescribed value for pressure or velocity
         dim = self.velocity_set.d

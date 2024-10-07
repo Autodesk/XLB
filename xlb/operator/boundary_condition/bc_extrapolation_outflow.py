@@ -38,8 +38,6 @@ class ExtrapolationOutflowBC(BoundaryCondition):
     doi:10.1016/j.camwa.2015.05.001.
     """
 
-    id = boundary_condition_registry.register_boundary_condition(__qualname__)
-
     def __init__(
         self,
         velocity_set: VelocitySet = None,

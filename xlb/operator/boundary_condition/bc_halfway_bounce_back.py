@@ -29,8 +29,6 @@ class HalfwayBounceBackBC(BoundaryCondition):
     TODO: Implement moving boundary conditions for this
     """
 
-    id = boundary_condition_registry.register_boundary_condition(__qualname__)
-
     def __init__(
         self,
         velocity_set: VelocitySet = None,
