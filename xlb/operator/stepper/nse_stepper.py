@@ -100,14 +100,16 @@ class IncompressibleNavierStokesStepper(Stepper):
         bc_to_id = boundary_condition_registry.bc_to_id
         id_to_bc = boundary_condition_registry.id_to_bc
 
+        # Gather IDs of ExtrapolationOutflowBC boundary conditions
+        extrapolation_outflow_bc_ids = []
+        for bc_name, bc_id in bc_to_id.items():
+            if bc_name.startswith("ExtrapolationOutflowBC"):
+                extrapolation_outflow_bc_ids.append(bc_id)
+        # Group active boundary conditions
         active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
 
-        for bc in self.boundary_conditions:
-            bc_name = id_to_bc[bc.id]
-            setattr(self, bc_name, bc)
-
         @wp.func
-        def apply_post_streaming_bc(
+        def apply_bc(
             index: Any,
             timestep: Any,
             _boundary_id: Any,
@@ -116,68 +118,25 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: Any,
             f_pre: Any,
             f_post: Any,
+            is_post_streaming: bool,
         ):
             f_result = f_post
 
-            if wp.static("EquilibriumBC" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["EquilibriumBC"]):
-                    f_result = self.EquilibriumBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("DoNothingBC" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["DoNothingBC"]):
-                    f_result = self.DoNothingBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("HalfwayBounceBackBC" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["HalfwayBounceBackBC"]):
-                    f_result = self.HalfwayBounceBackBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("ZouHeBC_pressure" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["ZouHeBC_pressure"]):
-                    f_result = self.ZouHeBC_pressure.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("ZouHeBC_velocity" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["ZouHeBC_velocity"]):
-                    f_result = self.ZouHeBC_velocity.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("RegularizedBC_pressure" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["RegularizedBC_pressure"]):
-                    f_result = self.RegularizedBC_pressure.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("RegularizedBC_velocity" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["RegularizedBC_velocity"]):
-                    f_result = self.RegularizedBC_velocity.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("ExtrapolationOutflowBC" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["ExtrapolationOutflowBC"]):
-                    f_result = self.ExtrapolationOutflowBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("GradsApproximationBC" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["GradsApproximationBC"]):
-                    f_result = self.GradsApproximationBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            return f_result
-
-        @wp.func
-        def apply_post_collision_bc(
-            index: Any,
-            timestep: Any,
-            _boundary_id: Any,
-            missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
-        ):
-            f_result = f_post
-
-            if wp.static("FullwayBounceBackBC" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["FullwayBounceBackBC"]):
-                    f_result = self.FullwayBounceBackBC.warp_functional(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
-            if wp.static("ExtrapolationOutflowBC" in active_bcs):
-                if _boundary_id == wp.static(bc_to_id["ExtrapolationOutflowBC"]):
-                    f_result = self.ExtrapolationOutflowBC.prepare_bc_auxilary_data(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
-
+            # Unroll the loop over boundary conditions
+            for i in range(wp.static(len(self.boundary_conditions))):
+                if is_post_streaming:
+                    if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.STREAMING):
+                        if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                            f_result = wp.static(self.boundary_conditions[i].warp_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                else:
+                    if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.COLLISION):
+                        if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                            f_result = wp.static(self.boundary_conditions[i].warp_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                    if wp.static(self.boundary_conditions[i].id in extrapolation_outflow_bc_ids):
+                        if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                            f_result = wp.static(self.boundary_conditions[i].prepare_bc_auxilary_data)(
+                                index, timestep, missing_mask, f_0, f_1, f_pre, f_post
+                            )
             return f_result
 
         @wp.func
@@ -244,7 +203,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             _f_post_collision = _f0_thread
 
             # Apply post-streaming boundary conditions
-            _f_post_stream = apply_post_streaming_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream)
+            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
 
             # Compute rho and u
             _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
@@ -256,7 +215,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
 
             # Apply post-collision boundary conditions
-            _f_post_collision = apply_post_collision_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision)
+            _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
 
             # Store the result in f_1
             for l in range(self.velocity_set.q):
@@ -284,17 +243,18 @@ class IncompressibleNavierStokesStepper(Stepper):
             _f_post_collision = _f0_thread
 
             # Apply post-streaming boundary conditions
-            _f_post_stream = apply_post_streaming_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream)
+            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
 
             _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
             _feq = self.equilibrium.warp_functional(_rho, _u)
             _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
 
             # Apply post-collision boundary conditions
-            _f_post_collision = apply_post_collision_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision)
+            _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
 
             # Store the result in f_1
             for l in range(self.velocity_set.q):
+                # TODO: Improve this later
                 if wp.static("GradsApproximationBC" in active_bcs):
                     if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["GradsApproximationBC"]):
                         if _missing_mask[l] == wp.uint8(1):

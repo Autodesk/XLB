@@ -47,7 +47,7 @@ class GradsApproximationBC(BoundaryCondition):
         indices=None,
         mesh_vertices=None,
     ):
-            
+
         # TODO: the input velocity must be suitably stored elesewhere when mesh is moving.
         self.u = (0, 0, 0)
 

@@ -62,8 +62,6 @@ class RegularizedBC(ZouHeBC):
             mesh_vertices,
         )
         # Overwrite the boundary condition registry id with the bc_type in the name
-        self.id = boundary_condition_registry.register_boundary_condition(self.__class__.__name__ + "_" + bc_type)
-        # The operator to compute the momentum flux
         self.momentum_flux = MomentumFlux()
 
     @partial(jit, static_argnums=(0,), inline=True)

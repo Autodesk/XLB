@@ -35,7 +35,7 @@ class BoundaryCondition(Operator):
         indices=None,
         mesh_vertices=None,
     ):
-        self.id = boundary_condition_registry.register_boundary_condition(self.__class__.__name__)
+        self.id = boundary_condition_registry.register_boundary_condition(self.__class__.__name__ + "_" + str(hash(self)))
         velocity_set = velocity_set or DefaultConfig.velocity_set
         precision_policy = precision_policy or DefaultConfig.default_precision_policy
         compute_backend = compute_backend or DefaultConfig.default_backend
