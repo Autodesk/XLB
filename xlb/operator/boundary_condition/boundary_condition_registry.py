@@ -23,6 +23,7 @@ class BoundaryConditionRegistry:
         self.next_id += 1
         self.id_to_bc[_id] = boundary_condition
         self.bc_to_id[boundary_condition] = _id
+        print(f"registered bc {boundary_condition} with id {_id}")
         return _id
 
 

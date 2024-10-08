@@ -13,7 +13,7 @@ from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb import DefaultConfig
-
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
 # Enum for implementation step
 class ImplementationStep(Enum):
@@ -35,6 +35,7 @@ class BoundaryCondition(Operator):
         indices=None,
         mesh_vertices=None,
     ):
+        self.id = boundary_condition_registry.register_boundary_condition(self.__class__.__name__ + "_" + str(hash(self)))
         velocity_set = velocity_set or DefaultConfig.velocity_set
         precision_policy = precision_policy or DefaultConfig.default_precision_policy
         compute_backend = compute_backend or DefaultConfig.default_backend

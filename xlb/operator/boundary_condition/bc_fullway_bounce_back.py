@@ -27,8 +27,6 @@ class FullwayBounceBackBC(BoundaryCondition):
     Full Bounce-back boundary condition for a lattice Boltzmann method simulation.
     """
 
-    id = boundary_condition_registry.register_boundary_condition(__qualname__)
-
     def __init__(
         self,
         velocity_set: VelocitySet = None,

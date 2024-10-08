@@ -39,8 +39,6 @@ class GradsApproximationBC(BoundaryCondition):
 
     """
 
-    id = boundary_condition_registry.register_boundary_condition(__qualname__)
-
     def __init__(
         self,
         velocity_set: VelocitySet = None,
@@ -49,6 +47,7 @@ class GradsApproximationBC(BoundaryCondition):
         indices=None,
         mesh_vertices=None,
     ):
+
         # TODO: the input velocity must be suitably stored elesewhere when mesh is moving.
         self.u = (0, 0, 0)
 
