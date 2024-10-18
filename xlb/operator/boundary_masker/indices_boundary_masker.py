@@ -93,10 +93,16 @@ class IndicesBoundaryMasker(Operator):
             bc_mask = bc_mask.at[0].set(bmap[pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z])
         return bc_mask, missing_mask
 
+
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.c
         _q = wp.constant(self.velocity_set.q)
+
+        @wp.func
+        def check_index_bounds(index: wp.vec3i, shape: wp.vec3i):
+            is_in_bounds = index[0] >= 0 and index[0] < shape[0] and index[1] >= 0 and index[1] < shape[1] and index[2] >= 0 and index[2] < shape[2]
+            return is_in_bounds
 
         # Construct the warp 3D kernel
         @wp.kernel
@@ -118,14 +124,8 @@ class IndicesBoundaryMasker(Operator):
             index[2] = indices[2, ii] - start_index[2]
 
             # Check if index is in bounds
-            if (
-                index[0] >= 0
-                and index[0] < missing_mask.shape[1]
-                and index[1] >= 0
-                and index[1] < missing_mask.shape[2]
-                and index[2] >= 0
-                and index[2] < missing_mask.shape[3]
-            ):
+            shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
+            if check_index_bounds(index, shape):
                 # Stream indices
                 for l in range(_q):
                     # Get the index of the streaming direction
@@ -140,27 +140,12 @@ class IndicesBoundaryMasker(Operator):
 
                     # check if pull index is out of bound
                     # These directions will have missing information after streaming
-                    if (
-                        pull_index[0] < 0
-                        or pull_index[0] >= missing_mask.shape[1]
-                        or pull_index[1] < 0
-                        or pull_index[1] >= missing_mask.shape[2]
-                        or pull_index[2] < 0
-                        or pull_index[2] >= missing_mask.shape[3]
-                    ):
+                    if not check_index_bounds(pull_index, shape):
                         # Set the missing mask
                         missing_mask[l, index[0], index[1], index[2]] = True
 
                     # handling geometries in the interior of the computational domain
-                    elif (
-                        is_interior[ii]
-                        and push_index[0] >= 0
-                        and push_index[0] < missing_mask.shape[1]
-                        and push_index[1] >= 0
-                        and push_index[1] < missing_mask.shape[2]
-                        and push_index[2] >= 0
-                        and push_index[2] < missing_mask.shape[3]
-                    ):
+                    elif check_index_bounds(pull_index, shape) and is_interior[ii]:
                         # Set the missing mask
                         missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
                         bc_mask[0, push_index[0], push_index[1], push_index[2]] = id_number[ii]

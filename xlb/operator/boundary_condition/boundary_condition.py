@@ -15,6 +15,7 @@ from xlb.operator.operator import Operator
 from xlb import DefaultConfig
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 
+
 # Enum for implementation step
 class ImplementationStep(Enum):
     COLLISION = auto()

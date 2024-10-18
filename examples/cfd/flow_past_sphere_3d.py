@@ -1,7 +1,7 @@
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq
+from xlb.helper import create_nse_fields, initialize_eq, check_bc_overlaps
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
@@ -48,15 +48,12 @@ class FlowOverSphere:
         self.setup_stepper(omega)
 
     def define_boundary_indices(self):
-        inlet = self.grid.boundingBoxIndices["left"]
-        outlet = self.grid.boundingBoxIndices["right"]
-        walls = [
-            self.grid.boundingBoxIndices["bottom"][i]
-            + self.grid.boundingBoxIndices["top"][i]
-            + self.grid.boundingBoxIndices["front"][i]
-            + self.grid.boundingBoxIndices["back"][i]
-            for i in range(self.velocity_set.d)
-        ]
+        box = self.grid.bounding_box_indices()
+        box_no_edge = self.grid.bounding_box_indices(remove_edges=True)
+        inlet = box_no_edge["left"]
+        outlet = box_no_edge["right"]
+        walls = [box["bottom"][i] + box["top"][i] + box["front"][i] + box["back"][i] for i in range(self.velocity_set.d)]
+        walls = np.unique(np.array(walls), axis=-1).tolist()
 
         sphere_radius = self.grid_shape[1] // 12
         x = np.arange(self.grid_shape[0])
@@ -79,13 +76,12 @@ class FlowOverSphere:
         # bc_outlet = DoNothingBC(indices=outlet)
         bc_outlet = ExtrapolationOutflowBC(indices=outlet)
         bc_sphere = HalfwayBounceBackBC(indices=sphere)
-
-        self.boundary_conditions = [bc_left, bc_outlet, bc_sphere, bc_walls]
-        # Note: it is important to add bc_walls to be after bc_outlet/bc_inlet because
-        # of the corner nodes. This way the corners are treated as wall and not inlet/outlet.
-        # TODO: how to ensure about this behind in the src code?
+        self.boundary_conditions = [bc_walls, bc_left, bc_outlet, bc_sphere]
 
     def setup_boundary_masker(self):
+        # check boundary condition list for duplicate indices before creating bc mask
+        check_bc_overlaps(self.boundary_conditions, self.velocity_set.d, self.backend)
+
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,

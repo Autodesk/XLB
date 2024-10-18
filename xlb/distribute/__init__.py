@@ -1,1 +1,1 @@
-from .distribute import distribute as distribute
+from .distribute import distribute

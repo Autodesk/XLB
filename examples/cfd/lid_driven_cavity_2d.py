@@ -1,15 +1,16 @@
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq
+from xlb.helper import create_nse_fields, initialize_eq, check_bc_overlaps
 from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import HalfwayBounceBackBC, EquilibriumBC
 from xlb.operator.macroscopic import Macroscopic
 from xlb.utils import save_fields_vtk, save_image
+import xlb.velocity_set
 import warp as wp
 import jax.numpy as jnp
-import xlb.velocity_set
+import numpy as np
 
 
 class LidDrivenCavity2D:
@@ -39,20 +40,22 @@ class LidDrivenCavity2D:
         self.setup_stepper(omega)
 
     def define_boundary_indices(self):
-        lid = self.grid.boundingBoxIndices["top"]
-        walls = [
-            self.grid.boundingBoxIndices["bottom"][i] + self.grid.boundingBoxIndices["left"][i] + self.grid.boundingBoxIndices["right"][i]
-            for i in range(self.velocity_set.d)
-        ]
+        box = self.grid.bounding_box_indices()
+        box_no_edge = self.grid.bounding_box_indices(remove_edges=True)
+        lid = box_no_edge["top"]
+        walls = [box["bottom"][i] + box["left"][i] + box["right"][i] for i in range(self.velocity_set.d)]
+        walls = np.unique(np.array(walls), axis=-1).tolist()
         return lid, walls
 
     def setup_boundary_conditions(self):
         lid, walls = self.define_boundary_indices()
         bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0), indices=lid)
         bc_walls = HalfwayBounceBackBC(indices=walls)
-        self.boundary_conditions = [bc_top, bc_walls]
+        self.boundary_conditions = [bc_walls, bc_top]
 
     def setup_boundary_masker(self):
+        # check boundary condition list for duplicate indices before creating bc mask
+        check_bc_overlaps(self.boundary_conditions, self.velocity_set.d, self.backend)
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,

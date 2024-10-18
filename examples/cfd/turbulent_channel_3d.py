@@ -77,8 +77,8 @@ class TurbulentChannel3D:
 
     def define_boundary_indices(self):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
-        boundingBoxIndices = self.grid.bounding_box_indices(remove_edges=True)
-        walls = [boundingBoxIndices["bottom"][i] + boundingBoxIndices["top"][i] for i in range(self.velocity_set.d)]
+        box = self.grid.bounding_box_indices(remove_edges=True)
+        walls = [box["bottom"][i] + box["top"][i] for i in range(self.velocity_set.d)]
         return walls
 
     def setup_boundary_conditions(self):

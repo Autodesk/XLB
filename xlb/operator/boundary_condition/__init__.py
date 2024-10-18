@@ -1,12 +1,10 @@
-from xlb.operator.boundary_condition.boundary_condition import BoundaryCondition as BoundaryCondition
-from xlb.operator.boundary_condition.boundary_condition_registry import (
-    BoundaryConditionRegistry as BoundaryConditionRegistry,
-)
-from xlb.operator.boundary_condition.bc_equilibrium import EquilibriumBC as EquilibriumBC
-from xlb.operator.boundary_condition.bc_do_nothing import DoNothingBC as DoNothingBC
-from xlb.operator.boundary_condition.bc_halfway_bounce_back import HalfwayBounceBackBC as HalfwayBounceBackBC
-from xlb.operator.boundary_condition.bc_fullway_bounce_back import FullwayBounceBackBC as FullwayBounceBackBC
-from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC as ZouHeBC
-from xlb.operator.boundary_condition.bc_regularized import RegularizedBC as RegularizedBC
-from xlb.operator.boundary_condition.bc_extrapolation_outflow import ExtrapolationOutflowBC as ExtrapolationOutflowBC
-from xlb.operator.boundary_condition.bc_grads_approximation import GradsApproximationBC as GradsApproximationBC
+from xlb.operator.boundary_condition.boundary_condition import BoundaryCondition
+from xlb.operator.boundary_condition.boundary_condition_registry import BoundaryConditionRegistry
+from xlb.operator.boundary_condition.bc_equilibrium import EquilibriumBC
+from xlb.operator.boundary_condition.bc_do_nothing import DoNothingBC
+from xlb.operator.boundary_condition.bc_halfway_bounce_back import HalfwayBounceBackBC
+from xlb.operator.boundary_condition.bc_fullway_bounce_back import FullwayBounceBackBC
+from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC
+from xlb.operator.boundary_condition.bc_regularized import RegularizedBC
+from xlb.operator.boundary_condition.bc_extrapolation_outflow import ExtrapolationOutflowBC
+from xlb.operator.boundary_condition.bc_grads_approximation import GradsApproximationBC

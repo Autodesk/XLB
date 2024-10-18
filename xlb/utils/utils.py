@@ -44,7 +44,7 @@ def downsample_field(field, factor, method="bicubic"):
         return jnp.stack(downsampled_components, axis=-1)
 
 
-def save_image(fld, timestep, prefix=None):
+def save_image(fld, timestep=None, prefix=None, **kwargs):
     """
     Save an image of a field at a given timestep.
 
@@ -74,7 +74,8 @@ def save_image(fld, timestep, prefix=None):
     else:
         fname = prefix
 
-    fname = fname + "_" + str(timestep).zfill(4)
+    if timestep is not None:
+        fname = fname + "_" + str(timestep).zfill(4)
 
     if len(fld.shape) > 3:
         raise ValueError("The input field should be 2D!")
@@ -82,7 +83,8 @@ def save_image(fld, timestep, prefix=None):
         fld = np.sqrt(fld[0, ...] ** 2 + fld[0, ...] ** 2)
 
     plt.clf()
-    plt.imsave(fname + ".png", fld.T, cmap=cm.nipy_spectral, origin="lower")
+    kwargs.pop("cmap", None)
+    plt.imsave(fname + ".png", fld.T, cmap=cm.nipy_spectral, origin="lower", **kwargs)
 
 
 def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):

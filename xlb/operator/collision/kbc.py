@@ -178,7 +178,7 @@ class KBC(Collision):
 
     def _construct_warp(self):
         # Raise error if velocity set is not supported
-        if not isinstance(self.velocity_set, D3Q27):
+        if not (isinstance(self.velocity_set, D3Q27) or isinstance(self.velocity_set, D2Q9)):
             raise NotImplementedError("Velocity set not supported for warp backend: {}".format(type(self.velocity_set)))
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
@@ -192,7 +192,7 @@ class KBC(Collision):
         def decompose_shear_d2q9(fneq: Any):
             pi = self.momentum_flux.warp_functional(fneq)
             N = pi[0] - pi[1]
-            s = wp.vec9(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+            s = _f_vec()
             s[3] = N
             s[6] = N
             s[2] = -N
