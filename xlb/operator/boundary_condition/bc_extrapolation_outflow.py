@@ -140,15 +140,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         _opp_indices = self.velocity_set.opp_indices
 
         @wp.func
-        def get_normal_vectors_2d(
-            missing_mask: Any,
-        ):
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
-                    return -wp.vec2i(_c[0, l], _c[1, l])
-
-        @wp.func
-        def get_normal_vectors_3d(
+        def get_normal_vectors(
             missing_mask: Any,
         ):
             for l in range(_q):
@@ -175,7 +167,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return _f
 
         @wp.func
-        def prepare_bc_auxilary_data_2d(
+        def prepare_bc_auxilary_data(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -188,34 +180,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             # f_pre (post-streaming values of the current voxel). We use directions that leave the domain
             # for storing this prepared data.
             _f = f_post
-            nv = get_normal_vectors_2d(missing_mask)
-            for l in range(self.velocity_set.q):
-                if missing_mask[l] == wp.uint8(1):
-                    # f_0 is the post-collision values of the current time-step
-                    # Get pull index associated with the "neighbours" pull_index
-                    pull_index = type(index)()
-                    for d in range(self.velocity_set.d):
-                        pull_index[d] = index[d] - (_c[d, l] + nv[d])
-                    # The following is the post-streaming values of the neighbor cell
-                    f_aux = self.compute_dtype(f_0[l, pull_index[0], pull_index[1]])
-                    _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux
-            return _f
-
-        @wp.func
-        def prepare_bc_auxilary_data_3d(
-            index: Any,
-            timestep: Any,
-            missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
-        ):
-            # Preparing the formulation for this BC using the neighbour's populations stored in f_aux and
-            # f_pre (post-streaming values of the current voxel). We use directions that leave the domain
-            # for storing this prepared data.
-            _f = f_post
-            nv = get_normal_vectors_3d(missing_mask)
+            nv = get_normal_vectors(missing_mask)
             for l in range(self.velocity_set.q):
                 if missing_mask[l] == wp.uint8(1):
                     # f_0 is the post-collision values of the current time-step
@@ -228,82 +193,4 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                     _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux
             return _f
 
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel2d(
-            f_pre: wp.array3d(dtype=Any),
-            f_post: wp.array3d(dtype=Any),
-            bc_mask: wp.array3d(dtype=wp.uint8),
-            missing_mask: wp.array3d(dtype=wp.bool),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-            timestep = 0
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
-
-            # special preparation of auxiliary data
-            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                _f_pre = prepare_bc_auxilary_data_2d(index, timestep, missing_mask, f_pre, f_post, f_pre, f_post)
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                # TODO: is there any way for this BC to have a meaningful kernel given that it has two steps after both
-                # collision and streaming?
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the distribution function
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1]] = self.store_dtype(_f[l])
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
-            f_pre: wp.array4d(dtype=Any),
-            f_post: wp.array4d(dtype=Any),
-            bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
-        ):
-            # Get the global index
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)
-            timestep = 0
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
-            _f_aux = _f_vec()
-
-            # special preparation of auxiliary data
-            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                _f_pre = prepare_bc_auxilary_data_3d(index, timestep, missing_mask, f_pre, f_post, f_pre, f_post)
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(ExtrapolationOutflowBC.id):
-                # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
-                # collision and streaming?
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the distribution function
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
-        prepare_bc_auxilary_data = prepare_bc_auxilary_data_3d if self.velocity_set.d == 3 else prepare_bc_auxilary_data_2d
-
-        return (functional, prepare_bc_auxilary_data), kernel
-
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
-        # Launch the warp kernel
-        wp.launch(
-            self.warp_kernel,
-            inputs=[f_pre, f_post, bc_mask, missing_mask],
-            dim=f_pre.shape[1:],
-        )
-        return f_post
+        return (functional, prepare_bc_auxilary_data), None

@@ -36,34 +36,7 @@ class BGK(Collision):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel2d(
-            f: wp.array3d(dtype=Any),
-            feq: wp.array3d(dtype=Any),
-            fout: wp.array3d(dtype=Any),
-            rho: wp.array3d(dtype=Any),
-            u: wp.array3d(dtype=Any),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            # Load needed values
-            _f = _f_vec()
-            _feq = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1]]
-                _feq[l] = feq[l, index[0], index[1]]
-
-            # Compute the collision
-            _fout = functional(_f, _feq, rho, u)
-
-            # Write the result
-            for l in range(self.velocity_set.q):
-                fout[l, index[0], index[1]] = self.store_dtype(_fout[l])
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
+        def kernel(
             f: wp.array4d(dtype=Any),
             feq: wp.array4d(dtype=Any),
             fout: wp.array4d(dtype=Any),
@@ -87,8 +60,6 @@ class BGK(Collision):
             # Write the result
             for l in range(self.velocity_set.q):
                 fout[l, index[0], index[1], index[2]] = self.store_dtype(_fout[l])
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 

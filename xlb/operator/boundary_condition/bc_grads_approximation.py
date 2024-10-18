@@ -308,45 +308,6 @@ class GradsApproximationBC(BoundaryCondition):
             f_post = grads_approximate_fpop(missing_mask, rho_target, u_target, f_post)
             return f_post
 
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel(
-            f_pre: wp.array4d(dtype=Any),
-            f_post: wp.array4d(dtype=Any),
-            bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
-        ):
-            # Get the global index
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)
-            timestep = 0
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
-            _f_aux = _f_vec()
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(GradsApproximationBC.id):
-                # TODO: is there any way for this BC to have a meaninful kernel given that it has two steps after both
-                # collision and streaming?
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the distribution function
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
-
         functional = functional_method1
 
-        return functional, kernel
-
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
-        # Launch the warp kernel
-        wp.launch(
-            self.warp_kernel,
-            inputs=[f_pre, f_post, bc_mask, missing_mask],
-            dim=f_pre.shape[1:],
-        )
-        return f_post
+        return functional, None

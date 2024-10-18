@@ -61,7 +61,7 @@ def test_stream_operator_warp(dim, velocity_set, grid_shape):
     expected = jnp.stack(expected, axis=0)
 
     if dim == 2:
-        f_initial_warp = wp.array(f_initial)
+        f_initial_warp = wp.array(f_initial[..., np.newaxis])
 
     elif dim == 3:
         f_initial_warp = wp.array(f_initial)
@@ -71,7 +71,10 @@ def test_stream_operator_warp(dim, velocity_set, grid_shape):
     f_streamed = my_grid_warp.create_field(cardinality=velocity_set.q)
     f_streamed = stream_op(f_initial_warp, f_streamed)
 
-    assert jnp.allclose(f_streamed.numpy(), np.array(expected)), "Streaming did not occur as expected"
+    if len(grid_shape) == 2:
+        assert jnp.allclose(f_streamed.numpy()[..., 0], np.array(expected)), "Streaming did not occur as expected"
+    else:
+        assert jnp.allclose(f_streamed.numpy(), np.array(expected)), "Streaming did not occur as expected"
 
 
 if __name__ == "__main__":

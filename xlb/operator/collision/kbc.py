@@ -263,30 +263,7 @@ class KBC(Collision):
 
         # Construct the functional
         @wp.func
-        def functional2d(
-            f: Any,
-            feq: Any,
-            rho: Any,
-            u: Any,
-        ):
-            # Compute shear and delta_s
-            fneq = f - feq
-            shear = decompose_shear_d2q9(fneq)
-            delta_s = shear * rho  # TODO: Check this
-
-            # Perform collision
-            delta_h = fneq - delta_s
-            two = self.compute_dtype(2.0)
-            gamma = _inv_beta - (two - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
-                _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
-            )
-            fout = f - _beta * (two * delta_s + gamma * delta_h)
-
-            return fout
-
-        # Construct the functional
-        @wp.func
-        def functional3d(
+        def functional(
             f: Any,
             feq: Any,
             rho: Any,
@@ -309,39 +286,7 @@ class KBC(Collision):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel2d(
-            f: wp.array3d(dtype=Any),
-            feq: wp.array3d(dtype=Any),
-            fout: wp.array3d(dtype=Any),
-            rho: wp.array3d(dtype=Any),
-            u: wp.array3d(dtype=Any),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)  # TODO: Warp needs to fix this
-
-            # Load needed values
-            _f = _f_vec()
-            _feq = _f_vec()
-            _d = self.velocity_set.d
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1]]
-                _feq[l] = feq[l, index[0], index[1]]
-            _u = _u_vec()
-            for l in range(_d):
-                _u[l] = u[l, index[0], index[1]]
-            _rho = rho[0, index[0], index[1]]
-
-            # Compute the collision
-            _fout = functional(_f, _feq, _rho, _u)
-
-            # Write the result
-            for l in range(self.velocity_set.q):
-                fout[l, index[0], index[1]] = self.store_dtype(_fout[l])
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
+        def kernel(
             f: wp.array4d(dtype=Any),
             feq: wp.array4d(dtype=Any),
             fout: wp.array4d(dtype=Any),
@@ -370,9 +315,6 @@ class KBC(Collision):
             # Write the result
             for l in range(self.velocity_set.q):
                 fout[l, index[0], index[1], index[2]] = self.store_dtype(_fout[l])
-
-        functional = functional3d if self.velocity_set.d == 3 else functional2d
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 

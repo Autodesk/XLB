@@ -140,27 +140,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             return f_result
 
         @wp.func
-        def get_thread_data_2d(
-            f0_buffer: wp.array3d(dtype=Any),
-            f1_buffer: wp.array3d(dtype=Any),
-            missing_mask: wp.array3d(dtype=Any),
-            index: Any,
-        ):
-            # Read thread data for populations and missing mask
-            _f0_thread = _f_vec()
-            _f1_thread = _f_vec()
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                _f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1]])
-                _f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1]])
-                if missing_mask[l, index[0], index[1]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
-            return _f0_thread, _f1_thread, _missing_mask
-
-        @wp.func
-        def get_thread_data_3d(
+        def get_thread_data(
             f0_buffer: wp.array4d(dtype=Any),
             f1_buffer: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
@@ -182,47 +162,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             return _f0_thread, _f1_thread, _missing_mask
 
         @wp.kernel
-        def kernel2d(
-            f_0: wp.array3d(dtype=Any),
-            f_1: wp.array3d(dtype=Any),
-            bc_mask: wp.array3d(dtype=Any),
-            missing_mask: wp.array3d(dtype=Any),
-            timestep: int,
-        ):
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            _boundary_id = bc_mask[0, index[0], index[1]]
-            if _boundary_id == wp.uint8(255):
-                return
-
-            # Apply streaming
-            _f_post_stream = self.stream.warp_functional(f_0, index)
-
-            _f0_thread, _f1_thread, _missing_mask = get_thread_data_2d(f_0, f_1, missing_mask, index)
-            _f_post_collision = _f0_thread
-
-            # Apply post-streaming boundary conditions
-            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
-
-            # Compute rho and u
-            _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
-
-            # Compute equilibrium
-            _feq = self.equilibrium.warp_functional(_rho, _u)
-
-            # Apply collision
-            _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
-
-            # Apply post-collision boundary conditions
-            _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
-
-            # Store the result in f_1
-            for l in range(self.velocity_set.q):
-                f_1[l, index[0], index[1]] = self.store_dtype(_f_post_collision[l])
-
-        @wp.kernel
-        def kernel3d(
+        def kernel(
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=Any),
@@ -239,7 +179,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply streaming
             _f_post_stream = self.stream.warp_functional(f_0, index)
 
-            _f0_thread, _f1_thread, _missing_mask = get_thread_data_3d(f_0, f_1, missing_mask, index)
+            _f0_thread, _f1_thread, _missing_mask = get_thread_data(f_0, f_1, missing_mask, index)
             _f_post_collision = _f0_thread
 
             # Apply post-streaming boundary conditions
@@ -260,9 +200,6 @@ class IncompressibleNavierStokesStepper(Stepper):
                         if _missing_mask[l] == wp.uint8(1):
                             f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(_f1_thread[_opp_indices[l]])
                 f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
-
-        # Return the correct kernel
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return None, kernel
 

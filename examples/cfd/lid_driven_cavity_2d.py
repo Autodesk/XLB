@@ -77,7 +77,8 @@ class LidDrivenCavity2D:
     def post_process(self, i):
         # Write the results. We'll use JAX backend for the post-processing
         if not isinstance(self.f_0, jnp.ndarray):
-            f_0 = wp.to_jax(self.f_0)
+            # If the backend is warp, we need to drop the last dimension added by warp for 2D simulations
+            f_0 = wp.to_jax(self.f_0)[..., 0]
         else:
             f_0 = self.f_0
 
