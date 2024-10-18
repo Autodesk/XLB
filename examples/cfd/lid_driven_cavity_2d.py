@@ -41,8 +41,8 @@ class LidDrivenCavity2D:
 
     def define_boundary_indices(self):
         box = self.grid.bounding_box_indices()
-        box_noedge = self.grid.bounding_box_indices(remove_edges=True)
-        lid = box_noedge["top"]
+        box_no_edge = self.grid.bounding_box_indices(remove_edges=True)
+        lid = box_no_edge["top"]
         walls = [box["bottom"][i] + box["left"][i] + box["right"][i] for i in range(self.velocity_set.d)]
         walls = np.unique(np.array(walls), axis=-1).tolist()
         return lid, walls

@@ -68,9 +68,9 @@ class WindTunnel3D:
 
     def define_boundary_indices(self):
         box = self.grid.bounding_box_indices()
-        box_noedge = self.grid.bounding_box_indices(remove_edges=True)
-        inlet = box_noedge["left"]
-        outlet = box_noedge["right"]
+        box_no_edge = self.grid.bounding_box_indices(remove_edges=True)
+        inlet = box_no_edge["left"]
+        outlet = box_no_edge["right"]
         walls = [box["bottom"][i] + box["top"][i] + box["front"][i] + box["back"][i] for i in range(self.velocity_set.d)]
         walls = np.unique(np.array(walls), axis=-1).tolist()
 

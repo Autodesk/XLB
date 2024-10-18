@@ -49,9 +49,9 @@ class FlowOverSphere:
 
     def define_boundary_indices(self):
         box = self.grid.bounding_box_indices()
-        box_noedge = self.grid.bounding_box_indices(remove_edges=True)
-        inlet = box_noedge["left"]
-        outlet = box_noedge["right"]
+        box_no_edge = self.grid.bounding_box_indices(remove_edges=True)
+        inlet = box_no_edge["left"]
+        outlet = box_no_edge["right"]
         walls = [box["bottom"][i] + box["top"][i] + box["front"][i] + box["back"][i] for i in range(self.velocity_set.d)]
         walls = np.unique(np.array(walls), axis=-1).tolist()
 
@@ -101,8 +101,6 @@ class FlowOverSphere:
             self.f_0, self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
-            if i == 0:
-                self.check_boundary_mask()
             if i % post_process_interval == 0 or i == num_steps - 1:
                 self.post_process(i)
                 end_time = time.time()
@@ -132,23 +130,6 @@ class FlowOverSphere:
 
         # save_fields_vtk(fields, timestep=i)
         save_image(fields["u_magnitude"][:, self.grid_shape[1] // 2, :], timestep=i)
-        return
-
-    def check_boundary_mask(self):
-        # Write the results. We'll use JAX backend for the post-processing
-        if not isinstance(self.f_0, jnp.ndarray):
-            bmask = wp.to_jax(self.bc_mask)[0]
-        else:
-            bmask = self.bc_mask[0]
-
-        # save_fields_vtk(fields, timestep=i)
-        save_image(bmask[0, :, :], prefix="00_left")
-        save_image(bmask[self.grid_shape[0] - 1, :, :], prefix="00_right")
-        save_image(bmask[:, :, self.grid_shape[2] - 1], prefix="00_top")
-        save_image(bmask[:, :, 0], prefix="00_bottom")
-        save_image(bmask[:, 0, :], prefix="00_front")
-        save_image(bmask[:, self.grid_shape[1] - 1, :], prefix="00_back")
-        save_image(bmask[:, self.grid_shape[1] // 2, :], prefix="00_middle")
 
 
 if __name__ == "__main__":
