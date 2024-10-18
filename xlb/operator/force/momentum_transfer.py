@@ -102,62 +102,7 @@ class MomentumTransfer(Operator):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel2d(
-            f_0: wp.array3d(dtype=Any),
-            f_1: wp.array3d(dtype=Any),
-            bc_mask: wp.array3d(dtype=wp.uint8),
-            missing_mask: wp.array3d(dtype=wp.bool),
-            force: wp.array(dtype=Any),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            # Get the boundary id
-            _boundary_id = bc_mask[0, index[0], index[1]]
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                # TODO fix vec bool
-                if missing_mask[l, index[0], index[1]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
-
-            # Determin if boundary is an edge by checking if center is missing
-            is_edge = wp.bool(False)
-            if _boundary_id == wp.uint8(_no_slip_id):
-                if _missing_mask[_zero_index] == wp.uint8(0):
-                    is_edge = wp.bool(True)
-
-            # If the boundary is an edge then add the momentum transfer
-            m = _u_vec()
-            if is_edge:
-                # Get the distribution function
-                f_post_collision = _f_vec()
-                for l in range(self.velocity_set.q):
-                    f_post_collision[l] = f_0[l, index[0], index[1]]
-
-                # Apply streaming (pull method)
-                timestep = 0
-                f_post_stream = self.stream.warp_functional(f_0, index)
-                f_post_stream = self.no_slip_bc_instance.warp_functional(index, timestep, _missing_mask, f_0, f_1, f_post_collision, f_post_stream)
-
-                # Compute the momentum transfer
-                for d in range(self.velocity_set.d):
-                    m[d] = self.compute_dtype(0.0)
-                    for l in range(self.velocity_set.q):
-                        if _missing_mask[l] == wp.uint8(1):
-                            phi = f_post_collision[_opp_indices[l]] + f_post_stream[l]
-                            if _c[d, _opp_indices[l]] == 1:
-                                m[d] += phi
-                            elif _c[d, _opp_indices[l]] == -1:
-                                m[d] -= phi
-
-            wp.atomic_add(force, 0, m)
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
+        def kernel(
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
@@ -209,9 +154,6 @@ class MomentumTransfer(Operator):
                                 m[d] -= phi
 
             wp.atomic_add(force, 0, m)
-
-        # Return the correct kernel
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return None, kernel
 

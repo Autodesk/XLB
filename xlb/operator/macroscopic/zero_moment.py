@@ -27,7 +27,7 @@ class ZeroMoment(Operator):
             return rho
 
         @wp.kernel
-        def kernel3d(
+        def kernel(
             f: wp.array4d(dtype=Any),
             rho: wp.array4d(dtype=Any),
         ):
@@ -40,23 +40,6 @@ class ZeroMoment(Operator):
             _rho = functional(_f)
 
             rho[0, index[0], index[1], index[2]] = _rho
-
-        @wp.kernel
-        def kernel2d(
-            f: wp.array3d(dtype=Any),
-            rho: wp.array3d(dtype=Any),
-        ):
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            _f = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1]]
-            _rho = functional(_f)
-
-            rho[0, index[0], index[1]] = _rho
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 

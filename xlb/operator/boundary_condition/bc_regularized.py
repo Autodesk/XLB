@@ -159,15 +159,7 @@ class RegularizedBC(ZouHeBC):
             return fsum_known + fsum_middle
 
         @wp.func
-        def get_normal_vectors_2d(
-            missing_mask: Any,
-        ):
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
-                    return -_u_vec(_c_float[0, l], _c_float[1, l])
-
-        @wp.func
-        def get_normal_vectors_3d(
+        def get_normal_vectors(
             missing_mask: Any,
         ):
             for l in range(_q):
@@ -211,7 +203,7 @@ class RegularizedBC(ZouHeBC):
             return fpop
 
         @wp.func
-        def functional3d_velocity(
+        def functional_velocity(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -224,7 +216,7 @@ class RegularizedBC(ZouHeBC):
             _f = f_post
 
             # Find normal vector
-            normals = get_normal_vectors_3d(missing_mask)
+            normals = get_normal_vectors(missing_mask)
 
             # calculate rho
             fsum = _get_fsum(_f, missing_mask)
@@ -242,7 +234,7 @@ class RegularizedBC(ZouHeBC):
             return _f
 
         @wp.func
-        def functional3d_pressure(
+        def functional_pressure(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -255,7 +247,7 @@ class RegularizedBC(ZouHeBC):
             _f = f_post
 
             # Find normal vector
-            normals = get_normal_vectors_3d(missing_mask)
+            normals = get_normal_vectors(missing_mask)
 
             # calculate velocity
             fsum = _get_fsum(_f, missing_mask)
@@ -270,136 +262,8 @@ class RegularizedBC(ZouHeBC):
             _f = regularize_fpop(_f, feq)
             return _f
 
-        @wp.func
-        def functional2d_velocity(
-            index: Any,
-            timestep: Any,
-            missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
-        ):
-            # Post-streaming values are only modified at missing direction
-            _f = f_post
-
-            # Find normal vector
-            normals = get_normal_vectors_2d(missing_mask)
-
-            # calculate rho
-            fsum = _get_fsum(_f, missing_mask)
-            unormal = self.compute_dtype(0.0)
-            for d in range(_d):
-                unormal += _u[d] * normals[d]
-            _rho = fsum / (self.compute_dtype(1.0) + unormal)
-
-            # impose non-equilibrium bounceback
-            feq = self.equilibrium_operator.warp_functional(_rho, _u)
-            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
-
-            # Regularize the boundary fpop
-            _f = regularize_fpop(_f, feq)
-            return _f
-
-        @wp.func
-        def functional2d_pressure(
-            index: Any,
-            timestep: Any,
-            missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
-        ):
-            # Post-streaming values are only modified at missing direction
-            _f = f_post
-
-            # Find normal vector
-            normals = get_normal_vectors_2d(missing_mask)
-
-            # calculate velocity
-            fsum = _get_fsum(_f, missing_mask)
-            unormal = -self.compute_dtype(1.0) + fsum / _rho
-            _u = unormal * normals
-
-            # impose non-equilibrium bounceback
-            feq = self.equilibrium_operator.warp_functional(_rho, _u)
-            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
-
-            # Regularize the boundary fpop
-            _f = regularize_fpop(_f, feq)
-            return _f
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel2d(
-            f_pre: wp.array3d(dtype=Any),
-            f_post: wp.array3d(dtype=Any),
-            bc_mask: wp.array3d(dtype=wp.uint8),
-            missing_mask: wp.array3d(dtype=wp.bool),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(self.id):
-                timestep = 0
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the distribution function
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1]] = self.store_dtype(_f[l])
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
-            f_pre: wp.array4d(dtype=Any),
-            f_post: wp.array4d(dtype=Any),
-            bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
-        ):
-            # Get the global index
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(self.id):
-                timestep = 0
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the distribution function
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
-        if self.velocity_set.d == 3 and self.bc_type == "velocity":
-            functional = functional3d_velocity
-        elif self.velocity_set.d == 3 and self.bc_type == "pressure":
-            functional = functional3d_pressure
-        elif self.bc_type == "velocity":
-            functional = functional2d_velocity
-        else:
-            functional = functional2d_pressure
-
-        return functional, kernel
-
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
-        # Launch the warp kernel
-        wp.launch(
-            self.warp_kernel,
-            inputs=[f_pre, f_post, bc_mask, missing_mask],
-            dim=f_pre.shape[1:],
-        )
-        return f_post
+        if self.bc_type == "velocity":
+            functional = functional_velocity
+        elif self.bc_type == "pressure":
+            functional = functional_pressure
+        return functional, None

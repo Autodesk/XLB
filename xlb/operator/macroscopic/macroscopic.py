@@ -37,7 +37,7 @@ class Macroscopic(Operator):
             return rho, u
 
         @wp.kernel
-        def kernel3d(
+        def kernel(
             f: wp.array4d(dtype=Any),
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
@@ -53,26 +53,6 @@ class Macroscopic(Operator):
             rho[0, index[0], index[1], index[2]] = self.store_dtype(_rho)
             for d in range(self.velocity_set.d):
                 u[d, index[0], index[1], index[2]] = self.store_dtype(_u[d])
-
-        @wp.kernel
-        def kernel2d(
-            f: wp.array3d(dtype=Any),
-            rho: wp.array3d(dtype=Any),
-            u: wp.array3d(dtype=Any),
-        ):
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            _f = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1]]
-            _rho, _u = functional(_f)
-
-            rho[0, index[0], index[1]] = self.store_dtype(_rho)
-            for d in range(self.velocity_set.d):
-                u[d, index[0], index[1]] = self.store_dtype(_u[d])
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 

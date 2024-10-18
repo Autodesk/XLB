@@ -86,33 +86,7 @@ class ExactDifference(Operator):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel2d(
-            f_postcollision: Any,
-            feq: Any,
-            fout: wp.array3d(dtype=Any),
-            rho: wp.array3d(dtype=Any),
-            u: wp.array3d(dtype=Any),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            # Load needed values
-            _u = _u_vec()
-            for l in range(_d):
-                _u[l] = u[l, index[0], index[1]]
-            _rho = rho[0, index[0], index[1]]
-
-            # Compute the collision
-            _fout = functional(f_postcollision, feq, _rho, _u)
-
-            # Write the result
-            for l in range(self.velocity_set.q):
-                fout[l, index[0], index[1]] = self.store_dtype(_fout[l])
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
+        def kernel(
             f_postcollision: Any,
             feq: Any,
             fout: wp.array4d(dtype=Any),
@@ -136,7 +110,6 @@ class ExactDifference(Operator):
             for l in range(self.velocity_set.q):
                 fout[l, index[0], index[1], index[2]] = self.store_dtype(_fout[l])
 
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)

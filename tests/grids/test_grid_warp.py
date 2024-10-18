@@ -22,8 +22,10 @@ def test_warp_grid_create_field(grid_size):
         init_xlb_env(xlb.velocity_set.D3Q19)
         my_grid = grid_factory(grid_shape)
         f = my_grid.create_field(cardinality=9, dtype=Precision.FP32)
-
-        assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
+        if len(grid_shape) == 2:
+            assert f.shape == (9,) + grid_shape + (1,), "Field shape is incorrect got {}".format(f.shape)
+        else:
+            assert f.shape == (9,) + grid_shape, "Field shape is incorrect got {}".format(f.shape)
         assert isinstance(f, wp.array), "Field should be a Warp ndarray"
 
 
@@ -37,7 +39,6 @@ def test_warp_grid_create_field_fill_value():
     assert isinstance(f, wp.array), "Field should be a Warp ndarray"
 
     f = f.numpy()
-    assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
     assert np.allclose(f, fill_value), "Field not properly initialized with fill_value"
 
 

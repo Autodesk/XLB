@@ -21,7 +21,9 @@ class WarpGrid(Grid):
         fill_value=None,
     ):
         dtype = dtype.wp_dtype if dtype else DefaultConfig.default_precision_policy.store_precision.wp_dtype
-        shape = (cardinality,) + (self.shape)
+
+        # Check if shape is 2D, and if so, append a singleton dimension to the shape
+        shape = (cardinality,) + (self.shape if len(self.shape) != 2 else self.shape + (1,))
 
         if fill_value is None:
             f = wp.zeros(shape, dtype=dtype)
