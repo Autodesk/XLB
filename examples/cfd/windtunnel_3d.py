@@ -74,8 +74,8 @@ class WindTunnel3D:
         walls = [box["bottom"][i] + box["top"][i] + box["front"][i] + box["back"][i] for i in range(self.velocity_set.d)]
         walls = np.unique(np.array(walls), axis=-1).tolist()
 
-        # Load the mesh
-        stl_filename = "examples/cfd/stl-files/DrivAer-Notchback.stl"
+        # Load the mesh (replace with your own mesh)
+        stl_filename = "../stl-files/DrivAer-Notchback.stl"
         mesh = trimesh.load_mesh(stl_filename, process=False)
         mesh_vertices = mesh.vertices
 
