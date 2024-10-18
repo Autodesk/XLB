@@ -93,7 +93,6 @@ class IndicesBoundaryMasker(Operator):
             bc_mask = bc_mask.at[0].set(bmap[pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z])
         return bc_mask, missing_mask
 
-
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.c
