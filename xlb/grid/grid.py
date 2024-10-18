@@ -25,7 +25,6 @@ class Grid(ABC):
         self.shape = shape
         self.dim = len(shape)
         self.compute_backend = compute_backend
-        self.boundingBoxIndices = self.bounding_box_indices()
         self._initialize_backend()
 
     @abstractmethod

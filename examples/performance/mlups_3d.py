@@ -48,15 +48,10 @@ def create_grid_and_fields(cube_edge):
 
 
 def define_boundary_indices(grid):
-    lid = grid.boundingBoxIndices["top"]
-    walls = [
-        grid.boundingBoxIndices["bottom"][i]
-        + grid.boundingBoxIndices["left"][i]
-        + grid.boundingBoxIndices["right"][i]
-        + grid.boundingBoxIndices["front"][i]
-        + grid.boundingBoxIndices["back"][i]
-        for i in range(len(grid.shape))
-    ]
+    box = grid.bounding_box_indices()
+    box_noedge = grid.bounding_box_indices(remove_edges=True)
+    lid = box_noedge["top"]
+    walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
     return lid, walls
 
 

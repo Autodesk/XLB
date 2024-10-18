@@ -225,14 +225,9 @@ class IndicesBoundaryMasker(Operator):
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 
-        # Remove duplicates indices to avoid race conditioning
-        index_arr, unique_loc = np.unique(index_list, axis=-1, return_index=True)
-        id_arr = np.array(id_list)[unique_loc]
-        is_interior = np.array(is_interior)[unique_loc]
-
         # convert to warp arrays
-        indices = wp.array2d(index_arr, dtype=wp.int32)
-        id_number = wp.array1d(id_arr, dtype=wp.uint8)
+        indices = wp.array2d(index_list, dtype=wp.int32)
+        id_number = wp.array1d(id_list, dtype=wp.uint8)
         is_interior = wp.array1d(is_interior, dtype=wp.bool)
 
         if start_index is None:

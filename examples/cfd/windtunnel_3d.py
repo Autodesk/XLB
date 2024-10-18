@@ -3,7 +3,7 @@ import trimesh
 import time
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq
+from xlb.helper import create_nse_fields, initialize_eq, check_bc_overlaps
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
@@ -67,15 +67,12 @@ class WindTunnel3D:
         return mesh_matrix, pitch
 
     def define_boundary_indices(self):
-        inlet = self.grid.boundingBoxIndices["left"]
-        outlet = self.grid.boundingBoxIndices["right"]
-        walls = [
-            self.grid.boundingBoxIndices["bottom"][i]
-            + self.grid.boundingBoxIndices["top"][i]
-            + self.grid.boundingBoxIndices["front"][i]
-            + self.grid.boundingBoxIndices["back"][i]
-            for i in range(self.velocity_set.d)
-        ]
+        box = self.grid.bounding_box_indices()
+        box_noedge = self.grid.bounding_box_indices(remove_edges=True)
+        inlet = box_noedge["left"]
+        outlet = box_noedge["right"]
+        walls = [box["bottom"][i] + box["top"][i] + box["front"][i] + box["back"][i] for i in range(self.velocity_set.d)]
+        walls = np.unique(np.array(walls), axis=-1).tolist()
 
         # Load the mesh
         stl_filename = "examples/cfd/stl-files/DrivAer-Notchback.stl"
@@ -105,10 +102,11 @@ class WindTunnel3D:
         bc_car = GradsApproximationBC(mesh_vertices=car)
         # bc_car = FullwayBounceBackBC(mesh_vertices=car)
         self.boundary_conditions = [bc_walls, bc_left, bc_do_nothing, bc_car]
-        # Note: it is important to add bc_walls before bc_outlet/bc_inlet because
-        # of the corner nodes. This way the corners are treated as wall and not inlet/outlet.
 
     def setup_boundary_masker(self):
+        # check boundary condition list for duplicate indices before creating bc mask
+        check_bc_overlaps(self.boundary_conditions, self.velocity_set.d, self.backend)
+
         indices_boundary_masker = IndicesBoundaryMasker(
             velocity_set=self.velocity_set,
             precision_policy=self.precision_policy,
