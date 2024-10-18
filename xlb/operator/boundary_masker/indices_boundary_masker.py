@@ -66,7 +66,7 @@ class IndicesBoundaryMasker(Operator):
             start_index = (0,) * dim
 
         domain_shape = bc_mask[0].shape
-        for bc in reversed(bclist):
+        for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
             assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
             id_number = bc.id
