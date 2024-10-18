@@ -50,7 +50,7 @@ class LidDrivenCavity2D:
         lid, walls = self.define_boundary_indices()
         bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0), indices=lid)
         bc_walls = HalfwayBounceBackBC(indices=walls)
-        self.boundary_conditions = [bc_top, bc_walls]
+        self.boundary_conditions = [bc_walls, bc_top]
 
     def setup_boundary_masker(self):
         indices_boundary_masker = IndicesBoundaryMasker(

@@ -104,7 +104,9 @@ class WindTunnel3D:
         # bc_car = HalfwayBounceBackBC(mesh_vertices=car)
         bc_car = GradsApproximationBC(mesh_vertices=car)
         # bc_car = FullwayBounceBackBC(mesh_vertices=car)
-        self.boundary_conditions = [bc_left, bc_do_nothing, bc_walls, bc_car]
+        self.boundary_conditions = [bc_walls, bc_left, bc_do_nothing, bc_car]
+        # Note: it is important to add bc_walls before bc_outlet/bc_inlet because
+        # of the corner nodes. This way the corners are treated as wall and not inlet/outlet.
 
     def setup_boundary_masker(self):
         indices_boundary_masker = IndicesBoundaryMasker(
