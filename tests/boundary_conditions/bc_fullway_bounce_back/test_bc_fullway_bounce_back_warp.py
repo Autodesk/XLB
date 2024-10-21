@@ -58,7 +58,10 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
     bc_mask, missing_mask = indices_boundary_masker([fullway_bc], bc_mask, missing_mask, start_index=None)
 
     # Generate a random field with the same shape
-    random_field = np.random.rand(velocity_set.q, *grid_shape).astype(np.float32)
+    if dim == 2:
+        random_field = np.random.rand(velocity_set.q, grid_shape[0], grid_shape[1], 1).astype(np.float32)
+    else:
+        random_field = np.random.rand(velocity_set.q, grid_shape[0], grid_shape[1], grid_shape[2]).astype(np.float32)
     # Add the random field to f_pre
     f_pre = wp.array(random_field)
 
@@ -71,7 +74,7 @@ def test_fullway_bounce_back_warp(dim, velocity_set, grid_shape):
     f = f_pre.numpy()
     f_post = f_post.numpy()
 
-    assert f.shape == (velocity_set.q,) + grid_shape
+    assert f.shape == (velocity_set.q,) + grid_shape if dim == 3 else (velocity_set.q, grid_shape[0], grid_shape[1], 1)
 
     for i in range(velocity_set.q):
         np.allclose(

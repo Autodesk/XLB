@@ -74,4 +74,16 @@ class FullwayBounceBackBC(BoundaryCondition):
                 fliped_f[l] = f_pre[_opp_indices[l]]
             return fliped_f
 
-        return functional, None
+        kernel = self._construct_kernel(functional)
+
+        return functional, kernel
+
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # Launch the warp kernel
+        wp.launch(
+            self.warp_kernel,
+            inputs=[f_pre, f_post, bc_mask, missing_mask],
+            dim=f_pre.shape[1:],
+        )
+        return f_post

@@ -193,4 +193,16 @@ class ExtrapolationOutflowBC(BoundaryCondition):
                     _f[_opp_indices[l]] = (self.compute_dtype(1.0) - sound_speed) * f_pre[l] + sound_speed * f_aux
             return _f
 
-        return (functional, prepare_bc_auxilary_data), None
+        kernel = self._construct_kernel(functional)
+
+        return (functional, prepare_bc_auxilary_data), kernel
+
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # Launch the warp kernel
+        wp.launch(
+            self.warp_kernel,
+            inputs=[f_pre, f_post, bc_mask, missing_mask],
+            dim=f_pre.shape[1:],
+        )
+        return f_post

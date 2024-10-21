@@ -111,3 +111,38 @@ class BoundaryCondition(Operator):
         currently being called after collision only.
         """
         return f_post
+
+    def _construct_kernel(self, functional):
+        """
+        Constructs the warp kernel for the boundary condition.
+        The functional is specific to each boundary condition and should be passed as an argument.
+        """
+        _id = wp.uint8(self.id)
+
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel(
+            f_pre: wp.array4d(dtype=Any),
+            f_post: wp.array4d(dtype=Any),
+            bc_mask: wp.array4d(dtype=wp.uint8),
+            missing_mask: wp.array4d(dtype=wp.bool),
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            # read tid data
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data(f_pre, f_post, bc_mask, missing_mask, index)
+
+            # Apply the boundary condition
+            if _boundary_id == _id:
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
+            else:
+                _f = _f_post
+
+            # Write the result
+            for l in range(self.velocity_set.q):
+                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
+
+        return kernel
