@@ -79,7 +79,7 @@ class SecondMoment(Operator):
 
         # Construct the kernel
         @wp.kernel
-        def kernel3d(
+        def kernel(
             f: wp.array4d(dtype=Any),
             pi: wp.array4d(dtype=Any),
         ):
@@ -96,27 +96,6 @@ class SecondMoment(Operator):
             # Set the output
             for d in range(_pi_dim):
                 pi[d, index[0], index[1], index[2]] = self.store_dtype(_pi[d])
-
-        @wp.kernel
-        def kernel2d(
-            f: wp.array3d(dtype=Any),
-            pi: wp.array3d(dtype=Any),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            # Get the equilibrium
-            _f = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1]]
-            _pi = functional(_f)
-
-            # Set the output
-            for d in range(_pi_dim):
-                pi[d, index[0], index[1]] = self.store_dtype(_pi[d])
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 

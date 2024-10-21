@@ -72,7 +72,7 @@ def test_bc_equilibrium_warp(dim, velocity_set, grid_shape):
     f = f.numpy()
     f_post = f_post.numpy()
 
-    assert f.shape == (velocity_set.q,) + grid_shape
+    assert f.shape == (velocity_set.q,) + grid_shape if dim == 3 else (velocity_set.q, grid_shape[0], grid_shape[1], 1)
 
     # Assert that the values are correct in the indices of the sphere
     weights = velocity_set.w

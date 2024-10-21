@@ -61,7 +61,7 @@ class QuadraticEquilibrium(Equilibrium):
 
         # Construct the warp kernel
         @wp.kernel
-        def kernel3d(
+        def kernel(
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
             f: wp.array4d(dtype=Any),
@@ -80,29 +80,6 @@ class QuadraticEquilibrium(Equilibrium):
             # Set the output
             for l in range(self.velocity_set.q):
                 f[l, index[0], index[1], index[2]] = self.store_dtype(feq[l])
-
-        @wp.kernel
-        def kernel2d(
-            rho: wp.array3d(dtype=Any),
-            u: wp.array3d(dtype=Any),
-            f: wp.array3d(dtype=Any),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            # Get the equilibrium
-            _u = _u_vec()
-            for d in range(self.velocity_set.d):
-                _u[d] = u[d, index[0], index[1]]
-            _rho = rho[0, index[0], index[1]]
-            feq = functional(_rho, _u)
-
-            # Set the output
-            for l in range(self.velocity_set.q):
-                f[l, index[0], index[1]] = self.store_dtype(feq[l])
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
 
         return functional, kernel
 

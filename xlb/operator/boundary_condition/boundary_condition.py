@@ -75,32 +75,7 @@ class BoundaryCondition(Operator):
             return f_post
 
         @wp.func
-        def _get_thread_data_2d(
-            f_pre: wp.array3d(dtype=Any),
-            f_post: wp.array3d(dtype=Any),
-            bc_mask: wp.array3d(dtype=wp.uint8),
-            missing_mask: wp.array3d(dtype=wp.bool),
-            index: wp.vec2i,
-        ):
-            # Get the boundary id and missing mask
-            _f_pre = _f_vec()
-            _f_post = _f_vec()
-            _boundary_id = bc_mask[0, index[0], index[1]]
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of populations
-                _f_pre[l] = self.compute_dtype(f_pre[l, index[0], index[1]])
-                _f_post[l] = self.compute_dtype(f_post[l, index[0], index[1]])
-
-                # TODO fix vec bool
-                if missing_mask[l, index[0], index[1]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
-            return _f_pre, _f_post, _boundary_id, _missing_mask
-
-        @wp.func
-        def _get_thread_data_3d(
+        def _get_thread_data(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
@@ -126,8 +101,7 @@ class BoundaryCondition(Operator):
 
         # Construct some helper warp functions for getting tid data
         if self.compute_backend == ComputeBackend.WARP:
-            self._get_thread_data_2d = _get_thread_data_2d
-            self._get_thread_data_3d = _get_thread_data_3d
+            self._get_thread_data = _get_thread_data
             self.prepare_bc_auxilary_data = prepare_bc_auxilary_data
 
     @partial(jit, static_argnums=(0,), inline=True)
@@ -137,3 +111,38 @@ class BoundaryCondition(Operator):
         currently being called after collision only.
         """
         return f_post
+
+    def _construct_kernel(self, functional):
+        """
+        Constructs the warp kernel for the boundary condition.
+        The functional is specific to each boundary condition and should be passed as an argument.
+        """
+        _id = wp.uint8(self.id)
+
+        # Construct the warp kernel
+        @wp.kernel
+        def kernel(
+            f_pre: wp.array4d(dtype=Any),
+            f_post: wp.array4d(dtype=Any),
+            bc_mask: wp.array4d(dtype=wp.uint8),
+            missing_mask: wp.array4d(dtype=wp.bool),
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            # read tid data
+            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data(f_pre, f_post, bc_mask, missing_mask, index)
+
+            # Apply the boundary condition
+            if _boundary_id == _id:
+                timestep = 0
+                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
+            else:
+                _f = _f_post
+
+            # Write the result
+            for l in range(self.velocity_set.q):
+                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
+
+        return kernel

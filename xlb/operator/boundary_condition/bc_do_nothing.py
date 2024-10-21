@@ -64,58 +64,7 @@ class DoNothingBC(BoundaryCondition):
         ):
             return f_pre
 
-        @wp.kernel
-        def kernel2d(
-            f_pre: wp.array3d(dtype=Any),
-            f_post: wp.array3d(dtype=Any),
-            bc_mask: wp.array3d(dtype=wp.uint8),
-            missing_mask: wp.array3d(dtype=wp.uint8),
-        ):
-            # Get the global index
-            i, j = wp.tid()
-            index = wp.vec2i(i, j)
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_2d(f_pre, f_post, bc_mask, missing_mask, index)
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(DoNothingBC.id):
-                timestep = 0
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the result
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1]] = self.store_dtype(_f[l])
-
-        # Construct the warp kernel
-        @wp.kernel
-        def kernel3d(
-            f_pre: wp.array4d(dtype=Any),
-            f_post: wp.array4d(dtype=Any),
-            bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
-        ):
-            # Get the global index
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)
-
-            # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data_3d(f_pre, f_post, bc_mask, missing_mask, index)
-
-            # Apply the boundary condition
-            if _boundary_id == wp.uint8(DoNothingBC.id):
-                timestep = 0
-                _f = functional(index, timestep, _missing_mask, f_pre, f_post, _f_pre, _f_post)
-            else:
-                _f = _f_post
-
-            # Write the result
-            for l in range(self.velocity_set.q):
-                f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
-
-        kernel = kernel3d if self.velocity_set.d == 3 else kernel2d
+        kernel = self._construct_kernel(functional)
 
         return functional, kernel
 
