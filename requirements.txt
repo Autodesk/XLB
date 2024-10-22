@@ -1,11 +1,10 @@
-jax==0.4.20
-jaxlib==0.4.20
-jmp==0.0.4
-matplotlib==3.8.0
-numpy==1.26.1
-pyvista==0.42.3
-Rtree==1.0.1
-trimesh==4.0.0
-orbax-checkpoint==0.4.1
-termcolor==2.3.0
-PhantomGaze @ git+https://github.com/loliverhennigh/PhantomGaze.git
+jax[cuda]
+matplotlib
+numpy
+pyvista
+Rtree
+trimesh
+warp-lang
+numpy-stl
+pydantic
+ruff
