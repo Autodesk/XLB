@@ -8,9 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - _No changes yet_  <!-- Placeholder for future changes -->
 
+<<<<<<< HEAD
 ### Fixed
 -  mkdocs is now configured correctly for the new project structure
 
+=======
+>>>>>>> eba8affdcdb33cb29365c3441d7a88464ad7d71c
 ## [0.2.0] - 2024-10-22
 
 ### Added
