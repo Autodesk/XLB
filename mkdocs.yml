@@ -30,7 +30,7 @@ repo_url: https://github.com/Autodesk/XLB
 edit_uri: edit/master/docs/
 
 watch:
-- ./src/
+- ./xlb/
 
 # Can be used to add a meta tag to the HTML header
 site_description: 'Documentation for project XLB'
@@ -148,9 +148,3 @@ extra_javascript:
 
 nav:
   - XLB's home: index.md
-  - XLB API:
-    - XLB base: base.md
-    - XLB models: models.md
-    - XLB lattice: lattice.md
-    - XLB utils: utils.md
-    - XLB boundary conditions: boundary_conditions.md
