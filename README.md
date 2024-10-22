@@ -17,7 +17,13 @@ To get started with XLB, you can install it using pip:
 pip install xlb
 ```
 
-The changelog for the latest release can be found [here](https://github.com/Autodesk/XLB/blob/main/CHANGELOG.md).
+To install the latest development version from source:
+
+```bash
+pip install git+https://github.com/Autodesk/XLB.git
+```
+
+The changelog for the releases can be found [here](https://github.com/Autodesk/XLB/blob/main/CHANGELOG.md).
 
 ## Running a Basic Example: Lid-Driven Cavity Simulation
 
