@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 -  mkdocs is now configured correctly for the new project structure
+-  JAX installation is now handled correctly for different configurations (CPU, CUDA, TPU)
 
 ## [0.2.0] - 2024-10-22
 
