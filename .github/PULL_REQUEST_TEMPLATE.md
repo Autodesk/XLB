@@ -1,3 +1,9 @@
+## Contributing Guidelines
+
+<!-- Please make sure you have read and understood our contributing guidelines before submitting this PR -->
+- [ ] I have read and understood the [CONTRIBUTING.md](../CONTRIBUTING.md) guidelines
+
+
 ## Description
 
 <!-- 
