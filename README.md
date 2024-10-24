@@ -12,10 +12,29 @@ XLB can now be installed via pip: `pip install xlb`.
 XLB is a fully differentiable 2D/3D Lattice Boltzmann Method (LBM) library that leverages hardware acceleration. It supports [JAX](https://github.com/google/jax) and [NVIDIA Warp](https://github.com/NVIDIA/warp) backends, and is specifically designed to solve fluid dynamics problems in a computationally efficient and differentiable manner. Its unique combination of features positions it as an exceptionally suitable tool for applications in physics-based machine learning. With the new Warp backend, XLB now offers state-of-the-art performance for even faster simulations.
 
 ## Getting Started
-To get started with XLB, you can install it using pip:
+To get started with XLB, you can install it using pip. There are different installation options depending on your hardware and needs:
+
+### Basic Installation (CPU-only)
 ```bash
 pip install xlb
 ```
+
+### Installation with CUDA support (for NVIDIA GPUs)
+This installation is for the JAX backend with CUDA support:
+```bash
+pip install "xlb[cuda]"
+```
+
+### Installation with TPU support
+This installation is for the JAX backend with TPU support:
+```bash
+pip install "xlb[tpu]"
+```
+
+### Notes:
+- For Mac users: Use the basic CPU installation command as JAX's GPU support is not available on MacOS
+- The NVIDIA Warp backend is included in all installation options and supports CUDA automatically when available
+- The installation options for CUDA and TPU only affect the JAX backend
 
 To install the latest development version from source:
 
