@@ -271,7 +271,10 @@ class KBC(Collision):
         ):
             # Compute shear and delta_s
             fneq = f - feq
-            shear = decompose_shear_d3q27(fneq)
+            if wp.static(self.velocity_set.d == 3):
+                shear = decompose_shear_d3q27(fneq)
+            else:
+                shear = decompose_shear_d2q9(fneq)
             delta_s = shear * rho  # TODO: Check this
 
             # Perform collision
