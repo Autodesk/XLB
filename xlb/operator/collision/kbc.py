@@ -67,7 +67,7 @@ class KBC(Collision):
         fneq = f - feq
         if isinstance(self.velocity_set, D2Q9):
             shear = self.decompose_shear_d2q9_jax(fneq)
-            delta_s = shear * rho / 4.0  # TODO: Check this
+            delta_s = shear * rho / 4.0
         elif isinstance(self.velocity_set, D3Q27):
             shear = self.decompose_shear_d3q27_jax(fneq)
             delta_s = shear * rho
@@ -191,16 +191,16 @@ class KBC(Collision):
         @wp.func
         def decompose_shear_d2q9(fneq: Any):
             pi = self.momentum_flux.warp_functional(fneq)
-            N = pi[0] - pi[1]
+            N = pi[0] - pi[2]
             s = _f_vec()
             s[3] = N
             s[6] = N
             s[2] = -N
             s[1] = -N
-            s[8] = pi[2]
-            s[4] = -pi[2]
-            s[5] = -pi[2]
-            s[7] = pi[2]
+            s[8] = pi[1]
+            s[4] = -pi[1]
+            s[5] = -pi[1]
+            s[7] = pi[1]
             return s
 
         # Construct functional for decomposing shear
@@ -271,8 +271,12 @@ class KBC(Collision):
         ):
             # Compute shear and delta_s
             fneq = f - feq
-            shear = decompose_shear_d3q27(fneq)
-            delta_s = shear * rho  # TODO: Check this
+            if wp.static(self.velocity_set.d == 3):
+                shear = decompose_shear_d3q27(fneq)
+                delta_s = shear * rho
+            else:
+                shear = decompose_shear_d2q9(fneq)
+                delta_s = shear * rho / self.compute_dtype(4.0)
 
             # Perform collision
             delta_h = fneq - delta_s

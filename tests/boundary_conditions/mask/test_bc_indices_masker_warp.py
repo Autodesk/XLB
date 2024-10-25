@@ -60,7 +60,6 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
         [test_bc],
         bc_mask,
         missing_mask,
-        start_index=(0, 0, 0) if dim == 3 else (0, 0),
     )
     assert missing_mask.dtype == xlb.Precision.BOOL.wp_dtype
 
@@ -69,9 +68,12 @@ def test_indices_masker_warp(dim, velocity_set, grid_shape):
     bc_mask = bc_mask.numpy()
     missing_mask = missing_mask.numpy()
 
-    assert bc_mask.shape == (1,) + grid_shape
-
-    assert missing_mask.shape == (velocity_set.q,) + grid_shape
+    if len(grid_shape) == 2:
+        assert bc_mask.shape == (1,) + grid_shape + (1,), "bc_mask shape is incorrect got {}".format(bc_mask.shape)
+        assert missing_mask.shape == (velocity_set.q,) + grid_shape + (1,), "missing_mask shape is incorrect got {}".format(missing_mask.shape)
+    else:
+        assert bc_mask.shape == (1,) + grid_shape, "bc_mask shape is incorrect got {}".format(bc_mask.shape)
+        assert missing_mask.shape == (velocity_set.q,) + grid_shape, "missing_mask shape is incorrect got {}".format(missing_mask.shape)
 
     if dim == 2:
         assert np.all(bc_mask[0, indices[0], indices[1]] == test_bc.id)

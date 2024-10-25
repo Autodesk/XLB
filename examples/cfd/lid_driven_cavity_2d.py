@@ -67,7 +67,7 @@ class LidDrivenCavity2D:
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend)
 
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions, collision_type='KBC')
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):
@@ -100,7 +100,7 @@ class LidDrivenCavity2D:
 
         fields = {"rho": rho[0], "u_x": u[0], "u_y": u[1], "u_magnitude": u_magnitude}
 
-        save_fields_vtk(fields, timestep=i, prefix="lid_driven_cavity")
+        # save_fields_vtk(fields, timestep=i, prefix="lid_driven_cavity")
         save_image(fields["u_magnitude"], timestep=i, prefix="lid_driven_cavity")
 
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     precision_policy = PrecisionPolicy.FP32FP32
 
     velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
-    omega = 1.6
+    omega = 1.99
 
     simulation = LidDrivenCavity2D(omega, grid_shape, velocity_set, backend, precision_policy)
-    simulation.run(num_steps=5000, post_process_interval=1000)
+    simulation.run(num_steps=50000, post_process_interval=1000)
