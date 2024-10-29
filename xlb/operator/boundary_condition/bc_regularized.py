@@ -133,7 +133,6 @@ class RegularizedBC(ZouHeBC):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
         # compute Qi tensor and store it in self
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = self.compute_dtype(rho)
         _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])

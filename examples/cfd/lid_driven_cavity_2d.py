@@ -14,7 +14,7 @@ import numpy as np
 
 
 class LidDrivenCavity2D:
-    def __init__(self, omega, grid_shape, velocity_set, backend, precision_policy):
+    def __init__(self, omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy):
         # initialize backend
         xlb.init(
             velocity_set=velocity_set,
@@ -29,6 +29,7 @@ class LidDrivenCavity2D:
         self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_mask = create_nse_fields(grid_shape)
         self.stepper = None
         self.boundary_conditions = []
+        self.prescribed_vel = prescribed_vel
 
         # Setup the simulation BC, its initial conditions, and the stepper
         self._setup(omega)
@@ -49,7 +50,7 @@ class LidDrivenCavity2D:
 
     def setup_boundary_conditions(self):
         lid, walls = self.define_boundary_indices()
-        bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0), indices=lid)
+        bc_top = EquilibriumBC(rho=1.0, u=(self.prescribed_vel, 0.0), indices=lid)
         bc_walls = HalfwayBounceBackBC(indices=walls)
         self.boundary_conditions = [bc_walls, bc_top]
 
@@ -67,7 +68,7 @@ class LidDrivenCavity2D:
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend)
 
     def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions, collision_type='KBC')
+        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):
@@ -100,7 +101,7 @@ class LidDrivenCavity2D:
 
         fields = {"rho": rho[0], "u_x": u[0], "u_y": u[1], "u_magnitude": u_magnitude}
 
-        # save_fields_vtk(fields, timestep=i, prefix="lid_driven_cavity")
+        save_fields_vtk(fields, timestep=i, prefix="lid_driven_cavity")
         save_image(fields["u_magnitude"], timestep=i, prefix="lid_driven_cavity")
 
 
@@ -112,7 +113,13 @@ if __name__ == "__main__":
     precision_policy = PrecisionPolicy.FP32FP32
 
     velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
-    omega = 1.99
 
-    simulation = LidDrivenCavity2D(omega, grid_shape, velocity_set, backend, precision_policy)
+    # Setting fluid viscosity and relaxation parameter.
+    Re = 200.0
+    prescribed_vel = 0.05
+    clength = grid_shape[0] - 1
+    visc = prescribed_vel * clength / Re
+    omega = 1.0 / (3.0 * visc + 0.5)
+
+    simulation = LidDrivenCavity2D(omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy)
     simulation.run(num_steps=50000, post_process_interval=1000)

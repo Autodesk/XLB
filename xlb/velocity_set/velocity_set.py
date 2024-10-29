@@ -94,7 +94,6 @@ class VelocitySet(object):
         self.w = jnp.array(self._w, dtype=dtype)
         self.opp_indices = jnp.array(self._opp_indices, dtype=jnp.int32)
         self.cc = jnp.array(self._cc, dtype=dtype)
-        self.c_float = jnp.array(self._c_float, dtype=dtype)
         self.qi = jnp.array(self._qi, dtype=dtype)
 
     def _init_backend_constants(self):
