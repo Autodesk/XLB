@@ -134,7 +134,6 @@ class ExtrapolationOutflowBC(BoundaryCondition):
     def _construct_warp(self):
         # Set local constants
         sound_speed = self.compute_dtype(1.0 / wp.sqrt(3.0))
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _c = self.velocity_set.c
         _q = self.velocity_set.q
         _opp_indices = self.velocity_set.opp_indices
@@ -143,9 +142,14 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         def get_normal_vectors(
             missing_mask: Any,
         ):
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                    return -wp.vec3i(_c[0, l], _c[1, l], _c[2, l])
+            if wp.static(self.velocity_set.d == 3):
+                for l in range(_q):
+                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
+                        return -wp.vec3i(_c[0, l], _c[1, l], _c[2, l])
+            else:
+                for l in range(_q):
+                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
+                        return -wp.vec2i(_c[0, l], _c[1, l])
 
         # Construct the functionals for this BC
         @wp.func

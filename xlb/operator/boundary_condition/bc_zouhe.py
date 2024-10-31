@@ -207,9 +207,14 @@ class ZouHeBC(BoundaryCondition):
         def get_normal_vectors(
             missing_mask: Any,
         ):
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                    return -_u_vec(_c_float[0, l], _c_float[1, l], _c_float[2, l])
+            if wp.static(_d == 3):
+                for l in range(_q):
+                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
+                        return -_u_vec(_c_float[0, l], _c_float[1, l], _c_float[2, l])
+            else:
+                for l in range(_q):
+                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
+                        return -_u_vec(_c_float[0, l], _c_float[1, l])
 
         @wp.func
         def bounceback_nonequilibrium(

@@ -7,8 +7,8 @@ from lid_driven_cavity_2d import LidDrivenCavity2D
 
 
 class LidDrivenCavity2D_distributed(LidDrivenCavity2D):
-    def __init__(self, omega, grid_shape, velocity_set, backend, precision_policy):
-        super().__init__(omega, grid_shape, velocity_set, backend, precision_policy)
+    def __init__(self, omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy):
+        super().__init__(omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy)
 
     def setup_stepper(self, omega):
         stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
@@ -29,7 +29,13 @@ if __name__ == "__main__":
     precision_policy = PrecisionPolicy.FP32FP32
 
     velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
-    omega = 1.6
 
-    simulation = LidDrivenCavity2D_distributed(omega, grid_shape, velocity_set, backend, precision_policy)
-    simulation.run(num_steps=5000, post_process_interval=1000)
+    # Setting fluid viscosity and relaxation parameter.
+    Re = 200.0
+    prescribed_vel = 0.05
+    clength = grid_shape[0] - 1
+    visc = prescribed_vel * clength / Re
+    omega = 1.0 / (3.0 * visc + 0.5)
+
+    simulation = LidDrivenCavity2D_distributed(omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy)
+    simulation.run(num_steps=50000, post_process_interval=1000)

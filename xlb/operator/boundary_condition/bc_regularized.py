@@ -133,7 +133,6 @@ class RegularizedBC(ZouHeBC):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
         # compute Qi tensor and store it in self
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _rho = self.compute_dtype(rho)
         _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])
@@ -162,9 +161,14 @@ class RegularizedBC(ZouHeBC):
         def get_normal_vectors(
             missing_mask: Any,
         ):
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                    return -_u_vec(_c_float[0, l], _c_float[1, l], _c_float[2, l])
+            if wp.static(_d == 3):
+                for l in range(_q):
+                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
+                        return -_u_vec(_c_float[0, l], _c_float[1, l], _c_float[2, l])
+            else:
+                for l in range(_q):
+                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
+                        return -_u_vec(_c_float[0, l], _c_float[1, l])
 
         @wp.func
         def bounceback_nonequilibrium(
