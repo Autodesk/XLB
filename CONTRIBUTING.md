@@ -39,6 +39,8 @@ If you would like to contribute your code to XLB, you should:
 
 When you submit your code, please include relevant tests as part of the pull request, and ensure that your comments and coding style align with the rest of the project. You can refer to the existing code for examples of the testing and style practices that the project follows.
 
+Important: Ensure that your commits are atomic and self-contained. Each PR should only make a single, cohesive change. You should also squash your commits into a single commit as described below before submitting your PR.
+
 ## Detailed Contribution Guidelines
 
 ### 1. Setup Your Local Environment
@@ -115,6 +117,26 @@ When you submit your code, please include relevant tests as part of the pull req
   ```
 
   This will let you update the commit message or include additional changes in a single commit.
+
+  To consolidate your existing commits into a single PR, first, you need to reset your branch to the point where you want the single commit to start from (likely the last commit on origin/main before your work began).
+
+  ```bash
+    git reset --soft <commit-id>
+  ```
+
+  Replace `<commit-id>` with the hash of the commit that should be the base of your PR (it is likely the last commit on origin/main before your changes, use that ID).
+
+  Now, all your work will be staged as if it’s a single set of changes. You can commit this with a new message that represents the combined work.
+
+```bash
+git commit -m "Combined changes"
+```
+
+Finally, you can push your changes to your fork with the following command:
+
+```bash
+git push --force origin <feature_branch_name>
+```
 
 ### 5. Pushing Your Branch and Creating a Pull Request
 
