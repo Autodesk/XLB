@@ -1,8 +1,7 @@
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq, check_bc_overlaps
-from xlb.operator.boundary_masker import IndicesBoundaryMasker
+from xlb.grid import grid_factory
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import HalfwayBounceBackBC, EquilibriumBC
 from xlb.operator.macroscopic import Macroscopic
@@ -26,19 +25,21 @@ class LidDrivenCavity2D:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_mask = create_nse_fields(grid_shape)
-        self.stepper = None
+        self.omega = omega
         self.boundary_conditions = []
         self.prescribed_vel = prescribed_vel
 
-        # Setup the simulation BC, its initial conditions, and the stepper
-        self._setup(omega)
+        # Create grid using factory
+        self.grid = grid_factory(grid_shape, compute_backend=backend)
 
-    def _setup(self, omega):
+        # Setup the simulation BC and stepper
+        self._setup()
+
+    def _setup(self):
         self.setup_boundary_conditions()
-        self.setup_boundary_masker()
-        self.initialize_fields()
-        self.setup_stepper(omega)
+        self.setup_stepper()
+        # Initialize fields using the stepper
+        self.f_0, self.f_1, self.bc_mask, self.missing_mask = self.stepper.prepare_fields()
 
     def define_boundary_indices(self):
         box = self.grid.bounding_box_indices()
@@ -54,21 +55,13 @@ class LidDrivenCavity2D:
         bc_walls = HalfwayBounceBackBC(indices=walls)
         self.boundary_conditions = [bc_walls, bc_top]
 
-    def setup_boundary_masker(self):
-        # check boundary condition list for duplicate indices before creating bc mask
-        check_bc_overlaps(self.boundary_conditions, self.velocity_set.d, self.backend)
-        indices_boundary_masker = IndicesBoundaryMasker(
-            velocity_set=self.velocity_set,
-            precision_policy=self.precision_policy,
-            compute_backend=self.backend,
+    def setup_stepper(self):
+        self.stepper = IncompressibleNavierStokesStepper(
+            omega=self.omega,
+            grid=self.grid,
+            boundary_conditions=self.boundary_conditions,
+            collision_type="BGK",
         )
-        self.bc_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.bc_mask, self.missing_mask)
-
-    def initialize_fields(self):
-        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend)
-
-    def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
 
     def run(self, num_steps, post_process_interval=100):
         for i in range(num_steps):

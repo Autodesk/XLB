@@ -7,6 +7,8 @@ import warp as wp
 from typing import Any
 from jax import jit
 from functools import partial
+import jax
+import jax.numpy as jnp
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -57,13 +59,25 @@ class BoundaryCondition(Operator):
         # A flag for BCs that need implicit boundary distance between the grid and a mesh (to be set to True if applicable inside each BC)
         self.needs_mesh_distance = False
 
+        # A flag for BCs that need auxilary data initialization before stepper
+        self.needs_aux_init = False
+
+        # A flag to track if the BC is initialized with auxilary data
+        self.is_initialized_with_aux_data = False
+
+        # Number of auxilary data needed for the BC (for prescribed values)
+        self.num_of_aux_data = 0
+
+        # A flag for BCs that need auxilary data recovery after streaming
+        self.needs_aux_recovery = False
+
         if self.compute_backend == ComputeBackend.WARP:
             # Set local constants TODO: This is a hack and should be fixed with warp update
             _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
             _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         @wp.func
-        def prepare_bc_auxilary_data(
+        def update_bc_auxilary_data(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -102,10 +116,10 @@ class BoundaryCondition(Operator):
         # Construct some helper warp functions for getting tid data
         if self.compute_backend == ComputeBackend.WARP:
             self._get_thread_data = _get_thread_data
-            self.prepare_bc_auxilary_data = prepare_bc_auxilary_data
+            self.update_bc_auxilary_data = update_bc_auxilary_data
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def prepare_bc_auxilary_data(self, f_pre, f_post, bc_mask, missing_mask):
+    def update_bc_auxilary_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
         A placeholder function for prepare the auxilary distribution functions for the boundary condition.
         currently being called after collision only.
@@ -146,3 +160,54 @@ class BoundaryCondition(Operator):
                 f_post[l, index[0], index[1], index[2]] = self.store_dtype(_f[l])
 
         return kernel
+
+    def _construct_aux_data_init_kernel(self, functional):
+        """
+        Constructs the warp kernel for the auxilary data recovery.
+        """
+        _id = wp.uint8(self.id)
+        _opp_indices = self.velocity_set.opp_indices
+        _num_of_aux_data = self.num_of_aux_data
+
+        # Construct the warp kernel
+        @wp.kernel
+        def aux_data_init_kernel(
+            f_0: wp.array4d(dtype=Any),
+            f_1: wp.array4d(dtype=Any),
+            bc_mask: wp.array4d(dtype=wp.uint8),
+            missing_mask: wp.array4d(dtype=wp.bool),
+        ):
+            # Get the global index
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            # read tid data
+            _f_0, _f_1, _boundary_id, _missing_mask = self._get_thread_data(f_0, f_1, bc_mask, missing_mask, index)
+
+            # Apply the functional
+            if _boundary_id == _id:
+                # prescribed_values is a q-sized vector of type wp.vec
+                prescribed_values = functional(index)
+                # Write the result for all q directions, but only store up to num_of_aux_data
+                # TODO: Somehow raise an error if the number of prescribed values does not match the number of missing directions
+                counter = wp.int32(0)
+                for l in range(self.velocity_set.q):
+                    if _missing_mask[l] == wp.uint8(1) and counter < _num_of_aux_data:
+                        f_1[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(prescribed_values[counter])
+                        counter += 1
+
+        return aux_data_init_kernel
+
+    def aux_data_init(self, f_0, f_1, bc_mask, missing_mask):
+        if self.compute_backend == ComputeBackend.WARP:
+            # Launch the warp kernel
+            wp.launch(
+                self._construct_aux_data_init_kernel(self.profile),
+                inputs=[f_0, f_1, bc_mask, missing_mask],
+                dim=f_0.shape[1:],
+            )
+        elif self.compute_backend == ComputeBackend.JAX:
+            # We don't use boundary aux encoding/decoding in JAX
+            self.prescribed_values = self.profile()
+        self.is_initialized_with_aux_data = True
+        return f_0, f_1

@@ -1,20 +1,16 @@
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq, check_bc_overlaps
+from xlb.grid import grid_factory
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
     HalfwayBounceBackBC,
-    ZouHeBC,
     RegularizedBC,
-    EquilibriumBC,
-    DoNothingBC,
     ExtrapolationOutflowBC,
 )
 from xlb.operator.macroscopic import Macroscopic
-from xlb.operator.boundary_masker import IndicesBoundaryMasker
-from xlb.utils import save_fields_vtk, save_image
+from xlb.utils import save_image
 import warp as wp
 import numpy as np
 import jax.numpy as jnp
@@ -34,18 +30,19 @@ class FlowOverSphere:
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_mask = create_nse_fields(grid_shape)
-        self.stepper = None
+        self.omega = omega
         self.boundary_conditions = []
+        self.u_max = 0.04
 
-        # Setup the simulation BC, its initial conditions, and the stepper
-        self._setup(omega)
+        # Create grid using factory
+        self.grid = grid_factory(grid_shape, compute_backend=backend)
 
-    def _setup(self, omega):
+        # Setup the simulation BC and stepper
+        self._setup()
+
+    def _setup(self):
         self.setup_boundary_conditions()
-        self.setup_boundary_masker()
-        self.initialize_fields()
-        self.setup_stepper(omega)
+        self.setup_stepper()
 
     def define_boundary_indices(self):
         box = self.grid.bounding_box_indices()
@@ -69,31 +66,63 @@ class FlowOverSphere:
 
     def setup_boundary_conditions(self):
         inlet, outlet, walls, sphere = self.define_boundary_indices()
-        bc_left = RegularizedBC("velocity", (0.04, 0.0, 0.0), indices=inlet)
-        # bc_left = EquilibriumBC(rho = 1, u=(0.04, 0.0, 0.0), indices=inlet)
+        bc_left = RegularizedBC("velocity", profile=self.bc_profile(), indices=inlet)
+        # bc_left = RegularizedBC("velocity", prescribed_value=(self.u_max, 0.0, 0.0), indices=inlet)
         bc_walls = FullwayBounceBackBC(indices=walls)
-        # bc_outlet = RegularizedBC("pressure", 1.0, indices=outlet)
-        # bc_outlet = DoNothingBC(indices=outlet)
         bc_outlet = ExtrapolationOutflowBC(indices=outlet)
         bc_sphere = HalfwayBounceBackBC(indices=sphere)
         self.boundary_conditions = [bc_walls, bc_left, bc_outlet, bc_sphere]
 
-    def setup_boundary_masker(self):
-        # check boundary condition list for duplicate indices before creating bc mask
-        check_bc_overlaps(self.boundary_conditions, self.velocity_set.d, self.backend)
-
-        indices_boundary_masker = IndicesBoundaryMasker(
-            velocity_set=self.velocity_set,
-            precision_policy=self.precision_policy,
-            compute_backend=self.backend,
+    def setup_stepper(self):
+        self.stepper = IncompressibleNavierStokesStepper(
+            omega=self.omega,
+            grid=self.grid,
+            boundary_conditions=self.boundary_conditions,
+            collision_type="BGK",
         )
-        self.bc_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.bc_mask, self.missing_mask, (0, 0, 0))
+        self.f_0, self.f_1, self.bc_mask, self.missing_mask = self.stepper.prepare_fields()
 
-    def initialize_fields(self):
-        self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend)
+    def bc_profile(self):
+        u_max = self.u_max  # u_max = 0.04
+        # Get the grid dimensions for the y and z directions
+        H_y = float(self.grid_shape[1] - 1)  # Height in y direction
+        H_z = float(self.grid_shape[2] - 1)  # Height in z direction
 
-    def setup_stepper(self, omega):
-        self.stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions, collision_type="BGK")
+        @wp.func
+        def bc_profile_warp(index: wp.vec3i):
+            # Poiseuille flow profile: parabolic velocity distribution
+            y = self.precision_policy.store_precision.wp_dtype(index[1])
+            z = self.precision_policy.store_precision.wp_dtype(index[2])
+
+            # Calculate normalized distance from center
+            y_center = y - (H_y / 2.0)
+            z_center = z - (H_z / 2.0)
+            r_squared = (2.0 * y_center / H_y) ** 2.0 + (2.0 * z_center / H_z) ** 2.0
+
+            # Parabolic profile: u = u_max * (1 - r²)
+            return wp.vec(u_max * wp.max(0.0, 1.0 - r_squared), length=1)
+
+        def bc_profile_jax():
+            y = jnp.arange(self.grid_shape[1])
+            z = jnp.arange(self.grid_shape[2])
+            Y, Z = jnp.meshgrid(y, z, indexing="ij")
+
+            # Calculate normalized distance from center
+            y_center = Y - (H_y / 2.0)
+            z_center = Z - (H_z / 2.0)
+            r_squared = (2.0 * y_center / H_y) ** 2.0 + (2.0 * z_center / H_z) ** 2.0
+
+            # Parabolic profile for x velocity, zero for y and z
+            u_x = u_max * jnp.maximum(0.0, 1.0 - r_squared)
+            u_y = jnp.zeros_like(u_x)
+            u_z = jnp.zeros_like(u_x)
+
+            return jnp.stack([u_x, u_y, u_z])
+
+        if self.backend == ComputeBackend.JAX:
+            return bc_profile_jax
+        elif self.backend == ComputeBackend.WARP:
+            return bc_profile_warp
 
     def run(self, num_steps, post_process_interval=100):
         start_time = time.time()
