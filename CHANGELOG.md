@@ -18,3 +18,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - XLB is now installable via pip
 - Complete rewrite of the codebase for better modularity and extensibility based on "Operators" design pattern
 - Added NVIDIA's Warp backend for state-of-the-art performance
+- Added abstraction layer for boundary condition efficient encoding/decoding of auxiliary data
+- Added the capability to add profiles to boundary conditions

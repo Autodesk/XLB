@@ -2,9 +2,10 @@ import xlb
 import argparse
 import time
 import warp as wp
+import numpy as np
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq
+from xlb.grid import grid_factory
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 from xlb.distribute import distribute
@@ -40,32 +41,21 @@ def setup_simulation(args):
     return backend, precision_policy
 
 
-def create_grid_and_fields(cube_edge):
-    grid_shape = (cube_edge, cube_edge, cube_edge)
-    grid, f_0, f_1, missing_mask, bc_mask = create_nse_fields(grid_shape)
-
-    return grid, f_0, f_1, missing_mask, bc_mask
-
-
-def define_boundary_indices(grid):
+def run(backend, precision_policy, grid_shape, num_steps):
+    # Create grid and setup boundary conditions
+    grid = grid_factory(grid_shape)
     box = grid.bounding_box_indices()
     box_no_edge = grid.bounding_box_indices(remove_edges=True)
     lid = box_no_edge["top"]
     walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
-    return lid, walls
+    walls = np.unique(np.array(walls), axis=-1).tolist()
 
+    boundary_conditions = [EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=lid), FullwayBounceBackBC(indices=walls)]
 
-def setup_boundary_conditions(grid):
-    lid, walls = define_boundary_indices(grid)
-    bc_top = EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=lid)
-    bc_walls = FullwayBounceBackBC(indices=walls)
-    return [bc_top, bc_walls]
+    # Create stepper
+    stepper = IncompressibleNavierStokesStepper(omega=1.0, grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-
-def run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, num_steps):
-    omega = 1.0
-    stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=setup_boundary_conditions(grid))
-
+    # Distribute if using JAX backend
     if backend == ComputeBackend.JAX:
         stepper = distribute(
             stepper,
@@ -73,6 +63,8 @@ def run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, num_st
             xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend),
         )
 
+    # Initialize fields and run simulation
+    f_0, f_1, bc_mask, missing_mask = stepper.prepare_fields()
     start_time = time.time()
 
     for i in range(num_steps):
@@ -80,8 +72,7 @@ def run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, num_st
         f_0, f_1 = f_1, f_0
     wp.synchronize()
 
-    end_time = time.time()
-    return end_time - start_time
+    return time.time() - start_time
 
 
 def calculate_mlups(cube_edge, num_steps, elapsed_time):
@@ -93,11 +84,8 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time):
 def main():
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
-    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
-    grid, f_0, f_1, missing_mask, bc_mask = create_grid_and_fields(args.cube_edge)
-    f_0 = initialize_eq(f_0, grid, velocity_set, precision_policy, backend)
-
-    elapsed_time = run(f_0, f_1, backend, precision_policy, grid, bc_mask, missing_mask, args.num_steps)
+    grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)
+    elapsed_time = run(backend, precision_policy, grid_shape, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
 
     print(f"Simulation completed in {elapsed_time:.2f} seconds")

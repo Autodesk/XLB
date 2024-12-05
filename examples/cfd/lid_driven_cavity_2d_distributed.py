@@ -10,15 +10,21 @@ class LidDrivenCavity2D_distributed(LidDrivenCavity2D):
     def __init__(self, omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy):
         super().__init__(omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy)
 
-    def setup_stepper(self, omega):
-        stepper = IncompressibleNavierStokesStepper(omega, boundary_conditions=self.boundary_conditions)
-        distributed_stepper = distribute(
+    def setup_stepper(self):
+        # Create the base stepper
+        stepper = IncompressibleNavierStokesStepper(
+            omega=self.omega,
+            grid=self.grid,
+            boundary_conditions=self.boundary_conditions,
+            collision_type="BGK",
+        )
+
+        # Distribute the stepper
+        self.stepper = distribute(
             stepper,
             self.grid,
             self.velocity_set,
         )
-        self.stepper = distributed_stepper
-        return
 
 
 if __name__ == "__main__":

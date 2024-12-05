@@ -35,73 +35,56 @@ class MeshBoundaryMasker(Operator):
     def jax_implementation(
         self,
         bc,
-        origin,
-        spacing,
-        id_number,
         bc_mask,
         missing_mask,
-        start_index=(0, 0, 0),
     ):
         raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
         # Use Warp backend even for this particular operation.
         wp.init()
         bc_mask = wp.from_jax(bc_mask)
         missing_mask = wp.from_jax(missing_mask)
-        bc_mask, missing_mask = self.warp_implementation(bc, origin, spacing, bc_mask, missing_mask, start_index)
+        bc_mask, missing_mask = self.warp_implementation(bc, bc_mask, missing_mask)
         return wp.to_jax(bc_mask), wp.to_jax(missing_mask)
 
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.c
-        _q = wp.constant(self.velocity_set.q)
+        _q = self.velocity_set.q
 
         # Construct the warp kernel
         @wp.kernel
         def kernel(
             mesh_id: wp.uint64,
-            origin: wp.vec3,
-            spacing: wp.vec3,
             id_number: wp.int32,
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
-            start_index: wp.vec3i,
         ):
             # get index
             i, j, k = wp.tid()
 
             # Get local indices
-            index = wp.vec3i()
-            index[0] = i - start_index[0]
-            index[1] = j - start_index[1]
-            index[2] = k - start_index[2]
+            index = wp.vec3i(i, j, k)
 
             # position of the point
             ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
-            ijk = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
-            pos = wp.cw_mul(ijk, spacing) + origin
-
+            pos = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
             # Compute the maximum length
-            max_length = wp.sqrt(
-                (spacing[0] * wp.float32(bc_mask.shape[1])) ** 2.0
-                + (spacing[1] * wp.float32(bc_mask.shape[2])) ** 2.0
-                + (spacing[2] * wp.float32(bc_mask.shape[3])) ** 2.0
-            )
+            max_length = wp.sqrt(2.0) / 2.0  # half of unit cell diagonal
 
             # evaluate if point is inside mesh
-            query = wp.mesh_query_point_sign_winding_number(mesh_id, pos, max_length)
+            query = wp.mesh_query_point_no_sign(mesh_id, pos, max_length)
             if query.result:
                 # set point to be solid
-                if query.sign <= 0:  # TODO: fix this
-                    # Stream indices
-                    for l in range(1, _q):
-                        # Get the index of the streaming direction
-                        push_index = wp.vec3i()
-                        for d in range(self.velocity_set.d):
-                            push_index[d] = index[d] + _c[d, l]
+                # Stream indices
+                for l in range(1, _q):
+                    # Get the index of the streaming direction
+                    push_index = wp.vec3i()
+                    for d in range(self.velocity_set.d):
+                        push_index[d] = index[d] + _c[d, l]
 
-                        # Set the boundary id and missing_mask
-                        bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
-                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
+                    # Set the boundary id and missing_mask
+                    bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
+                    missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel
 
@@ -109,19 +92,26 @@ class MeshBoundaryMasker(Operator):
     def warp_implementation(
         self,
         bc,
-        origin,
-        spacing,
         bc_mask,
         missing_mask,
-        start_index=(0, 0, 0),
     ):
         assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
         assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
-        assert (
-            bc.mesh_vertices.shape[1] == self.velocity_set.d
-        ), "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
+        assert bc.mesh_vertices.shape[1] == self.velocity_set.d, (
+            "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
+        )
         mesh_vertices = bc.mesh_vertices
         id_number = bc.id
+
+        # Check mesh extents against domain dimensions
+        domain_shape = bc_mask.shape[1:]  # (nx, ny, nz)
+        mesh_min = np.min(mesh_vertices, axis=0)
+        mesh_max = np.max(mesh_vertices, axis=0)
+
+        if any(mesh_min < 0) or any(mesh_max >= domain_shape):
+            raise ValueError(
+                f"Mesh extents ({mesh_min}, {mesh_max}) exceed domain dimensions {domain_shape}. The mesh must be fully contained within the domain."
+            )
 
         # We are done with bc.mesh_vertices. Remove them from BC objects
         bc.__dict__.pop("mesh_vertices", None)
@@ -140,12 +130,9 @@ class MeshBoundaryMasker(Operator):
             self.warp_kernel,
             inputs=[
                 mesh.id,
-                origin,
-                spacing,
                 id_number,
                 bc_mask,
                 missing_mask,
-                start_index,
             ],
             dim=bc_mask.shape[1:],
         )

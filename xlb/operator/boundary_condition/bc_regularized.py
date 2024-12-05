@@ -7,7 +7,8 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
-from typing import Any
+from typing import Any, Union, Tuple
+import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -44,7 +45,8 @@ class RegularizedBC(ZouHeBC):
     def __init__(
         self,
         bc_type,
-        prescribed_value,
+        profile=None,
+        prescribed_value: Union[float, Tuple[float, ...], np.ndarray] = None,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
@@ -54,6 +56,7 @@ class RegularizedBC(ZouHeBC):
         # Call the parent constructor
         super().__init__(
             bc_type,
+            profile,
             prescribed_value,
             velocity_set,
             precision_policy,
@@ -127,15 +130,11 @@ class RegularizedBC(ZouHeBC):
         # assign placeholders for both u and rho based on prescribed_value
         _d = self.velocity_set.d
         _q = self.velocity_set.q
-        u = self.prescribed_value if self.bc_type == "velocity" else (0,) * _d
-        rho = self.prescribed_value if self.bc_type == "pressure" else 0.0
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
         # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
         # compute Qi tensor and store it in self
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _rho = self.compute_dtype(rho)
-        _u = _u_vec(u[0], u[1], u[2]) if _d == 3 else _u_vec(u[0], u[1])
         _opp_indices = self.velocity_set.opp_indices
         _w = self.velocity_set.w
         _c = self.velocity_set.c
@@ -222,6 +221,15 @@ class RegularizedBC(ZouHeBC):
             # Find normal vector
             normals = get_normal_vectors(missing_mask)
 
+            # Find the value of u from the missing directions
+            for l in range(_q):
+                # Since we are only considering normal velocity, we only need to find one value
+                if missing_mask[l] == wp.uint8(1):
+                    # Create velocity vector by multiplying the prescribed value with the normal vector
+                    prescribed_value = f_1[_opp_indices[l], index[0], index[1], index[2]]
+                    _u = -prescribed_value * normals
+                    break
+
             # calculate rho
             fsum = _get_fsum(_f, missing_mask)
             unormal = self.compute_dtype(0.0)
@@ -252,6 +260,13 @@ class RegularizedBC(ZouHeBC):
 
             # Find normal vector
             normals = get_normal_vectors(missing_mask)
+
+            # Find the value of rho from the missing directions
+            for q in range(_q):
+                # Since we need only one scalar value, we only need to find one value
+                if missing_mask[q] == wp.uint8(1):
+                    _rho = f_1[_opp_indices[q], index[0], index[1], index[2]]
+                    break
 
             # calculate velocity
             fsum = _get_fsum(_f, missing_mask)

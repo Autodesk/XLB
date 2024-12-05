@@ -2,12 +2,12 @@ import xlb
 import time
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
-from xlb.helper import create_nse_fields, initialize_eq
+from xlb.grid import grid_factory
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import RegularizedBC
 from xlb.operator.macroscopic import Macroscopic
-from xlb.operator.boundary_masker import IndicesBoundaryMasker
 from xlb.utils import save_fields_vtk, save_image
+from xlb.helper import initialize_eq
 import warp as wp
 import numpy as np
 import jax.numpy as jnp
@@ -48,18 +48,16 @@ class TurbulentChannel3D:
         self.u_tau = u_tau
         self.visc = u_tau * channel_half_width / Re_tau
         self.omega = 1.0 / (3.0 * self.visc + 0.5)
-        # DeltaPlus = Re_tau / channel_half_width
-        # DeltaPlus = u_tau / nu * Delta where u_tau / nu = Re_tau / channel_half_width
-
         self.grid_shape = grid_shape
         self.velocity_set = velocity_set
         self.backend = backend
         self.precision_policy = precision_policy
-        self.grid, self.f_0, self.f_1, self.missing_mask, self.bc_mask = create_nse_fields(grid_shape)
-        self.stepper = None
         self.boundary_conditions = []
 
-        # Setup the simulation BC, its initial conditions, and the stepper
+        # Create grid using factory
+        self.grid = grid_factory(grid_shape, compute_backend=backend)
+
+        # Setup the simulation BC and stepper
         self._setup()
 
     def get_force(self):
@@ -71,9 +69,10 @@ class TurbulentChannel3D:
 
     def _setup(self):
         self.setup_boundary_conditions()
-        self.setup_boundary_masker()
-        self.initialize_fields()
         self.setup_stepper()
+        # Initialize fields using the stepper
+        self.f_0, self.f_1, self.bc_mask, self.missing_mask = self.stepper.prepare_fields()
+        self.initialize_fields()
 
     def define_boundary_indices(self):
         # top and bottom sides of the channel are no-slip and the other directions are periodic
@@ -83,19 +82,12 @@ class TurbulentChannel3D:
 
     def setup_boundary_conditions(self):
         walls = self.define_boundary_indices()
-        bc_walls = RegularizedBC("velocity", (0.0, 0.0, 0.0), indices=walls)
+        bc_walls = RegularizedBC("velocity", prescribed_value=(0.0, 0.0, 0.0), indices=walls)
         self.boundary_conditions = [bc_walls]
 
-    def setup_boundary_masker(self):
-        indices_boundary_masker = IndicesBoundaryMasker(
-            velocity_set=self.velocity_set,
-            precision_policy=self.precision_policy,
-            compute_backend=self.backend,
-        )
-        self.bc_mask, self.missing_mask = indices_boundary_masker(self.boundary_conditions, self.bc_mask, self.missing_mask)
-
     def initialize_fields(self):
-        shape = (self.velocity_set.d,) + (self.grid_shape)
+        # Initialize with random velocity field
+        shape = (self.velocity_set.d,) + self.grid_shape
         np.random.seed(0)
         u_init = np.random.random(shape)
         if self.backend == ComputeBackend.JAX:
@@ -105,9 +97,12 @@ class TurbulentChannel3D:
         self.f_0 = initialize_eq(self.f_0, self.grid, self.velocity_set, self.precision_policy, self.backend, u=u_init)
 
     def setup_stepper(self):
-        force = self.get_force()
         self.stepper = IncompressibleNavierStokesStepper(
-            self.omega, boundary_conditions=self.boundary_conditions, collision_type="KBC", forcing_scheme="exact_difference", force_vector=force
+            omega=self.omega,
+            grid=self.grid,
+            boundary_conditions=self.boundary_conditions,
+            collision_type="KBC",
+            force_vector=self.get_force(),
         )
 
     def run(self, num_steps, print_interval, post_process_interval=100):
@@ -142,14 +137,12 @@ class TurbulentChannel3D:
         u_magnitude = (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5
         fields = {"rho": rho[0], "u_x": u[0], "u_y": u[1], "u_z": u[2], "u_magnitude": u_magnitude}
         save_fields_vtk(fields, timestep=i)
-        save_image(fields["u_magnitude"][:, grid_size_y // 2, :], timestep=i)
+        save_image(fields["u_magnitude"][:, self.grid_shape[1] // 2, :], timestep=i)
 
         # Save monitor plot
         self.plot_uplus(u, i)
-        return
 
     def plot_uplus(self, u, timestep):
-        # Compute moving average of drag coefficient, 100, 1000, 10000
         # mean streamwise velocity in wall units u^+(z)
         # Wall distance in wall units to be used inside output_data
         zz = np.arange(self.grid_shape[-1])
@@ -165,6 +158,7 @@ class TurbulentChannel3D:
         ax.set_ylim([0, 20])
         fname = "uplus_" + str(timestep // 10000).zfill(5) + ".png"
         plt.savefig(fname, format="png")
+        plt.close()
 
 
 if __name__ == "__main__":

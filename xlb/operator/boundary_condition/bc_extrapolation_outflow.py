@@ -56,12 +56,15 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             mesh_vertices,
         )
 
+        # Set the flag for auxilary data recovery
+        self.needs_aux_recovery = True
+
         # find and store the normal vector using indices
         self._get_normal_vec(indices)
 
         # Unpack the two warp functionals needed for this BC!
         if self.compute_backend == ComputeBackend.WARP:
-            self.warp_functional, self.prepare_bc_auxilary_data = self.warp_functional
+            self.warp_functional, self.update_bc_auxilary_data = self.warp_functional
 
     def _get_normal_vec(self, indices):
         # Get the frequency count and most common element directly
@@ -92,9 +95,9 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return jnp.roll(fld, (vec[0], vec[1], vec[2]), axis=(1, 2, 3))
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def prepare_bc_auxilary_data(self, f_pre, f_post, bc_mask, missing_mask):
+    def update_bc_auxilary_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
-        Prepare the auxilary distribution functions for the boundary condition.
+        Update the auxilary distribution functions for the boundary condition.
         Since this function is called post-collisiotn: f_pre = f_post_stream and f_post = f_post_collision
         """
         sound_speed = 1.0 / jnp.sqrt(3.0)
@@ -171,7 +174,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return _f
 
         @wp.func
-        def prepare_bc_auxilary_data(
+        def update_bc_auxilary_data(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -180,7 +183,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             f_pre: Any,
             f_post: Any,
         ):
-            # Preparing the formulation for this BC using the neighbour's populations stored in f_aux and
+            # Update the auxilary data for this BC using the neighbour's populations stored in f_aux and
             # f_pre (post-streaming values of the current voxel). We use directions that leave the domain
             # for storing this prepared data.
             _f = f_post
@@ -199,7 +202,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         kernel = self._construct_kernel(functional)
 
-        return (functional, prepare_bc_auxilary_data), kernel
+        return (functional, update_bc_auxilary_data), kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
