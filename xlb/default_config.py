@@ -21,7 +21,7 @@ def init(velocity_set, default_backend, default_precision_policy):
 
         wp.init()  # TODO: Must be removed in the future versions of WARP
     elif default_backend == ComputeBackend.JAX:
-        check_multi_gpu_support()
+        check_backend_support()
     else:
         raise ValueError(f"Unsupported compute backend: {default_backend}")
 
@@ -30,11 +30,19 @@ def default_backend() -> ComputeBackend:
     return DefaultConfig.default_backend
 
 
-def check_multi_gpu_support():
-    gpus = jax.devices("gpu")
-    if len(gpus) > 1:
-        print("Multi-GPU support is available: {} GPUs detected.".format(len(gpus)))
-    elif len(gpus) == 1:
-        print("Single-GPU support is available: 1 GPU detected.")
+def check_backend_support():
+    if jax.devices()[0].device_kind == "gpu":
+        gpus = jax.devices("gpu")
+        if len(gpus) > 1:
+            print("Multi-GPU support is available: {} GPUs detected.".format(len(gpus)))
+        elif len(gpus) == 1:
+            print("Single-GPU support is available: 1 GPU detected.")
+
+    if jax.devices()[0].device_kind == "tpu":
+        tpus = jax.devices("tpu")
+        if len(tpus) > 1:
+            print("Multi-TPU support is available: {} TPUs detected.".format(len(tpus)))
+        elif len(tpus) == 1:
+            print("Single-TPU support is available: 1 TPU detected.")
     else:
         print("No GPU support is available; CPU fallback will be used.")
