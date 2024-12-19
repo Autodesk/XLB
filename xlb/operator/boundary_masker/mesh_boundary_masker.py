@@ -48,10 +48,20 @@ class MeshBoundaryMasker(Operator):
 
     def _construct_warp(self):
         # Make constants for warp
-        _c = self.velocity_set.c
-        _q = self.velocity_set.q
+        _c_float = self.velocity_set.c_float
+        _q = wp.constant(self.velocity_set.q)
+        _opp_indices = self.velocity_set.opp_indices
+
+        @wp.func
+        def index_to_position(index: wp.vec3i):
+            # position of the point
+            ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
+            pos = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
+            return pos
 
         # Construct the warp kernel
+        # Do voxelization mesh query (warp.mesh_query_aabb) to find solid voxels
+        #  - this gives an approximate 1 voxel thick surface around mesh
         @wp.kernel
         def kernel(
             mesh_id: wp.uint64,
@@ -66,25 +76,27 @@ class MeshBoundaryMasker(Operator):
             index = wp.vec3i(i, j, k)
 
             # position of the point
-            ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
-            pos = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
-            # Compute the maximum length
-            max_length = wp.sqrt(2.0) / 2.0  # half of unit cell diagonal
+            pos_bc_cell = index_to_position(index)
+            half = wp.vec3(0.5, 0.5, 0.5)
 
-            # evaluate if point is inside mesh
-            query = wp.mesh_query_point_no_sign(mesh_id, pos, max_length)
-            if query.result:
-                # set point to be solid
-                # Stream indices
+            vox_query = wp.mesh_query_aabb(mesh_id, pos_bc_cell - half, pos_bc_cell + half)
+            face = wp.int32(0)
+            if wp.mesh_query_aabb_next(vox_query, face):
+                # Make solid voxel
+                bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
+            else:
+                # Find the fractional distance to the mesh in each direction
                 for l in range(1, _q):
-                    # Get the index of the streaming direction
-                    push_index = wp.vec3i()
-                    for d in range(self.velocity_set.d):
-                        push_index[d] = index[d] + _c[d, l]
+                    _dir = wp.vec3f(_c_float[0, l], _c_float[1, l], _c_float[2, l])
 
-                    # Set the boundary id and missing_mask
-                    bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
-                    missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
+                    # Check to see if this neighbor is solid
+                    vox_query_dir = wp.mesh_query_aabb(mesh_id, pos_bc_cell + _dir - half, pos_bc_cell + _dir + half)
+                    face = wp.int32(0)
+                    if wp.mesh_query_aabb_next(vox_query_dir, face):
+                        # We know we have a solid neighbor
+                        # Set the boundary id and missing_mask
+                        bc_mask[0, index[0], index[1], index[2]] = wp.uint8(id_number)
+                        missing_mask[_opp_indices[l], index[0], index[1], index[2]] = True
 
         return None, kernel
 
@@ -97,9 +109,9 @@ class MeshBoundaryMasker(Operator):
     ):
         assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
         assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
-        assert bc.mesh_vertices.shape[1] == self.velocity_set.d, (
-            "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
-        )
+        assert (
+            bc.mesh_vertices.shape[1] == self.velocity_set.d
+        ), "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
         mesh_vertices = bc.mesh_vertices
         id_number = bc.id
 

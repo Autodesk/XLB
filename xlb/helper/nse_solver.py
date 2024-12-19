@@ -3,6 +3,7 @@ from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
 from typing import Tuple
 
+
 def create_nse_fields(
     grid_shape: Tuple[int, int, int] = None,
     grid=None,
