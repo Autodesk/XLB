@@ -52,12 +52,12 @@ class IndicesBoundaryMasker(Operator):
         # For now, we compute the bmap on GPU zero.
         if dim == 2:
             bmap = jnp.zeros((pad_x * 2 + bc_mask[0].shape[0], pad_y * 2 + bc_mask[0].shape[1]), dtype=jnp.uint8)
-            bmap = bmap.at[pad_x : -pad_x, pad_y : -pad_y].set(bc_mask[0])
+            bmap = bmap.at[pad_x:-pad_x, pad_y:-pad_y].set(bc_mask[0])
             grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y)), constant_values=True)
             # bmap = jnp.pad(bc_mask[0], ((pad_x, pad_x), (pad_y, pad_y)), constant_values=0)
         if dim == 3:
             bmap = jnp.zeros((pad_x * 2 + bc_mask[0].shape[0], pad_y * 2 + bc_mask[0].shape[1], pad_z * 2 + bc_mask[0].shape[2]), dtype=jnp.uint8)
-            bmap = bmap.at[pad_x : -pad_x, pad_y : -pad_y, pad_z : -pad_z].set(bc_mask[0])
+            bmap = bmap.at[pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z].set(bc_mask[0])
             grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=True)
             # bmap = jnp.pad(bc_mask[0], ((pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=0)
 

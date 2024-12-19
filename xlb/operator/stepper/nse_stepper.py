@@ -74,6 +74,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_0 = initializer(self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
         else:
             from xlb.helper.initializers import initialize_eq
+
             f_0 = initialize_eq(f_0, self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
 
         # Copy f_0 using backend-specific copy to f_1
