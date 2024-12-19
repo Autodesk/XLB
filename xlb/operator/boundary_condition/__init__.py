@@ -1,3 +1,4 @@
+from xlb.operator.boundary_condition.helper_functions_bc import HelperFunctionsBC
 from xlb.operator.boundary_condition.boundary_condition import BoundaryCondition
 from xlb.operator.boundary_condition.boundary_condition_registry import BoundaryConditionRegistry
 from xlb.operator.boundary_condition.bc_equilibrium import EquilibriumBC
