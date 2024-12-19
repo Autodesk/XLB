@@ -31,14 +31,14 @@ def default_backend() -> ComputeBackend:
 
 
 def check_backend_support():
-    if jax.devices()[0].device_kind == "gpu":
+    if jax.devices()[0].platform == "gpu":
         gpus = jax.devices("gpu")
         if len(gpus) > 1:
             print("Multi-GPU support is available: {} GPUs detected.".format(len(gpus)))
         elif len(gpus) == 1:
             print("Single-GPU support is available: 1 GPU detected.")
 
-    if jax.devices()[0].device_kind == "tpu":
+    if jax.devices()[0].platform == "tpu":
         tpus = jax.devices("tpu")
         if len(tpus) > 1:
             print("Multi-TPU support is available: {} TPUs detected.".format(len(tpus)))

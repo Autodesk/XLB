@@ -35,8 +35,9 @@ class IndicesBoundaryMasker(Operator):
         :param shape: Tuple representing the shape of the domain (nx, ny) for 2D or (nx, ny, nz) for 3D.
         :return: Array of boolean flags where each flag indicates whether the corresponding index is inside the bounds.
         """
+        d = self.velocity_set.d
         shape_array = np.array(shape)
-        return np.all((indices > 0) & (indices < shape_array[:, np.newaxis] - 1), axis=0)
+        return np.all((indices[:d] > 0) & (indices[:d] < shape_array[:d, np.newaxis] - 1), axis=0)
 
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
