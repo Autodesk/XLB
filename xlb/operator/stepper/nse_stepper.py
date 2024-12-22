@@ -256,12 +256,21 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_0: Any,
             _f1_thread: Any,
         ):
+            # Note:
+            # In XLB, the BC auxiliary data (e.g. prescribed values of pressure or normal velocity) are stored in (i) central index of f_1 and/or
+            # (ii) missing directions of f_1. Some BCs may or may not need all these available storage space. This function checks whether
+            # the BC needs recovery of auxiliary data and then recovers the information for the next iteration (due to buffer swapping) by
+            # writting the thread values of f_1 (i.e._f1_thread) into f_0.
+
             # Unroll the loop over boundary conditions
             for i in range(wp.static(len(self.boundary_conditions))):
                 if wp.static(self.boundary_conditions[i].needs_aux_recovery):
                     if _boundary_id == wp.static(self.boundary_conditions[i].id):
                         # Perform the swapping of data
-                        for l in range(self.velocity_set.q):
+                        # (i) Recover the values stored in the central index of f_1
+                        f_0[0, index[0], index[1], index[2]] = self.store_dtype(_f1_thread[0])
+                        # (ii) Recover the values stored in the missing directions of f_1
+                        for l in range(1, self.velocity_set.q):
                             if _missing_mask[l] == wp.uint8(1):
                                 f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(_f1_thread[_opp_indices[l]])
 

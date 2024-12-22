@@ -222,13 +222,10 @@ class RegularizedBC(ZouHeBC):
             normals = get_normal_vectors(missing_mask)
 
             # Find the value of u from the missing directions
-            for l in range(_q):
-                # Since we are only considering normal velocity, we only need to find one value
-                if missing_mask[l] == wp.uint8(1):
-                    # Create velocity vector by multiplying the prescribed value with the normal vector
-                    prescribed_value = f_1[_opp_indices[l], index[0], index[1], index[2]]
-                    _u = -prescribed_value * normals
-                    break
+            # Since we are only considering normal velocity, we only need to find one value (stored at the center of f_1)
+            # Create velocity vector by multiplying the prescribed value with the normal vector
+            prescribed_value = f_1[0, index[0], index[1], index[2]]
+            _u = -prescribed_value * normals
 
             # calculate rho
             fsum = _get_fsum(_f, missing_mask)
@@ -262,11 +259,8 @@ class RegularizedBC(ZouHeBC):
             normals = get_normal_vectors(missing_mask)
 
             # Find the value of rho from the missing directions
-            for q in range(_q):
-                # Since we need only one scalar value, we only need to find one value
-                if missing_mask[q] == wp.uint8(1):
-                    _rho = f_1[_opp_indices[q], index[0], index[1], index[2]]
-                    break
+            # Since we need only one scalar value, we only need to find one value (stored at the center of f_1)
+            _rho = f_1[0, index[0], index[1], index[2]]
 
             # calculate velocity
             fsum = _get_fsum(_f, missing_mask)
