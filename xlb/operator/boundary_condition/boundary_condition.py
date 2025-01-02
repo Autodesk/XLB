@@ -190,8 +190,13 @@ class BoundaryCondition(Operator):
                 prescribed_values = functional(index)
                 # Write the result for all q directions, but only store up to num_of_aux_data
                 # TODO: Somehow raise an error if the number of prescribed values does not match the number of missing directions
-                counter = wp.int32(0)
-                for l in range(self.velocity_set.q):
+
+                # The first BC auxiliary data is stored in the zero'th index of f_1 associated with its center.
+                f_1[0, index[0], index[1], index[2]] = self.store_dtype(prescribed_values[0])
+                counter = wp.int32(1)
+
+                # The other remaining BC auxiliary data are stored in missing directions of f_1.
+                for l in range(1, self.velocity_set.q):
                     if _missing_mask[l] == wp.uint8(1) and counter < _num_of_aux_data:
                         f_1[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(prescribed_values[counter])
                         counter += 1

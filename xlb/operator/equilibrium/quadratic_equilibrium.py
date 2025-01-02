@@ -20,7 +20,7 @@ class QuadraticEquilibrium(Equilibrium):
     def jax_implementation(self, rho, u):
         cu = 3.0 * jnp.tensordot(self.velocity_set.c, u, axes=(0, 0))
         usqr = 1.5 * jnp.sum(jnp.square(u), axis=0, keepdims=True)
-        w = self.velocity_set.w.reshape((-1,) + (1,) * (len(rho.shape) - 1))
+        w = self.velocity_set.w.reshape((-1,) + (1,) * self.velocity_set.d)
         feq = rho * w * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
         return feq
 

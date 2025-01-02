@@ -91,6 +91,15 @@ class ZouHeBC(BoundaryCondition):
                 if non_zero_count > 1:
                     raise ValueError("This BC only supports normal prescribed values (only one non-zero element allowed)")
 
+            # Prescribed value for this BC must be:
+            # a single non-zero number associated with normal velocity magnitude for velocity BC OR
+            # a single non-zero number associated with pressure BC OR
+            # a vector of zeros associated with no-slip BC.
+            # Accounting for all scenarios here.
+            if self.compute_backend is ComputeBackend.WARP:
+                idx = np.nonzero(prescribed_value)[0]
+                prescribed_value = prescribed_value[idx][0] if idx.size else 0.0
+                prescribed_value = self.precision_policy.store_precision.wp_dtype(prescribed_value)
             self.prescribed_value = prescribed_value
             self.profile = self._create_constant_prescribed_profile()
 
@@ -107,28 +116,14 @@ class ZouHeBC(BoundaryCondition):
         self.needs_padding = True
 
     def _create_constant_prescribed_profile(self):
-        if self.bc_type == "velocity":
+        _prescribed_value = self.prescribed_value
 
-            @wp.func
-            def prescribed_profile_warp(index: wp.vec3i):
-                # Get the non-zero value from prescribed_value
-                value = wp.static(
-                    self.precision_policy.store_precision.wp_dtype(float(self.prescribed_value[np.nonzero(self.prescribed_value)[0][0]]))
-                )
-                return wp.vec(value, length=1)
+        @wp.func
+        def prescribed_profile_warp(index: wp.vec3i):
+            return wp.vec(_prescribed_value, length=1)
 
-            def prescribed_profile_jax():
-                return jnp.array(self.prescribed_value, dtype=self.precision_policy.store_precision.jax_dtype).reshape(-1, 1)
-
-        else:  # pressure
-
-            @wp.func
-            def prescribed_profile_warp(index: wp.vec3i):
-                value = wp.static(self.precision_policy.store_precision.wp_dtype(self.prescribed_value))
-                return wp.vec(value, length=1)
-
-            def prescribed_profile_jax():
-                return jnp.array(self.prescribed_value)
+        def prescribed_profile_jax():
+            return jnp.array(_prescribed_value, dtype=self.precision_policy.store_precision.jax_dtype).reshape(-1, 1)
 
         if self.compute_backend == ComputeBackend.JAX:
             return prescribed_profile_jax
@@ -332,8 +327,8 @@ class ZouHeBC(BoundaryCondition):
             index: Any,
             timestep: Any,
             _missing_mask: Any,
-            f_pre: Any,
-            f_post: Any,
+            f_0: Any,
+            f_1: Any,
             _f_pre: Any,
             _f_post: Any,
         ):
@@ -348,14 +343,10 @@ class ZouHeBC(BoundaryCondition):
             unormal = self.compute_dtype(0.0)
 
             # Find the value of u from the missing directions
-            for l in range(_q):
-                # Since we are only considering normal velocity, we only need to find one value (all values are the same in the missing directions)
-                if _missing_mask[l] == wp.uint8(1):
-                    # Create velocity vector by multiplying the prescribed value with the normal vector
-                    # TODO: This can be optimized by saving _missing_mask[l] in the bc class later since it is the same for all boundary cells
-                    prescribed_value = f_post[_opp_indices[l], index[0], index[1], index[2]]
-                    _u = -prescribed_value * normals
-                    break
+            # Since we are only considering normal velocity, we only need to find one value (stored at the center of f_1)
+            # Create velocity vector by multiplying the prescribed value with the normal vector
+            prescribed_value = f_1[0, index[0], index[1], index[2]]
+            _u = -prescribed_value * normals
 
             for d in range(_d):
                 unormal += _u[d] * normals[d]
@@ -372,8 +363,8 @@ class ZouHeBC(BoundaryCondition):
             index: Any,
             timestep: Any,
             _missing_mask: Any,
-            f_pre: Any,
-            f_post: Any,
+            f_0: Any,
+            f_1: Any,
             _f_pre: Any,
             _f_post: Any,
         ):
@@ -384,11 +375,8 @@ class ZouHeBC(BoundaryCondition):
             normals = get_normal_vectors(_missing_mask)
 
             # Find the value of rho from the missing directions
-            for q in range(_q):
-                # Since we need only one scalar value, we only need to find one value (all values are the same in the missing directions)
-                if _missing_mask[q] == wp.uint8(1):
-                    _rho = f_post[_opp_indices[q], index[0], index[1], index[2]]
-                    break
+            # Since we need only one scalar value, we only need to find one value (stored at the center of f_1)
+            _rho = f_1[0, index[0], index[1], index[2]]
 
             # calculate velocity
             fsum = _get_fsum(_f, _missing_mask)

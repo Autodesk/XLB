@@ -91,8 +91,8 @@ class FlowOverSphere:
         @wp.func
         def bc_profile_warp(index: wp.vec3i):
             # Poiseuille flow profile: parabolic velocity distribution
-            y = self.precision_policy.store_precision.wp_dtype(index[1])
-            z = self.precision_policy.store_precision.wp_dtype(index[2])
+            y = wp.float32(index[1])
+            z = wp.float32(index[2])
 
             # Calculate normalized distance from center
             y_center = y - (H_y / 2.0)
