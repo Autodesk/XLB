@@ -16,22 +16,21 @@ class BGK(Collision):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
-    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray, rho, u):
+    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray, rho, u, omega):
         fneq = f - feq
-        fout = f - self.compute_dtype(self.omega) * fneq
+        fout = f - self.compute_dtype(omega) * fneq
         return fout
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _w = self.velocity_set.w
-        _omega = wp.constant(self.compute_dtype(self.omega))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         # Construct the functional
         @wp.func
-        def functional(f: Any, feq: Any, rho: Any, u: Any):
+        def functional(f: Any, feq: Any, rho: Any, u: Any, omega: Any):
             fneq = f - feq
-            fout = f - _omega * fneq
+            fout = f - self.compute_dtype(omega) * fneq
             return fout
 
         # Construct the warp kernel
@@ -42,6 +41,7 @@ class BGK(Collision):
             fout: wp.array4d(dtype=Any),
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
+            omega: Any,
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -55,7 +55,7 @@ class BGK(Collision):
                 _feq[l] = feq[l, index[0], index[1], index[2]]
 
             # Compute the collision
-            _fout = functional(_f, _feq, rho, u)
+            _fout = functional(_f, _feq, rho, u, omega)
 
             # Write the result
             for l in range(self.velocity_set.q):
@@ -64,7 +64,7 @@ class BGK(Collision):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq, fout, rho, u):
+    def warp_implementation(self, f, feq, fout, rho, u, omega):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
@@ -74,6 +74,7 @@ class BGK(Collision):
                 fout,
                 rho,
                 u,
+                omega,
             ],
             dim=f.shape[1:],
         )

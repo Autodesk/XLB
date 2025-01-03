@@ -98,7 +98,6 @@ class TurbulentChannel3D:
 
     def setup_stepper(self):
         self.stepper = IncompressibleNavierStokesStepper(
-            omega=self.omega,
             grid=self.grid,
             boundary_conditions=self.boundary_conditions,
             collision_type="KBC",
@@ -108,7 +107,7 @@ class TurbulentChannel3D:
     def run(self, num_steps, print_interval, post_process_interval=100):
         start_time = time.time()
         for i in range(num_steps):
-            self.f_0, self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
+            self.f_0, self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, self.omega, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if (i + 1) % print_interval == 0:

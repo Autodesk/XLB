@@ -40,11 +40,11 @@ def test_bgk_collision_warp(dim, velocity_set, grid_shape, omega):
     f_eq = my_grid.create_field(cardinality=DefaultConfig.velocity_set.q)
     f_eq = compute_macro(rho, u, f_eq)
 
-    compute_collision = BGK(omega=omega)
+    compute_collision = BGK()
     f_orig = my_grid.create_field(cardinality=DefaultConfig.velocity_set.q)
 
     f_out = my_grid.create_field(cardinality=DefaultConfig.velocity_set.q)
-    f_out = compute_collision(f_orig, f_eq, f_out, rho, u)
+    f_out = compute_collision(f_orig, f_eq, f_out, rho, u, omega)
 
     f_eq = f_eq.numpy()
     f_out = f_out.numpy()

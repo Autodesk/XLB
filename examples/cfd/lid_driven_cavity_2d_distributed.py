@@ -13,7 +13,6 @@ class LidDrivenCavity2D_distributed(LidDrivenCavity2D):
     def setup_stepper(self):
         # Create the base stepper
         stepper = IncompressibleNavierStokesStepper(
-            omega=self.omega,
             grid=self.grid,
             boundary_conditions=self.boundary_conditions,
             collision_type="BGK",

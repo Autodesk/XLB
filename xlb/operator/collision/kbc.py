@@ -24,18 +24,14 @@ class KBC(Collision):
 
     def __init__(
         self,
-        omega: float,
         velocity_set: VelocitySet = None,
         precision_policy=None,
         compute_backend=None,
     ):
         self.momentum_flux = MomentumFlux()
         self.epsilon = 1e-32
-        self.beta = omega * 0.5
-        self.inv_beta = 1.0 / self.beta
 
         super().__init__(
-            omega=omega,
             velocity_set=velocity_set,
             precision_policy=precision_policy,
             compute_backend=compute_backend,
@@ -49,6 +45,7 @@ class KBC(Collision):
         feq: jnp.ndarray,
         rho: jnp.ndarray,
         u: jnp.ndarray,
+        omega,
     ):
         """
         KBC collision step for lattice.
@@ -74,13 +71,17 @@ class KBC(Collision):
         else:
             raise NotImplementedError("Velocity set not supported: {}".format(type(self.velocity_set)))
 
+        # Compute required constants based on the input omega (omega is the inverse relaxation time)
+        beta = self.compute_dtype(0.5) * self.compute_dtype(omega)
+        inv_beta = 1.0 / beta
+
         # Perform collision
         delta_h = fneq - delta_s
-        gamma = self.inv_beta - (2.0 - self.inv_beta) * self.entropic_scalar_product(delta_s, delta_h, feq) / (
+        gamma = inv_beta - (2.0 - inv_beta) * self.entropic_scalar_product(delta_s, delta_h, feq) / (
             self.epsilon + self.entropic_scalar_product(delta_h, delta_h, feq)
         )
 
-        fout = f - self.beta * (2.0 * delta_s + gamma[None, ...] * delta_h)
+        fout = f - beta * (2.0 * delta_s + gamma[None, ...] * delta_h)
 
         return fout
 
@@ -185,8 +186,6 @@ class KBC(Collision):
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _epsilon = wp.constant(self.compute_dtype(self.epsilon))
-        _beta = wp.constant(self.compute_dtype(self.beta))
-        _inv_beta = wp.constant(self.compute_dtype(1.0 / self.beta))
 
         @wp.func
         def decompose_shear_d2q9(fneq: Any):
@@ -268,6 +267,7 @@ class KBC(Collision):
             feq: Any,
             rho: Any,
             u: Any,
+            omega: Any,
         ):
             # Compute shear and delta_s
             fneq = f - feq
@@ -277,6 +277,10 @@ class KBC(Collision):
             else:
                 shear = decompose_shear_d2q9(fneq)
                 delta_s = shear * rho / self.compute_dtype(4.0)
+
+            # Compute required constants based on the input omega (omega is the inverse relaxation time)
+            _beta = self.compute_dtype(0.5) * self.compute_dtype(omega)
+            _inv_beta = self.compute_dtype(1.0) / _beta
 
             # Perform collision
             delta_h = fneq - delta_s
@@ -296,6 +300,7 @@ class KBC(Collision):
             fout: wp.array4d(dtype=Any),
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
+            omega: Any,
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -314,7 +319,7 @@ class KBC(Collision):
             _rho = rho[0, index[0], index[1], index[2]]
 
             # Compute the collision
-            _fout = functional(_f, _feq, _rho, _u)
+            _fout = functional(_f, _feq, _rho, _u, omega)
 
             # Write the result
             for l in range(self.velocity_set.q):
@@ -323,7 +328,7 @@ class KBC(Collision):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq, fout, rho, u):
+    def warp_implementation(self, f, feq, fout, rho, u, omega):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
@@ -333,6 +338,7 @@ class KBC(Collision):
                 fout,
                 rho,
                 u,
+                omega,
             ],
             dim=f.shape[1:],
         )
