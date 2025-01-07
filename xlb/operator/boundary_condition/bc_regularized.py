@@ -14,10 +14,8 @@ from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC
-from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
-from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
-from xlb.operator.macroscopic.second_moment import SecondMoment as MomentumFlux
+from xlb.operator.boundary_condition import ZouHeBC, HelperFunctionsBC
+from xlb.operator.macroscopic import SecondMoment as MomentumFlux
 
 
 class RegularizedBC(ZouHeBC):
@@ -64,7 +62,6 @@ class RegularizedBC(ZouHeBC):
             indices,
             mesh_vertices,
         )
-        # Overwrite the boundary condition registry id with the bc_type in the name
         self.momentum_flux = MomentumFlux()
 
     @partial(jit, static_argnums=(0,), inline=True)
@@ -127,83 +124,12 @@ class RegularizedBC(ZouHeBC):
         return f_post
 
     def _construct_warp(self):
-        # assign placeholders for both u and rho based on prescribed_value
+        # load helper functions
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
+        # Set local constants
         _d = self.velocity_set.d
         _q = self.velocity_set.q
-
-        # Set local constants TODO: This is a hack and should be fixed with warp update
-        # _u_vec = wp.vec(_d, dtype=self.compute_dtype)
-        # compute Qi tensor and store it in self
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _opp_indices = self.velocity_set.opp_indices
-        _w = self.velocity_set.w
-        _c = self.velocity_set.c
-        _c_float = self.velocity_set.c_float
-        _qi = self.velocity_set.qi
-        # TODO: related to _c_float: this is way less than ideal. we should not be making new types
-
-        @wp.func
-        def _get_fsum(
-            fpop: Any,
-            missing_mask: Any,
-        ):
-            fsum_known = self.compute_dtype(0.0)
-            fsum_middle = self.compute_dtype(0.0)
-            for l in range(_q):
-                if missing_mask[_opp_indices[l]] == wp.uint8(1):
-                    fsum_known += self.compute_dtype(2.0) * fpop[l]
-                elif missing_mask[l] != wp.uint8(1):
-                    fsum_middle += fpop[l]
-            return fsum_known + fsum_middle
-
-        @wp.func
-        def get_normal_vectors(
-            missing_mask: Any,
-        ):
-            if wp.static(_d == 3):
-                for l in range(_q):
-                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) + wp.abs(_c[2, l]) == 1:
-                        return -_u_vec(_c_float[0, l], _c_float[1, l], _c_float[2, l])
-            else:
-                for l in range(_q):
-                    if missing_mask[l] == wp.uint8(1) and wp.abs(_c[0, l]) + wp.abs(_c[1, l]) == 1:
-                        return -_u_vec(_c_float[0, l], _c_float[1, l])
-
-        @wp.func
-        def bounceback_nonequilibrium(
-            fpop: Any,
-            feq: Any,
-            missing_mask: Any,
-        ):
-            for l in range(_q):
-                if missing_mask[l] == wp.uint8(1):
-                    fpop[l] = fpop[_opp_indices[l]] + feq[l] - feq[_opp_indices[l]]
-            return fpop
-
-        @wp.func
-        def regularize_fpop(
-            fpop: Any,
-            feq: Any,
-        ):
-            """
-            Regularizes the distribution functions by adding non-equilibrium contributions based on second moments of fpop.
-            """
-            # Compute momentum flux of off-equilibrium populations for regularization: Pi^1 = Pi^{neq}
-            f_neq = fpop - feq
-            PiNeq = self.momentum_flux.warp_functional(f_neq)
-
-            # Compute double dot product Qi:Pi1 (where Pi1 = PiNeq)
-            nt = _d * (_d + 1) // 2
-            for l in range(_q):
-                QiPi1 = self.compute_dtype(0.0)
-                for t in range(nt):
-                    QiPi1 += _qi[l, t] * PiNeq[t]
-
-                # assign all populations based on eq 45 of Latt et al (2008)
-                # fneq ~ f^1
-                fpop1 = self.compute_dtype(4.5) * _w[l] * QiPi1
-                fpop[l] = feq[l] + fpop1
-            return fpop
 
         @wp.func
         def functional_velocity(
@@ -219,7 +145,7 @@ class RegularizedBC(ZouHeBC):
             _f = f_post
 
             # Find normal vector
-            normals = get_normal_vectors(missing_mask)
+            normals = bc_helper.get_normal_vectors(missing_mask)
 
             # Find the value of u from the missing directions
             # Since we are only considering normal velocity, we only need to find one value (stored at the center of f_1)
@@ -228,7 +154,7 @@ class RegularizedBC(ZouHeBC):
             _u = -prescribed_value * normals
 
             # calculate rho
-            fsum = _get_fsum(_f, missing_mask)
+            fsum = bc_helper.get_bc_fsum(_f, missing_mask)
             unormal = self.compute_dtype(0.0)
             for d in range(_d):
                 unormal += _u[d] * normals[d]
@@ -236,10 +162,10 @@ class RegularizedBC(ZouHeBC):
 
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
-            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+            _f = bc_helper.bounceback_nonequilibrium(_f, feq, missing_mask)
 
             # Regularize the boundary fpop
-            _f = regularize_fpop(_f, feq)
+            _f = bc_helper.regularize_fpop(_f, feq)
             return _f
 
         @wp.func
@@ -256,23 +182,23 @@ class RegularizedBC(ZouHeBC):
             _f = f_post
 
             # Find normal vector
-            normals = get_normal_vectors(missing_mask)
+            normals = bc_helper.get_normal_vectors(missing_mask)
 
             # Find the value of rho from the missing directions
             # Since we need only one scalar value, we only need to find one value (stored at the center of f_1)
             _rho = f_1[0, index[0], index[1], index[2]]
 
             # calculate velocity
-            fsum = _get_fsum(_f, missing_mask)
+            fsum = bc_helper.get_bc_fsum(_f, missing_mask)
             unormal = -self.compute_dtype(1.0) + fsum / _rho
             _u = unormal * normals
 
             # impose non-equilibrium bounceback
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
-            _f = bounceback_nonequilibrium(_f, feq, missing_mask)
+            _f = bc_helper.bounceback_nonequilibrium(_f, feq, missing_mask)
 
             # Regularize the boundary fpop
-            _f = regularize_fpop(_f, feq)
+            _f = bc_helper.regularize_fpop(_f, feq)
             return _f
 
         if self.bc_type == "velocity":

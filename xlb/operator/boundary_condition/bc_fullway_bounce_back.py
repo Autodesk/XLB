@@ -17,9 +17,6 @@ from xlb.operator.boundary_condition.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
-from xlb.operator.boundary_condition.boundary_condition_registry import (
-    boundary_condition_registry,
-)
 
 
 class FullwayBounceBackBC(BoundaryCondition):

@@ -16,6 +16,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb import DefaultConfig
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
+from xlb.operator.boundary_condition import HelperFunctionsBC
 
 
 # Enum for implementation step
@@ -71,53 +72,6 @@ class BoundaryCondition(Operator):
         # A flag for BCs that need auxilary data recovery after streaming
         self.needs_aux_recovery = False
 
-        if self.compute_backend == ComputeBackend.WARP:
-            # Set local constants TODO: This is a hack and should be fixed with warp update
-            _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-            _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
-
-        @wp.func
-        def update_bc_auxilary_data(
-            index: Any,
-            timestep: Any,
-            missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
-        ):
-            return f_post
-
-        @wp.func
-        def _get_thread_data(
-            f_pre: wp.array4d(dtype=Any),
-            f_post: wp.array4d(dtype=Any),
-            bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
-            index: wp.vec3i,
-        ):
-            # Get the boundary id and missing mask
-            _f_pre = _f_vec()
-            _f_post = _f_vec()
-            _boundary_id = bc_mask[0, index[0], index[1], index[2]]
-            _missing_mask = _missing_mask_vec()
-            for l in range(self.velocity_set.q):
-                # q-sized vector of populations
-                _f_pre[l] = self.compute_dtype(f_pre[l, index[0], index[1], index[2]])
-                _f_post[l] = self.compute_dtype(f_post[l, index[0], index[1], index[2]])
-
-                # TODO fix vec bool
-                if missing_mask[l, index[0], index[1], index[2]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
-            return _f_pre, _f_post, _boundary_id, _missing_mask
-
-        # Construct some helper warp functions for getting tid data
-        if self.compute_backend == ComputeBackend.WARP:
-            self._get_thread_data = _get_thread_data
-            self.update_bc_auxilary_data = update_bc_auxilary_data
-
     @partial(jit, static_argnums=(0,), inline=True)
     def update_bc_auxilary_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
@@ -131,6 +85,7 @@ class BoundaryCondition(Operator):
         Constructs the warp kernel for the boundary condition.
         The functional is specific to each boundary condition and should be passed as an argument.
         """
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
         _id = wp.uint8(self.id)
 
         # Construct the warp kernel
@@ -146,7 +101,7 @@ class BoundaryCondition(Operator):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = self._get_thread_data(f_pre, f_post, bc_mask, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = bc_helper.get_thread_data(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
             if _boundary_id == _id:
@@ -165,6 +120,8 @@ class BoundaryCondition(Operator):
         """
         Constructs the warp kernel for the auxilary data recovery.
         """
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
+
         _id = wp.uint8(self.id)
         _opp_indices = self.velocity_set.opp_indices
         _num_of_aux_data = self.num_of_aux_data
@@ -182,7 +139,7 @@ class BoundaryCondition(Operator):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_0, _f_1, _boundary_id, _missing_mask = self._get_thread_data(f_0, f_1, bc_mask, missing_mask, index)
+            _f_0, _f_1, _boundary_id, _missing_mask = bc_helper.get_thread_data(f_0, f_1, bc_mask, missing_mask, index)
 
             # Apply the functional
             if _boundary_id == _id:
