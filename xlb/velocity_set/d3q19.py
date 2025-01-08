@@ -16,7 +16,7 @@ class D3Q19(VelocitySet):
 
     def __init__(self, precision_policy, backend):
         # Construct the velocity vectors and weights
-        c = np.array([ci for ci in itertools.product([-1, 0, 1], repeat=3) if np.sum(np.abs(ci)) <= 2]).T
+        c = np.array([ci for ci in itertools.product([0, -1, 1], repeat=3) if np.sum(np.abs(ci)) <= 2]).T
         w = np.zeros(19)
         for i in range(19):
             if np.sum(np.abs(c[:, i])) == 0:
