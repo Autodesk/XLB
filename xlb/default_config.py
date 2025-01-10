@@ -38,7 +38,7 @@ def check_backend_support():
         elif len(gpus) == 1:
             print("Single-GPU support is available: 1 GPU detected.")
 
-    if jax.devices()[0].platform == "tpu":
+    elif jax.devices()[0].platform == "tpu":
         tpus = jax.devices("tpu")
         if len(tpus) > 1:
             print("Multi-TPU support is available: {} TPUs detected.".format(len(tpus)))

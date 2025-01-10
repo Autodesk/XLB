@@ -31,6 +31,7 @@ class FlowOverSphere:
         self.backend = backend
         self.precision_policy = precision_policy
         self.omega = omega
+
         self.boundary_conditions = []
         self.u_max = 0.04
 
@@ -75,7 +76,6 @@ class FlowOverSphere:
 
     def setup_stepper(self):
         self.stepper = IncompressibleNavierStokesStepper(
-            omega=self.omega,
             grid=self.grid,
             boundary_conditions=self.boundary_conditions,
             collision_type="BGK",
@@ -127,7 +127,7 @@ class FlowOverSphere:
     def run(self, num_steps, post_process_interval=100):
         start_time = time.time()
         for i in range(num_steps):
-            self.f_0, self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, i)
+            self.f_0, self.f_1 = self.stepper(self.f_0, self.f_1, self.bc_mask, self.missing_mask, self.omega, i)
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             if i % post_process_interval == 0 or i == num_steps - 1:

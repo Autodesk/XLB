@@ -25,7 +25,6 @@ from xlb.helper.nse_solver import create_nse_fields
 class IncompressibleNavierStokesStepper(Stepper):
     def __init__(
         self,
-        omega,
         grid,
         boundary_conditions=[],
         collision_type="BGK",
@@ -36,9 +35,9 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Construct the collision operator
         if collision_type == "BGK":
-            self.collision = BGK(omega, self.velocity_set, self.precision_policy, self.compute_backend)
+            self.collision = BGK(self.velocity_set, self.precision_policy, self.compute_backend)
         elif collision_type == "KBC":
-            self.collision = KBC(omega, self.velocity_set, self.precision_policy, self.compute_backend)
+            self.collision = KBC(self.velocity_set, self.precision_policy, self.compute_backend)
 
         if force_vector is not None:
             self.collision = ForcedCollision(collision_operator=self.collision, forcing_scheme=forcing_scheme, force_vector=force_vector)
@@ -128,8 +127,8 @@ class IncompressibleNavierStokesStepper(Stepper):
         return f_0, f_1
 
     @Operator.register_backend(ComputeBackend.JAX)
-    @partial(jit, static_argnums=(0))
-    def jax_implementation(self, f_0, f_1, bc_mask, missing_mask, timestep):
+    @partial(jit, static_argnums=(0,))
+    def jax_implementation(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
         """
         Perform a single step of the lattice boltzmann method
         """
@@ -157,7 +156,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         feq = self.equilibrium(rho, u)
 
         # Apply collision
-        f_post_collision = self.collision(f_post_stream, feq, rho, u)
+        f_post_collision = self.collision(f_post_stream, feq, rho, u, omega)
 
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:
@@ -280,6 +279,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             f_1: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
+            omega: Any,
             timestep: int,
         ):
             i, j, k = wp.tid()
@@ -300,7 +300,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
             _feq = self.equilibrium.warp_functional(_rho, _u)
-            _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u)
+            _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u, omega)
 
             # Apply post-collision boundary conditions
             _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
@@ -315,10 +315,10 @@ class IncompressibleNavierStokesStepper(Stepper):
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_0, f_1, bc_mask, missing_mask, timestep):
+    def warp_implementation(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
         wp.launch(
             self.warp_kernel,
-            inputs=[f_0, f_1, bc_mask, missing_mask, timestep],
+            inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep],
             dim=f_0.shape[1:],
         )
         return f_0, f_1

@@ -53,7 +53,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     boundary_conditions = [EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=lid), FullwayBounceBackBC(indices=walls)]
 
     # Create stepper
-    stepper = IncompressibleNavierStokesStepper(omega=1.0, grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
+    stepper = IncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
     # Distribute if using JAX backend
     if backend == ComputeBackend.JAX:
@@ -64,11 +64,12 @@ def run(backend, precision_policy, grid_shape, num_steps):
         )
 
     # Initialize fields and run simulation
+    omega = 1.0
     f_0, f_1, bc_mask, missing_mask = stepper.prepare_fields()
     start_time = time.time()
 
     for i in range(num_steps):
-        f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, i)
+        f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, omega, i)
         f_0, f_1 = f_1, f_0
     wp.synchronize()
 
