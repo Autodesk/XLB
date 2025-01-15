@@ -3,7 +3,7 @@ import matplotlib.pylab as plt
 from matplotlib import cm
 import numpy as np
 from time import time
-import pyvista as pv
+#import pyvista as pv
 from jax.image import resize
 from jax import jit
 import jax.numpy as jnp

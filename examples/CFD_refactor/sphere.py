@@ -52,7 +52,7 @@ if __name__ == '__main__':
             viscosity=viscosity,
             collision=collision,
             velocity_set="D3Q19",
-            save_state_frequency=1e10,
+            save_state_frequency=1024,
             monitor_frequency=10,
         )
 

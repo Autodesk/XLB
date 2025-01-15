@@ -79,6 +79,7 @@ class STLBoundaryMasker(Operator):
             ):
                 # set point to be solid
                 if sign <= 0:  # TODO: fix this
+
                     # Stream indices
                     for l in range(_q):
                         # Get the index of the streaming direction

@@ -70,9 +70,11 @@ class HalfwayBounceBackBC(BoundaryCondition):
             missing_mask: Any,
             index: Any,
         ):
+
             # Pull the distribution function
             _f = _f_vec()
             for l in range(self.velocity_set.q):
+
                 # Get pull index
                 pull_index = type(index)()
 

@@ -2,7 +2,6 @@
 
 from typing import Any
 import os
-import jax
 import trimesh
 from time import time
 import numpy as np
@@ -167,7 +166,7 @@ class WindTunnel:
         compute_backend=xlb.ComputeBackend.WARP,
         grid_configs={},
         save_state_frequency=1024,
-        monitor_frequency=32,
+        monitor_frequency=1024 * 8,
     ):
 
         # Set parameters
@@ -184,7 +183,8 @@ class WindTunnel:
         self.monitor_frequency = monitor_frequency
 
         # Get fluid properties needed for the simulation
-        self.base_velocity = 0.0289 # From http://jtam.pl/pdf-101879-33440?filename=Application%20of%20the.pdf (Maybe 0.5 better)
+        #self.base_velocity = 0.0289 # From http://jtam.pl/pdf-101879-33440?filename=Application%20of%20the.pdf (Maybe 0.5 better)
+        self.base_velocity = 0.01 # From http://jtam.pl/pdf-101879-33440?filename=Application%20of%20the.pdf (Maybe 0.5 better)
         self.velocity_conversion = self.base_velocity / inlet_velocity
         self.dt = self.dx * self.velocity_conversion
         self.lbm_viscosity = self.viscosity * self.dt / (self.dx ** 2)
@@ -200,6 +200,7 @@ class WindTunnel:
         self.ny = int((upper_bounds[1] - lower_bounds[1]) / dx)
         self.nz = int((upper_bounds[2] - lower_bounds[2]) / dx)
         self.shape = (self.nx, self.ny, self.nz)
+        print(f"Million cells: {self.nx * self.ny * self.nz / 1e6}")
 
         # Set the compute backend
         self.compute_backend = xlb.ComputeBackend.WARP
@@ -462,6 +463,7 @@ class WindTunnel:
             np.linspace(self.lower_bounds[2], self.upper_bounds[2], self.nz, endpoint=False),
         ) # TODO off by one?
         grid["boundary_id"] = self.boundary_id.numpy().flatten("F")
+        grid["missing_mask"] = self.missing_mask.numpy().transpose(1, 2, 3, 0).reshape(-1, self.velocity_set.q, order="F")
         grid["u"] = self.u.numpy().transpose(1, 2, 3, 0).reshape(-1, 3, order="F")
         grid["rho"] = self.rho.numpy().flatten("F")
         if save_velocity_distribution:
@@ -508,6 +510,7 @@ class WindTunnel:
         if len(self.time_steps) > 100000:
             plt.plot(self.time_steps[99999:], self.drag_coefficients_ma_100000, label="MA 100,000")
 
+        print(self.drag_coefficients[-1])
         plt.ylim(-1.0, 1.0)
         plt.legend()
         plt.xlabel("Time step")
@@ -544,7 +547,7 @@ class WindTunnel:
                 self.monitor(i)
 
             # Save monitor plot
-            if i % (self.monitor_frequency * 100) == 0:
+            if i % (self.monitor_frequency) == 0:
                 self.plot_drag_coefficient()
 
             # Save state
