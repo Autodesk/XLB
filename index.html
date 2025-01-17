@@ -1,0 +1,904 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation for project XLB">
+      
+      
+      
+        <link rel="canonical" href="https://example.com/">
+      
+      
+      
+      
+      <link rel="icon" href="assets/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title></title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.6f8fc17f.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Ubuntu";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white-grey" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#xlb-a-differentiable-massively-parallel-lattice-boltzmann-library-in-python-for-physics-based-machine-learning" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="" class="md-header__button md-logo" aria-label="" data-md-component="logo">
+      
+  <img src="assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              XLB's home
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="white-grey" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="red" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Autodesk/XLB" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Github
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="" class="md-nav__button md-logo" aria-label="" data-md-component="logo">
+      
+  <img src="assets/logo.svg" alt="logo">
+
+    </a>
+    
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Autodesk/XLB" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Github
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    XLB's home
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    XLB's home
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      Getting Started
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#accompanying-paper" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accompanying Paper
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#citing-xlb" class="md-nav__link">
+    <span class="md-ellipsis">
+      Citing XLB
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key Features
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#showcase" class="md-nav__link">
+    <span class="md-ellipsis">
+      Showcase
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capabilities
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Capabilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lbm" class="md-nav__link">
+    <span class="md-ellipsis">
+      LBM
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#machine-learning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Machine Learning
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lattice-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Lattice Models
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compute-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      Compute Capabilities
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output" class="md-nav__link">
+    <span class="md-ellipsis">
+      Output
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boundary-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Boundary conditions
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      Roadmap
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#work-in-progress-wip" class="md-nav__link">
+    <span class="md-ellipsis">
+      Work in Progress (WIP)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wishlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      Wishlist
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      Getting Started
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#accompanying-paper" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accompanying Paper
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#citing-xlb" class="md-nav__link">
+    <span class="md-ellipsis">
+      Citing XLB
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key Features
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#showcase" class="md-nav__link">
+    <span class="md-ellipsis">
+      Showcase
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capabilities
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Capabilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lbm" class="md-nav__link">
+    <span class="md-ellipsis">
+      LBM
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#machine-learning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Machine Learning
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lattice-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Lattice Models
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compute-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      Compute Capabilities
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output" class="md-nav__link">
+    <span class="md-ellipsis">
+      Output
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boundary-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Boundary conditions
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      Roadmap
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#work-in-progress-wip" class="md-nav__link">
+    <span class="md-ellipsis">
+      Work in Progress (WIP)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wishlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      Wishlist
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<p><a href="https://opensource.org/licenses/Apache-2.0"><img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" /></a>
+<a href="https://star-history.com/#Autodesk/XLB"><img alt="GitHub star chart" src="https://img.shields.io/github/stars/Autodesk/XLB?style=social" /></a></p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/logo-transparent.png" alt="" width="300">
+</p>
+
+<h1 id="xlb-a-differentiable-massively-parallel-lattice-boltzmann-library-in-python-for-physics-based-machine-learning">XLB: A Differentiable Massively Parallel Lattice Boltzmann Library in Python for Physics-Based Machine Learning</h1>
+<p>🎉 <strong>Exciting News!</strong> 🎉 XLB version 0.2.0 has been released, featuring a complete rewrite of the library and introducing support for the NVIDIA Warp backend! 
+XLB can now be installed via pip: <code>pip install xlb</code>.</p>
+<p>XLB is a fully differentiable 2D/3D Lattice Boltzmann Method (LBM) library that leverages hardware acceleration. It supports <a href="https://github.com/google/jax">JAX</a> and <a href="https://github.com/NVIDIA/warp">NVIDIA Warp</a> backends, and is specifically designed to solve fluid dynamics problems in a computationally efficient and differentiable manner. Its unique combination of features positions it as an exceptionally suitable tool for applications in physics-based machine learning. With the new Warp backend, XLB now offers state-of-the-art performance for even faster simulations.</p>
+<h2 id="getting-started">Getting Started</h2>
+<p>To get started with XLB, you can install it using pip:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>xlb
+</code></pre></div>
+
+<p>To install the latest development version from source:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/Autodesk/XLB.git
+</code></pre></div>
+
+<p>The changelog for the releases can be found <a href="https://github.com/Autodesk/XLB/blob/main/CHANGELOG.md">here</a>.</p>
+<p>For examples to get you started please refer to the <a href="https://github.com/Autodesk/XLB/tree/main/examples">examples</a> folder.</p>
+<h2 id="accompanying-paper">Accompanying Paper</h2>
+<p>Please refer to the <a href="https://doi.org/10.1016/j.cpc.2024.109187">accompanying paper</a> for benchmarks, validation, and more details about the library.</p>
+<h2 id="citing-xlb">Citing XLB</h2>
+<p>If you use XLB in your research, please cite the following paper:</p>
+<div class="codehilite"><pre><span></span><code><span class="err">@</span><span class="nx">article</span><span class="p">{</span><span class="nx">ataei2024xlb</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">title</span><span class="p">={{</span><span class="nx">XLB</span><span class="p">}:</span><span class="w"> </span><span class="nx">A</span><span class="w"> </span><span class="nx">differentiable</span><span class="w"> </span><span class="nx">massively</span><span class="w"> </span><span class="nx">parallel</span><span class="w"> </span><span class="nx">lattice</span><span class="w"> </span><span class="p">{</span><span class="nx">Boltzmann</span><span class="p">}</span><span class="w"> </span><span class="kn">library</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="p">{</span><span class="nx">Python</span><span class="p">}},</span>
+<span class="w">  </span><span class="nx">author</span><span class="p">={</span><span class="nx">Ataei</span><span class="p">,</span><span class="w"> </span><span class="nx">Mohammadmehdi</span><span class="w"> </span><span class="k">and</span><span class="w"> </span><span class="nx">Salehipour</span><span class="p">,</span><span class="w"> </span><span class="nx">Hesam</span><span class="p">},</span>
+<span class="w">  </span><span class="nx">journal</span><span class="p">={</span><span class="nx">Computer</span><span class="w"> </span><span class="nx">Physics</span><span class="w"> </span><span class="nx">Communications</span><span class="p">},</span>
+<span class="w">  </span><span class="nx">volume</span><span class="p">={</span><span class="mi">300</span><span class="p">},</span>
+<span class="w">  </span><span class="nx">pages</span><span class="p">={</span><span class="mi">109187</span><span class="p">},</span>
+<span class="w">  </span><span class="nx">year</span><span class="p">={</span><span class="mi">2024</span><span class="p">},</span>
+<span class="w">  </span><span class="nx">publisher</span><span class="p">={</span><span class="nx">Elsevier</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2 id="key-features">Key Features</h2>
+<ul>
+<li><strong>Multiple Backend Support:</strong> XLB now includes support for multiple backends including JAX and NVIDIA Warp, providing <em>state-of-the-art</em> performance for lattice Boltzmann simulations. Currently, only single GPU is supported for the Warp backend.</li>
+<li><strong>Integration with JAX Ecosystem:</strong> The library can be easily integrated with JAX&rsquo;s robust ecosystem of machine learning libraries such as <a href="https://github.com/google/flax">Flax</a>, <a href="https://github.com/deepmind/dm-haiku">Haiku</a>, <a href="https://github.com/deepmind/optax">Optax</a>, and many more.</li>
+<li><strong>Differentiable LBM Kernels:</strong> XLB provides differentiable LBM kernels that can be used in differentiable physics and deep learning applications.</li>
+<li><strong>Scalability:</strong> XLB is capable of scaling on distributed multi-GPU systems using the JAX backend, enabling the execution of large-scale simulations on hundreds of GPUs with billions of cells.</li>
+<li><strong>Support for Various LBM Boundary Conditions and Kernels:</strong> XLB supports several LBM boundary conditions and collision kernels.</li>
+<li><strong>User-Friendly Interface:</strong> Written entirely in Python, XLB emphasizes a highly accessible interface that allows users to extend the library with ease and quickly set up and run new simulations.</li>
+<li><strong>Leverages JAX Array and Shardmap:</strong> The library incorporates the new JAX array unified array type and JAX shardmap, providing users with a numpy-like interface. This allows users to focus solely on the semantics, leaving performance optimizations to the compiler.</li>
+<li><strong>Platform Versatility:</strong> The same XLB code can be executed on a variety of platforms including multi-core CPUs, single or multi-GPU systems, TPUs, and it also supports distributed runs on multi-GPU systems or TPU Pod slices.</li>
+<li><strong>Visualization:</strong> XLB provides a variety of visualization options including in-situ on GPU rendering using <a href="https://github.com/loliverhennigh/PhantomGaze">PhantomGaze</a>.</li>
+</ul>
+<h2 id="showcase">Showcase</h2>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/airfoil.gif" width="800">
+</p>
+<p align="center">
+  On GPU in-situ rendering using <a href="https://github.com/loliverhennigh/PhantomGaze">PhantomGaze</a> library (no I/O). Flow over a NACA airfoil using KBC Lattice Boltzmann Simulation with ~10 million cells.
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/car.png" alt="" width="500">
+</p>
+<p align="center">
+<a href=https://www.epc.ed.tum.de/en/aer/research-groups/automotive/drivaer > DrivAer model </a> in a wind-tunnel using KBC Lattice Boltzmann Simulation with approx. 317 million cells
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/building.png" alt="" width="700">
+</p>
+<p align="center">
+  Airflow in to, out of, and within a building (~400 million cells)
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/XLB_diff.png" alt="" width="900">
+</p>
+<p align="center">
+The stages of a fluid density field from an initial state to the emergence of the "XLB" pattern through deep learning optimization at timestep 200 (see paper for details)
+</p>
+
+<p><br></p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/cavity.gif" alt="" width="500">
+</p>
+<p align="center">
+  Lid-driven Cavity flow at Re=100,000 (~25 million cells)
+</p>
+
+<h2 id="capabilities">Capabilities</h2>
+<h3 id="lbm">LBM</h3>
+<ul>
+<li>BGK collision model (Standard LBM collision model)</li>
+<li>KBC collision model (unconditionally stable for flows with high Reynolds number)</li>
+</ul>
+<h3 id="machine-learning">Machine Learning</h3>
+<ul>
+<li>Easy integration with JAX&rsquo;s ecosystem of machine learning libraries</li>
+<li>Differentiable LBM kernels</li>
+<li>Differentiable boundary conditions</li>
+</ul>
+<h3 id="lattice-models">Lattice Models</h3>
+<ul>
+<li>D2Q9</li>
+<li>D3Q19</li>
+<li>D3Q27 (Must be used for KBC simulation runs)</li>
+</ul>
+<h3 id="compute-capabilities">Compute Capabilities</h3>
+<ul>
+<li>Single GPU support for the Warp backend with state-of-the-art performance</li>
+<li>Distributed Multi-GPU support using the JAX backend</li>
+<li>Mixed-Precision support (store vs compute)</li>
+<li>Out-of-core support (coming soon)</li>
+</ul>
+<h3 id="output">Output</h3>
+<ul>
+<li>Binary and ASCII VTK output (based on PyVista library)</li>
+<li>In-situ rendering using <a href="https://github.com/loliverhennigh/PhantomGaze">PhantomGaze</a> library</li>
+<li><a href="https://github.com/google/orbax">Orbax</a>-based distributed asynchronous checkpointing</li>
+<li>Image Output</li>
+<li>3D mesh voxelizer using trimesh</li>
+</ul>
+<h3 id="boundary-conditions">Boundary conditions</h3>
+<ul>
+<li>
+<p><strong>Equilibrium BC:</strong> In this boundary condition, the fluid populations are assumed to be in at equilibrium. Can be used to set prescribed velocity or pressure.</p>
+</li>
+<li>
+<p><strong>Full-Way Bounceback BC:</strong> In this boundary condition, the velocity of the fluid populations is reflected back to the fluid side of the boundary, resulting in zero fluid velocity at the boundary.</p>
+</li>
+<li>
+<p><strong>Half-Way Bounceback BC:</strong> Similar to the Full-Way Bounceback BC, in this boundary condition, the velocity of the fluid populations is partially reflected back to the fluid side of the boundary, resulting in a non-zero fluid velocity at the boundary.</p>
+</li>
+<li>
+<p><strong>Do Nothing BC:</strong> In this boundary condition, the fluid populations are allowed to pass through the boundary without any reflection or modification.</p>
+</li>
+<li>
+<p><strong>Zouhe BC:</strong> This boundary condition is used to impose a prescribed velocity or pressure profile at the boundary.</p>
+</li>
+<li><strong>Regularized BC:</strong> This boundary condition is used to impose a prescribed velocity or pressure profile at the boundary. This BC is more stable than Zouhe BC, but computationally more expensive.</li>
+<li>
+<p><strong>Extrapolation Outflow BC:</strong> A type of outflow boundary condition that uses extrapolation to avoid strong wave reflections.</p>
+</li>
+<li>
+<p><strong>Interpolated Bounceback BC:</strong> Interpolated bounce-back boundary condition for representing curved boundaries.</p>
+</li>
+</ul>
+<h2 id="roadmap">Roadmap</h2>
+<h3 id="work-in-progress-wip">Work in Progress (WIP)</h3>
+<p><em>Note: Some of the work-in-progress features can be found in the branches of the XLB repository. For contributions to these features, please reach out.</em></p>
+<ul>
+<li>
+<p>🌐 <strong>Grid Refinement:</strong> Implementing adaptive mesh refinement techniques for enhanced simulation accuracy.</p>
+</li>
+<li>
+<p>💾 <strong>Out-of-Core Computations:</strong> Enabling simulations that exceed available GPU memory, suitable for CPU+GPU coherent memory models such as NVIDIA&rsquo;s Grace Superchips (coming soon).</p>
+</li>
+<li>
+<p>⚡ <strong>Multi-GPU Acceleration using <a href="https://github.com/Autodesk/Neon">Neon</a> + Warp:</strong> Using Neon&rsquo;s data structure for improved scaling.</p>
+</li>
+<li>
+<p>🗜️ <strong>GPU Accelerated Lossless Compression and Decompression</strong>: Implementing high-performance lossless compression and decompression techniques for larger-scale simulations and improved performance.</p>
+</li>
+<li>
+<p>🌡️ <strong>Fluid-Thermal Simulation Capabilities:</strong> Incorporating heat transfer and thermal effects into fluid simulations.</p>
+</li>
+<li>
+<p>🎯 <strong>Adjoint-based Shape and Topology Optimization:</strong> Implementing gradient-based optimization techniques for design optimization.</p>
+</li>
+<li>
+<p>🧠 <strong>Machine Learning Accelerated Simulations:</strong> Leveraging machine learning to speed up simulations and improve accuracy.</p>
+</li>
+<li>
+<p>📉 <strong>Reduced Order Modeling using Machine Learning:</strong> Developing data-driven reduced-order models for efficient and accurate simulations.</p>
+</li>
+</ul>
+<h3 id="wishlist">Wishlist</h3>
+<p><em>Contributions to these features are welcome. Please submit PRs for the Wishlist items.</em></p>
+<ul>
+<li>
+<p>🌊 <strong>Free Surface Flows:</strong> Simulating flows with free surfaces, such as water waves and droplets.</p>
+</li>
+<li>
+<p>📡 <strong>Electromagnetic Wave Propagation:</strong> Simulating the propagation of electromagnetic waves.</p>
+</li>
+<li>
+<p>🛩️ <strong>Supersonic Flows:</strong> Simulating supersonic flows.</p>
+</li>
+<li>
+<p>🌊🧱 <strong>Fluid-Solid Interaction:</strong> Modeling the interaction between fluids and solid objects.</p>
+</li>
+<li>
+<p>🧩 <strong>Multiphase Flow Simulation:</strong> Simulating flows with multiple immiscible fluids.</p>
+</li>
+<li>
+<p>🔥 <strong>Combustion:</strong> Simulating combustion processes and reactive flows.</p>
+</li>
+<li>
+<p>🪨 <strong>Particle Flows and Discrete Element Method:</strong> Incorporating particle-based methods for granular and particulate flows.</p>
+</li>
+<li>
+<p>🔧 <strong>Better Geometry Processing Pipelines:</strong> Improving the handling and preprocessing of complex geometries for simulations.</p>
+</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": ".", "features": ["header.autohide"], "search": "assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+        <script src="javascripts/mathjax.js"></script>
+      
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
