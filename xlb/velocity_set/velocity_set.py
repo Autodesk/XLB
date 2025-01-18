@@ -27,27 +27,27 @@ class VelocitySet(object):
         The weights of the lattice. Shape: (q,)
     """
 
-    def __init__(self, d, q, c, w, precision_policy, backend):
+    def __init__(self, d, q, c, w, precision_policy, compute_backend):
         # Store the dimension and the number of velocities
         self.d = d
         self.q = q
         self.precision_policy = precision_policy
-        self.backend = backend
+        self.compute_backend = compute_backend
 
         # Updating JAX config in case fp64 is requested
-        if backend == ComputeBackend.JAX and (precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32):
+        if compute_backend == ComputeBackend.JAX and (precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32):
             jax.config.update("jax_enable_x64", True)
 
         # Create all properties in NumPy first
         self._init_numpy_properties(c, w)
 
         # Convert properties to backend-specific format
-        if self.backend == ComputeBackend.WARP:
+        if self.compute_backend == ComputeBackend.WARP:
             self._init_warp_properties()
-        elif self.backend == ComputeBackend.JAX:
+        elif self.compute_backend == ComputeBackend.JAX:
             self._init_jax_properties()
         else:
-            raise ValueError(f"Unsupported compute backend: {self.backend}")
+            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
 
         # Set up backend-specific constants
         self._init_backend_constants()
@@ -94,18 +94,19 @@ class VelocitySet(object):
         self.w = jnp.array(self._w, dtype=dtype)
         self.opp_indices = jnp.array(self._opp_indices, dtype=jnp.int32)
         self.cc = jnp.array(self._cc, dtype=dtype)
+        self.c_float = jnp.array(self._c_float, dtype=dtype)
         self.qi = jnp.array(self._qi, dtype=dtype)
 
     def _init_backend_constants(self):
         """
         Initialize the constants for the backend.
         """
-        if self.backend == ComputeBackend.WARP:
+        if self.compute_backend == ComputeBackend.WARP:
             dtype = self.precision_policy.compute_precision.wp_dtype
             self.cs = wp.constant(dtype(self.cs))
             self.cs2 = wp.constant(dtype(self.cs2))
             self.inv_cs2 = wp.constant(dtype(self.inv_cs2))
-        elif self.backend == ComputeBackend.JAX:
+        elif self.compute_backend == ComputeBackend.JAX:
             dtype = self.precision_policy.compute_precision.jax_dtype
             self.cs = jnp.array(self.cs, dtype=dtype)
             self.cs2 = jnp.array(self.cs2, dtype=dtype)

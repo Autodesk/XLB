@@ -13,7 +13,7 @@ class D2Q9(VelocitySet):
     Lattice Boltzmann Method for simulating fluid flows in two dimensions.
     """
 
-    def __init__(self, precision_policy, backend):
+    def __init__(self, precision_policy, compute_backend):
         # Construct the velocity vectors and weights
         cx = [0, 0, 0, 1, -1, 1, -1, 1, -1]
         cy = [0, 1, -1, 0, 1, -1, 0, 1, -1]
@@ -21,4 +21,4 @@ class D2Q9(VelocitySet):
         w = np.array([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 9, 1 / 36, 1 / 36])
 
         # Call the parent constructor
-        super().__init__(2, 9, c, w, precision_policy=precision_policy, backend=backend)
+        super().__init__(2, 9, c, w, precision_policy=precision_policy, compute_backend=compute_backend)

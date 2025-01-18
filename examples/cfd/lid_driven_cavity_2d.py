@@ -13,24 +13,24 @@ import numpy as np
 
 
 class LidDrivenCavity2D:
-    def __init__(self, omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy):
-        # initialize backend
+    def __init__(self, omega, prescribed_vel, grid_shape, velocity_set, compute_backend, precision_policy):
+        # initialize compute_backend
         xlb.init(
             velocity_set=velocity_set,
-            default_backend=backend,
+            default_backend=compute_backend,
             default_precision_policy=precision_policy,
         )
 
         self.grid_shape = grid_shape
         self.velocity_set = velocity_set
-        self.backend = backend
+        self.compute_backend = compute_backend
         self.precision_policy = precision_policy
         self.omega = omega
         self.boundary_conditions = []
         self.prescribed_vel = prescribed_vel
 
         # Create grid using factory
-        self.grid = grid_factory(grid_shape, compute_backend=backend)
+        self.grid = grid_factory(grid_shape, compute_backend=compute_backend)
 
         # Setup the simulation BC and stepper
         self._setup()
@@ -71,9 +71,9 @@ class LidDrivenCavity2D:
                 self.post_process(i)
 
     def post_process(self, i):
-        # Write the results. We'll use JAX backend for the post-processing
+        # Write the results. We'll use JAX compute_backend for the post-processing
         if not isinstance(self.f_0, jnp.ndarray):
-            # If the backend is warp, we need to drop the last dimension added by warp for 2D simulations
+            # If the compute_backend is warp, we need to drop the last dimension added by warp for 2D simulations
             f_0 = wp.to_jax(self.f_0)[..., 0]
         else:
             f_0 = self.f_0
@@ -81,7 +81,7 @@ class LidDrivenCavity2D:
         macro = Macroscopic(
             compute_backend=ComputeBackend.JAX,
             precision_policy=self.precision_policy,
-            velocity_set=xlb.velocity_set.D2Q9(precision_policy=self.precision_policy, backend=ComputeBackend.JAX),
+            velocity_set=xlb.velocity_set.D2Q9(precision_policy=self.precision_policy, compute_backend=ComputeBackend.JAX),
         )
 
         rho, u = macro(f_0)
@@ -101,10 +101,10 @@ if __name__ == "__main__":
     # Running the simulation
     grid_size = 500
     grid_shape = (grid_size, grid_size)
-    backend = ComputeBackend.WARP
+    compute_backend = ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
 
-    velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
+    velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, compute_backend=compute_backend)
 
     # Setting fluid viscosity and relaxation parameter.
     Re = 200.0
@@ -113,5 +113,5 @@ if __name__ == "__main__":
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
 
-    simulation = LidDrivenCavity2D(omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy)
+    simulation = LidDrivenCavity2D(omega, prescribed_vel, grid_shape, velocity_set, compute_backend, precision_policy)
     simulation.run(num_steps=50000, post_process_interval=1000)
