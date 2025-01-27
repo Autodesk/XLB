@@ -30,6 +30,9 @@ class STLBoundaryMasker(Operator):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+        # Mesh Caches
+        self.meshes = {}
+
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.wp_c
@@ -48,12 +51,16 @@ class STLBoundaryMasker(Operator):
         ):
             # get index
             i, j, k = wp.tid()
+            i -= 1
+            j -= 1
+            k -= 1
+            base_index = wp.vec3i(i, j, k)
 
             # Get local indices
             index = wp.vec3i()
-            index[0] = i - start_index[0]
-            index[1] = j - start_index[1]
-            index[2] = k - start_index[2]
+            index[0] = i + start_index[0]
+            index[1] = j + start_index[1]
+            index[2] = k + start_index[2]
 
             # position of the point
             ijk = wp.vec3(
@@ -85,13 +92,21 @@ class STLBoundaryMasker(Operator):
                         # Get the index of the streaming direction
                         push_index = wp.vec3i()
                         for d in range(self.velocity_set.d):
-                            push_index[d] = index[d] + _c[d, l]
+                            push_index[d] = base_index[d] + _c[d, l]
 
                         # Set the boundary id and mask
-                        boundary_id[
-                            0, push_index[0], push_index[1], push_index[2]
-                        ] = wp.uint8(id_number)
-                        mask[l, push_index[0], push_index[1], push_index[2]] = True
+                        if (
+                            push_index[0] >= 0
+                            and push_index[0] < boundary_id.shape[1]
+                            and push_index[1] >= 0
+                            and push_index[1] < boundary_id.shape[2]
+                            and push_index[2] >= 0
+                            and push_index[2] < boundary_id.shape[3]
+                        ):
+                            boundary_id[
+                                0, push_index[0], push_index[1], push_index[2]
+                            ] = wp.uint8(id_number)
+                            mask[l, push_index[0], push_index[1], push_index[2]] = True
 
         return None, kernel
 
@@ -106,14 +121,19 @@ class STLBoundaryMasker(Operator):
         mask,
         start_index=(0, 0, 0),
     ):
+
         # Load the mesh
-        mesh = np_mesh.Mesh.from_file(stl_file)
-        mesh_points = mesh.points.reshape(-1, 3)
-        mesh_indices = np.arange(mesh_points.shape[0])
-        mesh = wp.Mesh(
-            points=wp.array(mesh_points, dtype=wp.vec3),
-            indices=wp.array(mesh_indices, dtype=int),
-        )
+        if stl_file not in self.meshes.keys():
+            mesh = np_mesh.Mesh.from_file(stl_file)
+            mesh_points = mesh.points.reshape(-1, 3)
+            mesh_indices = np.arange(mesh_points.shape[0])
+            mesh = wp.Mesh(
+                points=wp.array(mesh_points, dtype=wp.vec3),
+                indices=wp.array(mesh_indices, dtype=int),
+            )
+            self.meshes[stl_file] = mesh
+        else:
+            mesh = self.meshes[stl_file]
 
         # Launch the warp kernel
         wp.launch(
@@ -127,7 +147,7 @@ class STLBoundaryMasker(Operator):
                 mask,
                 start_index,
             ],
-            dim=boundary_id.shape[1:],
+            dim=[i + 2 for i in boundary_id.shape[1:]],
         )
 
         return boundary_id, mask
