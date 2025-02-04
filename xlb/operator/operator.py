@@ -22,11 +22,11 @@ class Operator:
         self.precision_policy = precision_policy or DefaultConfig.default_precision_policy
         self.compute_backend = compute_backend or DefaultConfig.default_backend
 
-        # Check if the compute backend is supported
+        # Check if the compute compute_backend is supported
         if self.compute_backend not in ComputeBackend:
-            raise ValueError(f"Compute backend {compute_backend} is not supported")
+            raise ValueError(f"Compute_backend {compute_backend} is not supported")
 
-        # Construct the kernel based backend functions TODO: Maybe move this to the register or something
+        # Construct the kernel based compute_backend functions TODO: Maybe move this to the register or something
         if self.compute_backend == ComputeBackend.WARP:
             self.warp_functional, self.warp_kernel = self._construct_warp()
 
@@ -39,7 +39,7 @@ class Operator:
     @classmethod
     def register_backend(cls, backend_name):
         """
-        Decorator to register a backend for the operator.
+        Decorator to register a compute_backend for the operator.
         """
 
         def decorator(func):
@@ -58,7 +58,7 @@ class Operator:
         bound_arguments = None
         for key, backend_method in method_candidates:
             try:
-                # This attempts to bind the provided args and kwargs to the backend method's signature
+                # This attempts to bind the provided args and kwargs to the compute_backend method's signature
                 bound_arguments = inspect.signature(backend_method).bind(self, *args, **kwargs)
                 bound_arguments.apply_defaults()  # This fills in any default values
                 result = backend_method(self, *args, **kwargs)
@@ -99,10 +99,10 @@ class Operator:
         This should be used with caution as all backends may not have the same API.
         """
         if self.compute_backend == ComputeBackend.JAX:
-            import jax.numpy as backend
+            import jax.numpy as compute_backend
         elif self.compute_backend == ComputeBackend.WARP:
-            import warp as backend
-        return backend
+            import warp as compute_backend
+        return compute_backend
 
     @property
     def compute_dtype(self):
@@ -128,7 +128,7 @@ class Operator:
         """
         Construct the warp functional and kernel of the operator
         TODO: Maybe a better way to do this?
-        Maybe add this to the backend decorator?
-        Leave it for now, as it is not clear how the warp backend will evolve
+        Maybe add this to the compute backend decorator?
+        Leave it for now, as it is not clear how the warp compute backend will evolve
         """
         return None, None
