@@ -5,8 +5,9 @@ import logging
 import itertools
 import pyvista as pv
 from dataclasses import dataclass
-#from mpi4py import MPI
+from mpi4py import MPI
 import matplotlib.pyplot as plt
+from hilbertcurve.hilbertcurve import HilbertCurve
 
 def _box_intersection(
     extent_1,
@@ -350,7 +351,7 @@ class Block:
                 # 3. Current pid is different than block but the same as neighbour
                 # 4. Current pid is different than block and neighbour
                 # Case 1
-                if (pid == self.pid) and (neighbour_block.pid == self.pid):
+                if (pid == self.pid) and (pid == neighbour_block.pid):
 
                     # Swap data
                     local_data = self.local_ghost_boxes[neighbour_block][name].data
@@ -359,32 +360,32 @@ class Block:
                     neighbour_block.neighbour_ghost_boxes_buffer[self][name].data = local_data
             
                 # Case 2
-                if (pid == self.pid) and (neighbour_block.pid != self.pid):
-   
+                if (pid == self.pid) and (pid != neighbour_block.pid):
+
                     # Send data
                     requests.append(
                         comm.Isend(
                             self.local_ghost_boxes[neighbour_block][name].data,
-                            dest=neighbour_block.neighbour_ghost_boxes_buffer[self][name].data,
+                            dest=neighbour_block.pid,
                             tag=comm_tag,
                         )
                     )
 
                 # Case 3
-                if (pid != self.pid) and (neighbour_block.pid == self.pid):
+                if (pid != self.pid) and (pid == neighbour_block.pid):
 
                     # Receive data
                     requests.append(
                         comm.Irecv(
                             neighbour_block.neighbour_ghost_boxes_buffer[self][name].data,
-                            source=self.local_ghost_boxes[neighbour_block][name].data,
+                            source=self.pid,
 
                             tag=comm_tag,
                         )
                     )
 
                 # Case 4
-                if (pid != self.pid) and (neighbour_block.pid != self.pid):
+                if (pid != self.pid) and (pid != neighbour_block.pid):
                     pass
 
                 # Update tag
@@ -450,8 +451,14 @@ class Block:
 
     def swap_buffers(
         self,
+        names=None
     ):
-        self.neighbour_ghost_boxes_buffer, self.neighbour_ghost_boxes = self.neighbour_ghost_boxes, self.neighbour_ghost_boxes_buffer
+
+        for neighbour_boxes, neighbour_boxes_buffer in zip(self.neighbour_ghost_boxes.values(), self.neighbour_ghost_boxes_buffer.values()):
+            if names is None:
+                names = list(neighbour_boxes.keys())
+            for name in names:
+                neighbour_boxes[name].data, neighbour_boxes_buffer[name].data = neighbour_boxes_buffer[name].data, neighbour_boxes[name].data
 
     def mergable(self, block):
         pass
@@ -548,13 +555,25 @@ class AMR:
         if pid_device_mapping is None:
             pid_device_mapping = ["cpu" for _ in range(self.size)]
 
+        # Make hilbert curb
+        hilb = HilbertCurve(
+            p=int(np.log2(max(self.block_dims))) + 1,
+            n=len(shape)
+        )
+
         # Initialize blocks and connections
         logging.info("Initializing blocks and connections...")
         self.blocks = {}
         for index, block_index in tqdm(enumerate(itertools.product(*[range(n) for n in self.block_dims]))):
 
+            # Get dist
+            dist = hilb.distance_from_point([block_index[2], block_index[1], block_index[0]])
+
+            # Get block pid
+            block_pid = (dist // self.size) % self.size
+
             # Get device
-            device = pid_device_mapping[index % self.size]
+            device = pid_device_mapping[block_pid]
 
             # Create block
             block = Block(
@@ -565,7 +584,7 @@ class AMR:
                 amr_level=0,
                 ghost_cell_thickness=ghost_cell_thickness,
                 device=device,
-                pid=self.pid,
+                pid=block_pid,
             )
 
             # Add block to blocks
@@ -600,6 +619,29 @@ class AMR:
         if self.comm is not None:
             nbytes = self.comm.allreduce(nbytes, op=MPI.SUM)
         return nbytes
+
+    @staticmethod
+    def morton3D(x, y, z):
+        """
+        Compute a 3D Morton code (Z-order curve) for (x, y, z).
+
+        This version uses a naive loop to interleave bits.
+        For large coordinates, you may want to adjust the bit range.
+        """
+        morton_code = 0
+        # Up to 21 bits => up to 2^21 = 2,097,152 in each dimension.
+        # Adjust if you have an even larger domain.
+        for i in range(21):
+            # Shift bits of x, y, z up into appropriate positions
+            bit_mask = 1 << i
+            x_bit = (x & bit_mask) >> i
+            y_bit = (y & bit_mask) >> i
+            z_bit = (z & bit_mask) >> i
+
+            # Interleave these bits
+            morton_code |= (x_bit << (3*i)) | (y_bit << (3*i + 1)) | (z_bit << (3*i + 2))
+
+        return morton_code
 
     def initialize_boxes(
         self,

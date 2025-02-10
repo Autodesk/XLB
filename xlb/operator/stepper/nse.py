@@ -184,8 +184,6 @@ class IncompressibleNavierStokesStepper(Stepper):
                 f_post_stream = self.halfway_bounce_back_bc.warp_functional(
                     f_0, _missing_mask, index
                 )
-            else:
-                return
 
             # Compute rho and u
             rho, u = self.macroscopic.warp_functional(f_post_stream)

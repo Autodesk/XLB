@@ -1,4 +1,5 @@
 import warp as wp
+import gc
 
 class MemoryPool:
 
@@ -6,10 +7,13 @@ class MemoryPool:
         self.pool = {}
 
     def clear(self):
-        for key in self.pool.keys():
+        for key in list(self.pool.keys()):
             for array in self.pool[key]:
                 del array
+            del self.pool[key]
             self.pool[key] = []
+        wp.synchronize()
+        gc.collect()
 
     def get(self, shape, dtype):
         key = (tuple(shape), dtype)
@@ -25,3 +29,18 @@ class MemoryPool:
         #    array.zero_()
         array.zero_()
         self.pool[key].append(array)
+
+    @property
+    def nbytes(self):
+        nbytes = 0
+        for key in self.pool.keys():
+            for array in self.pool[key]:
+                nbytes += array.capacity
+        return nbytes
+
+    def print(self):
+
+        print("Memory Pool")
+        for key in self.pool.keys():
+            for array in self.pool[key]:
+                print(f"Array {array.shape}, {array.dtype}, {array.capacity}")
