@@ -199,12 +199,12 @@ def post_process(
 
     # Compute lift and drag
     boundary_force = momentum_transfer(f_0, f_1, bc_mask, missing_mask)
-    drag = np.sqrt(boundary_force[0] ** 2 + boundary_force[1] ** 2)  # xy-plane
+    drag = boundary_force[0]  # x-direction
     lift = boundary_force[2]
-    c_d = 2.0 * drag / (wind_speed**2 * car_cross_section)
-    c_l = 2.0 * lift / (wind_speed**2 * car_cross_section)
-    drag_coefficients.append(c_d)
-    lift_coefficients.append(c_l)
+    cd = 2.0 * drag / (wind_speed**2 * car_cross_section)
+    cl = 2.0 * lift / (wind_speed**2 * car_cross_section)
+    drag_coefficients.append(cd)
+    lift_coefficients.append(cl)
     time_steps.append(step)
 
     # Plot drag coefficient
@@ -236,9 +236,11 @@ for step in range(num_steps):
     f_0, f_1 = f_1, f_0  # Swap the buffers
 
     # Print progress at intervals
-    if (step + 1) % print_interval == 0:
+    if step % print_interval == 0:
+        if compute_backend == ComputeBackend.WARP:
+            wp.synchronize()
         elapsed_time = time.time() - start_time
-        print(f"Iteration: {step + 1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
+        print(f"Iteration: {step}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
         start_time = time.time()
 
     # Post-process at intervals and final step

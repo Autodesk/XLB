@@ -158,6 +158,8 @@ for step in range(num_steps):
     f_0, f_1 = f_1, f_0  # Swap the buffers
 
     if step % post_process_interval == 0 or step == num_steps - 1:
+        if compute_backend == ComputeBackend.WARP:
+            wp.synchronize()
         post_process(step, f_0)
         end_time = time.time()
         elapsed = end_time - start_time
