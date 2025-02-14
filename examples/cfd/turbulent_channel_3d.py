@@ -206,9 +206,11 @@ for step in range(num_steps):
     f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, omega, step)
     f_0, f_1 = f_1, f_0  # Swap the buffers
 
-    if (step + 1) % print_interval == 0:
+    if step % print_interval == 0:
+        if compute_backend == ComputeBackend.WARP:
+            wp.synchronize()
         elapsed_time = time.time() - start_time
-        print(f"Iteration: {step + 1}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
+        print(f"Iteration: {step}/{num_steps} | Time elapsed: {elapsed_time:.2f}s")
         start_time = time.time()
 
     if (step % post_process_interval == 0) or (step == num_steps - 1):
