@@ -480,7 +480,7 @@ class LDC:
                     )
     
                     # Initialize the flow field
-                    rho, u = self.initializer(rho, u, boundary_id, self.base_velocity)
+                    rho, u = self.initializer(rho, u, boundary_id, 0.0)
                     f = self.equilibrium(rho, u, f)
 
                     # Copy to local ghost boxes
