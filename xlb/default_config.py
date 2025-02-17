@@ -18,7 +18,7 @@ def init(velocity_set, default_backend, default_precision_policy):
 
     if default_backend == ComputeBackend.WARP:
         import warp as wp
-
+        wp.max_unroll = 32
         wp.init()  # TODO: Must be removed in the future versions of WARP
     elif default_backend == ComputeBackend.JAX:
         check_backend_support()
