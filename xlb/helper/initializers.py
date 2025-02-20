@@ -15,6 +15,12 @@ def initialize_eq(f, grid, velocity_set, precision_policy, backend, rho=None, u=
     elif backend == ComputeBackend.WARP:
         f = equilibrium(rho, u, f)
 
+    elif backend == ComputeBackend.NEON:
+        f = equilibrium(rho, u, f)
+        pass
+    else:
+        raise NotImplementedError(f"Backend {backend} not implemented")
+
     del rho, u
 
     return f

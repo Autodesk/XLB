@@ -30,6 +30,9 @@ class Operator:
         if self.compute_backend == ComputeBackend.WARP:
             self.warp_functional, self.warp_kernel = self._construct_warp()
 
+        if self.compute_backend == ComputeBackend.NEON:
+            self.neon_functional, self.neon_container = self._construct_neon()
+
         # Updating JAX config in case fp64 is requested
         if self.compute_backend == ComputeBackend.JAX and (
             precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32
@@ -70,7 +73,9 @@ class Operator:
                 error = e
                 traceback_str = traceback.format_exc()
                 continue  # This skips to the next candidate if binding fails
-
+        method_candidates = [
+            (key, method) for key, method in self._backends.items() if key[1] == self.compute_backend
+        ]
         raise Exception(f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}\n {traceback_str}")
 
     @property
@@ -113,6 +118,8 @@ class Operator:
             return self.precision_policy.compute_precision.jax_dtype
         elif self.compute_backend == ComputeBackend.WARP:
             return self.precision_policy.compute_precision.wp_dtype
+        elif self.compute_backend == ComputeBackend.NEON:
+            return self.precision_policy.compute_precision.wp_dtype
 
     @property
     def store_dtype(self):
@@ -130,5 +137,14 @@ class Operator:
         TODO: Maybe a better way to do this?
         Maybe add this to the backend decorator?
         Leave it for now, as it is not clear how the warp backend will evolve
+        """
+        return None, None
+
+    def _construct_neon(self):
+        """
+        Construct the Neon functional and Neon container of the operator
+        TODO: Maybe a better way to do this?
+        Maybe add this to the backend decorator?
+        Leave it for now, as it is not clear how the neon backend will evolve
         """
         return None, None

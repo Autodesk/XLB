@@ -64,3 +64,68 @@ class Macroscopic(Operator):
             dim=rho.shape[1:],
         )
         return rho, u
+
+    def _construct_neon(self):
+        zero_moment_func = self.zero_moment.neon_functional
+        first_moment_func = self.first_moment.neon_functional
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+
+        @wp.func
+        def functional(f: _f_vec):
+            rho = zero_moment_func(f)
+            u = first_moment_func(f, rho)
+            return rho, u
+
+        @wp.kernel
+        def kernel(
+            f: wp.array4d(dtype=Any),
+            rho: wp.array4d(dtype=Any),
+            u: wp.array4d(dtype=Any),
+        ):
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            _f = _f_vec()
+            for l in range(self.velocity_set.q):
+                _f[l] = f[l, index[0], index[1], index[2]]
+            _rho, _u = functional(_f)
+
+            rho[0, index[0], index[1], index[2]] = self.store_dtype(_rho)
+            for d in range(self.velocity_set.d):
+                u[d, index[0], index[1], index[2]] = self.store_dtype(_u[d])
+
+        import neon, typing
+        @neon.Container.factory
+        def container(
+                f_field: Any,
+                rho_field: Any,
+                u_fild: Any,
+        ):
+            _d = self.velocity_set.d
+            def macroscopic_ll(loader: neon.Loader):
+                loader.declare_execution_scope(f_field.get_grid())
+
+                rho=loader.get_read_handel(rho_field)
+                u =loader.get_read_handel(u_fild)
+                f=loader.get_read_handel(f_field)
+
+                @wp.func
+                def macroscopic_cl(gIdx: typing.Any):
+                    _f = _f_vec()
+                    for l in range(self.velocity_set.q):
+                        _f[l] = wp.neon_read(f, gIdx,l)
+                    _rho, _u = functional(_f)
+                    wp.neon_write(rho, gIdx, 0, _rho)
+                    for d in range(_d):
+                        wp.neon_write(u, gIdx, d, _u[d])
+
+                loader.declare_kernel(macroscopic_cl)
+            return macroscopic_ll
+        return functional, container
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f, rho, u):
+        c = self.neon_container(f, rho, u)
+        c.run(0)
+        wp.synchronize()
+        return rho, u

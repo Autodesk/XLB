@@ -47,3 +47,35 @@ class ZeroMoment(Operator):
     def warp_implementation(self, f, rho):
         wp.launch(self.warp_kernel, inputs=[f, rho], dim=rho.shape[1:])
         return rho
+
+    def _construct_neon(self):
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+
+        @wp.func
+        def functional(f: _f_vec):
+            rho = self.compute_dtype(0.0)
+            for l in range(self.velocity_set.q):
+                rho += f[l]
+            return rho
+        #
+        # @wp.kernel
+        # def kernel(
+        #     f: wp.array4d(dtype=Any),
+        #     rho: wp.array4d(dtype=Any),
+        # ):
+        #     i, j, k = wp.tid()
+        #     index = wp.vec3i(i, j, k)
+        #
+        #     _f = _f_vec()
+        #     for l in range(self.velocity_set.q):
+        #         _f[l] = f[l, index[0], index[1], index[2]]
+        #     _rho = functional(_f)
+        #
+        #     rho[0, index[0], index[1], index[2]] = _rho
+
+        return functional, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f, rho):
+        # rise exception as this feature is not implemented yet
+        raise NotImplementedError("This feature is not implemented in NEON yet.")

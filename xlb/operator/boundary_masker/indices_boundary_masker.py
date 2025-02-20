@@ -218,3 +218,131 @@ class IndicesBoundaryMasker(Operator):
         )
 
         return bc_mask, missing_mask
+
+    def _construct_neon(self):
+        # All the computation is done at the register step
+        return None, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, grid=None):
+        # Pre-allocate arrays with maximum possible size
+        velocity_set = grid._get_velocity_set()
+        missing_mask_warp = grid._create_warp_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
+        bc_mask_warp = grid._create_warp_field(cardinality=1, dtype=Precision.UINT8)
+        _, warp_kernel = self._construct_warp()
+
+        max_size = sum(len(bc.indices[0]) if isinstance(bc.indices, list) else bc.indices.shape[1] for bc in bclist if bc.indices is not None)
+        indices = np.zeros((3, max_size), dtype=np.int32)
+        id_numbers = np.zeros(max_size, dtype=np.uint8)
+        is_interior = np.zeros(max_size, dtype=bool)
+
+        current_index = 0
+        for bc in bclist:
+            assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC using keyword "indices"!'
+            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
+
+            bc_indices = np.asarray(bc.indices)
+            num_indices = bc_indices.shape[1]
+
+            # Ensure indices are 3D
+            if bc_indices.shape[0] == 2:
+                bc_indices = np.vstack([bc_indices, np.zeros(num_indices, dtype=int)])
+
+            # Add indices to the pre-allocated array
+            indices[:, current_index : current_index + num_indices] = bc_indices
+
+            # Set id numbers
+            id_numbers[current_index : current_index + num_indices] = bc.id
+
+            # Set is_interior flags
+            if bc.needs_padding:
+                is_interior[current_index : current_index + num_indices] = self.are_indices_in_interior(bc_indices, bc_mask_warp[0].shape)
+            else:
+                is_interior[current_index : current_index + num_indices] = False
+
+            current_index += num_indices
+
+            # Remove indices from BC objects
+            bc.__dict__.pop("indices", None)
+
+        # Trim arrays to actual size
+        indices = indices[:, :current_index]
+        id_numbers = id_numbers[:current_index]
+        is_interior = is_interior[:current_index]
+
+        # Convert to Warp arrays
+        wp_indices = wp.array(indices, dtype=wp.int32)
+        wp_id_numbers = wp.array(id_numbers, dtype=wp.uint8)
+        wp_is_interior = wp.array(is_interior, dtype=wp.bool)
+
+        if start_index is None:
+            start_index = wp.vec3i(0, 0, 0)
+        else:
+            start_index = wp.vec3i(*start_index)
+
+        # Launch the warp kernel
+        wp.launch(
+            warp_kernel,
+            dim=current_index,
+            inputs=[
+                wp_indices,
+                wp_id_numbers,
+                wp_is_interior,
+                bc_mask_warp,
+                missing_mask_warp,
+                start_index,
+            ],
+        )
+        wp.synchronize()
+
+        import wpne, typing
+        @wpne.Container.factory
+        def container(
+                bc_mask_warp: typing.Any,
+                missing_mask_warp: typing.Any,
+                bc_mask_field: typing.Any,
+                missing_mask_field: typing.Any,
+        ):
+            def loading_step(loader: wpne.Loader):
+                loader.declare_execution_scope(bc_mask.get_grid())
+
+                bc_mask_hdl = loader.get_read_handel(bc_mask_field)
+                missing_mask_hdl = loader.get_read_handel(missing_mask_field)
+
+                @wp.func
+                def masker(gridIdx: typing.Any):
+                    cIdx = wp.neon_global_idx(bc_mask_hdl, gridIdx)
+                    gx = wp.neon_get_x(cIdx)
+                    gy = wp.neon_get_y(cIdx)
+                    gz = wp.neon_get_z(cIdx)
+                    # TODO@Max - XLB is flattening the z dimension in 3D, while neon uses the y dimension
+                    local_mask = bc_mask_warp[
+                        0,
+                        gx,
+                        gz,
+                        gy]
+                    wp.neon_write(bc_mask_hdl, gridIdx, 0, local_mask)
+
+                    for q in range(self.velocity_set.q):
+                        is_missing = wp.uint8( missing_mask_warp[
+                            q,
+                            wp.neon_get_x(cIdx),
+                            wp.neon_get_z(cIdx),
+                            wp.neon_get_y(cIdx)])
+                        wp.neon_write(missing_mask_hdl,
+                                      gridIdx,
+                                      q,
+                                      is_missing)
+
+                loader.declare_kernel(masker)
+
+            return loading_step
+
+        c = container(bc_mask_warp, missing_mask_warp, bc_mask, missing_mask)
+        c.run(0)
+        wp.synchronize()
+
+        del bc_mask_warp
+        del missing_mask_warp
+
+        return bc_mask, missing_mask

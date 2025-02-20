@@ -97,3 +97,35 @@ class HalfwayBounceBackBC(BoundaryCondition):
             dim=f_pre.shape[1:],
         )
         return f_post
+
+    def _construct_neon(self):
+        # Set local constants
+        _opp_indices = self.velocity_set.opp_indices
+
+        # Construct the functional for this BC
+        @wp.func
+        def functional(
+            index: Any,
+            timestep: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
+            f_pre: Any,
+            f_post: Any,
+        ):
+            # Post-streaming values are only modified at missing direction
+            _f = f_post
+            for l in range(self.velocity_set.q):
+                # If the mask is missing then take the opposite index
+                if missing_mask[l] == wp.uint8(1):
+                    # Get the pre-streaming distribution function in oppisite direction
+                    _f[l] = f_pre[_opp_indices[l]]
+
+            return _f
+
+        return functional, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # rise exception as this feature is not implemented yet
+        raise NotImplementedError("This feature is not implemented in NEON yet.")

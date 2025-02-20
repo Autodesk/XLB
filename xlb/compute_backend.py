@@ -6,3 +6,4 @@ from enum import Enum, auto
 class ComputeBackend(Enum):
     JAX = auto()
     WARP = auto()
+    NEON = auto()

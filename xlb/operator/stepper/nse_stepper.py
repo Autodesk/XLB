@@ -3,6 +3,7 @@
 from functools import partial
 from jax import jit
 import warp as wp
+import neon
 from typing import Any
 
 from xlb import DefaultConfig
@@ -79,8 +80,10 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Copy f_0 using backend-specific copy to f_1
         if self.compute_backend == ComputeBackend.JAX:
             f_1 = f_0.copy()
-        else:
+        if self.compute_backend == ComputeBackend.WARP:
             wp.copy(f_1, f_0)
+        if self.compute_backend == ComputeBackend.NEON:
+            neon.Container.copy(f_1, f_0).run(0)
 
         # Process boundary conditions and update masks
         bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask)
@@ -99,6 +102,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             velocity_set=DefaultConfig.velocity_set,
             precision_policy=DefaultConfig.default_precision_policy,
             compute_backend=DefaultConfig.default_backend,
+            grid=cls
         )
         # Split boundary conditions by type
         bc_with_vertices = [bc for bc in boundary_conditions if bc.mesh_vertices is not None]
@@ -321,4 +325,153 @@ class IncompressibleNavierStokesStepper(Stepper):
             inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep],
             dim=f_0.shape[1:],
         )
+        return f_0, f_1
+
+    def _construct_neon(self):
+        # Set local constants
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
+        _opp_indices = self.velocity_set.opp_indices
+        #_cast_to_store_dtype = self.store_dtype()
+
+        # Read the list of bc_to_id created upon instantiation
+        bc_to_id = boundary_condition_registry.bc_to_id
+        id_to_bc = boundary_condition_registry.id_to_bc
+
+        # Gather IDs of ExtrapolationOutflowBC boundary conditions
+        extrapolation_outflow_bc_ids = []
+        for bc_name, bc_id in bc_to_id.items():
+            if bc_name.startswith("ExtrapolationOutflowBC"):
+                extrapolation_outflow_bc_ids.append(bc_id)
+        # Group active boundary conditions
+        active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
+
+        @wp.func
+        def apply_bc(
+            index: Any,
+            timestep: Any,
+            _boundary_id: Any,
+            missing_mask: Any,
+            f_0: Any,
+            f_1: Any,
+            f_pre: Any,
+            f_post: Any,
+            is_post_streaming: bool,
+        ):
+            f_result = f_post
+
+            # Unroll the loop over boundary conditions
+            for i in range(wp.static(len(self.boundary_conditions))):
+                if is_post_streaming:
+                    if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.STREAMING):
+                        if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                            f_result = wp.static(self.boundary_conditions[i].neon_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                else:
+                    if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.COLLISION):
+                        if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                            f_result = wp.static(self.boundary_conditions[i].neon_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                    if wp.static(self.boundary_conditions[i].id in extrapolation_outflow_bc_ids):
+                        if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                            f_result = wp.static(self.boundary_conditions[i].prepare_bc_auxilary_data)(
+                                index, timestep, missing_mask, f_0, f_1, f_pre, f_post
+                            )
+            return f_result
+
+        @wp.func
+        def neon_get_thread_data(
+            f0_pn: Any,
+            f1_pn: Any,
+            missing_mask_pn: Any,
+            index: Any,
+        ):
+            # Read thread data for populations
+            _f0_thread = _f_vec()
+            _f1_thread = _f_vec()
+            _missing_mask = _missing_mask_vec()
+            for l in range(self.velocity_set.q):
+                # q-sized vector of pre-streaming populations
+                _f0_thread[l] = self.compute_dtype(wp.neon_read(f0_pn, index, l))
+                _f1_thread[l] = self.compute_dtype(wp.neon_read(f1_pn, index, l))
+                _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
+
+            return _f0_thread, _f1_thread, _missing_mask
+
+        import neon, typing
+        @neon.Container.factory(name="nse_stepper")
+        def container(
+                f_0_fd: Any,
+                f_1_fd: Any,
+                bc_mask_fd: Any,
+                missing_mask_fd: Any,
+                timestep: int,
+        ):
+            cast_to_store_dtype = self.store_dtype
+            def nse_stepper_ll(loader: neon.Loader):
+                loader.declare_execution_scope(bc_mask_fd.get_grid())
+                f_0_pn=loader.get_read_handel(f_0_fd)
+                f_1_pn =loader.get_read_handel(f_1_fd)
+                bc_mask_pn=loader.get_read_handel(bc_mask_fd)
+                missing_mask_pn=loader.get_read_handel(missing_mask_fd)
+
+                @wp.func
+                def nse_stepper_cl(index: typing.Any):
+                    _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
+                    if _boundary_id == wp.uint8(255):
+                        return
+
+                    # Apply streaming
+                    _f_post_stream = self.stream.neon_functional(f_0_pn, index)
+
+                    _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                    _f_post_collision = _f0_thread
+
+                    # Apply post-streaming boundary conditions
+                    _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_collision, _f_post_stream, True)
+
+                    _rho, _u = self.macroscopic.neon_functional(_f_post_stream)
+                    _feq = self.equilibrium.neon_functional(_rho, _u)
+                    _f_post_collision = self.collision.neon_functional(_f_post_stream, _feq, _rho, _u)
+
+                    # Apply post-collision boundary conditions
+                    _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False)
+
+                    # Store the result in f_1
+                    for l in range(self.velocity_set.q):
+                        # TODO: Improve this later
+                        if wp.static("GradsApproximationBC" in active_bcs):
+                            if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["GradsApproximationBC"]):
+                                if _missing_mask[l] == wp.uint8(1):
+                                    wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread[_opp_indices[l]])
+                        wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
+                loader.declare_kernel(nse_stepper_cl)
+            return nse_stepper_ll
+
+        return None, container
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_launch(self, f_0, f_1, bc_mask, missing_mask, timestep):
+        #if self.c is None:
+        #    self.c = self.neon_container(f_0, f_1, bc_mask, missing_mask, timestep)
+        import wpne
+        is_odd = timestep%2 == 1
+        is_even = not is_odd
+
+        c = None
+        if self.odd_or_even == 'even':
+            c = self.c_even
+        else:
+            c = self.c_odd
+
+        if c is None:
+            c = self.neon_container(f_0, f_1, bc_mask, missing_mask, timestep)
+        c.run(0, container_runtime=wpne.Container.ContainerRuntime.neon)
+
+        if self.odd_or_even == 'even':
+            self.c_even = c
+        else:
+            self.c_odd = c
+
+        if self.odd_or_even == 'even':
+            self.odd_or_even = 'odd'
+
         return f_0, f_1

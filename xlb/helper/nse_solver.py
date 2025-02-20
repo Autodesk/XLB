@@ -30,12 +30,12 @@ def create_nse_fields(
     if grid is None:
         if grid_shape is None:
             raise ValueError("grid_shape must be provided when grid is None")
-        grid = grid_factory(grid_shape, compute_backend=compute_backend)
+        grid = grid_factory(grid_shape, compute_backend=compute_backend, velocity_set=velocity_set)
 
     # Create fields
     f_0 = grid.create_field(cardinality=velocity_set.q, dtype=precision_policy.store_precision)
     f_1 = grid.create_field(cardinality=velocity_set.q, dtype=precision_policy.store_precision)
-    missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
+    missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=Precision.UINT8)
     bc_mask = grid.create_field(cardinality=1, dtype=Precision.UINT8)
 
     return grid, f_0, f_1, missing_mask, bc_mask

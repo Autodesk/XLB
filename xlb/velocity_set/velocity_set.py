@@ -44,6 +44,8 @@ class VelocitySet(object):
         # Convert properties to backend-specific format
         if self.backend == ComputeBackend.WARP:
             self._init_warp_properties()
+        elif self.backend == ComputeBackend.NEON:
+            self._init_neon_properties()
         elif self.backend == ComputeBackend.JAX:
             self._init_jax_properties()
         else:
@@ -84,6 +86,9 @@ class VelocitySet(object):
         self.cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._cc))
         self.c_float = wp.constant(wp.mat((self.d, self.q), dtype=dtype)(self._c_float))
         self.qi = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._qi))
+
+    def _init_neon_properties(self):
+        self._init_warp_properties()
 
     def _init_jax_properties(self):
         """
