@@ -421,49 +421,49 @@ def post_process(
     vorticity_operator,
     usd_stage,
 ):
-    # # Compute macroscopic quantities using the JAX backend for visualization
-    # if not isinstance(f_current, jnp.ndarray):
-    #     f_jax = wp.to_jax(f_current)
-    # macro_jax = Macroscopic(
-    #     compute_backend=ComputeBackend.JAX,
-    #     precision_policy=precision_policy,
-    #     velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.JAX),
-    # )
-    # rho, u = macro_jax(f_jax)
-    # u = u[:, 1:-1, 1:-1, 1:-1]  # Remove ghost layers if present
+    # Compute macroscopic quantities using the JAX backend for visualization
+    if not isinstance(f_current, jnp.ndarray):
+        f_jax = wp.to_jax(f_current)
+    macro_jax = Macroscopic(
+        compute_backend=ComputeBackend.JAX,
+        precision_policy=precision_policy,
+        velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.JAX),
+    )
+    rho, u = macro_jax(f_jax)
+    u = u[:, 1:-1, 1:-1, 1:-1]  # Remove ghost layers if present
 
-    # # Save standard visualization outputs
-    # fields = {
-    #     "u_magnitude": (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5,
-    #     "u_x": u[0],
-    #     "u_y": u[1],
-    #     "u_z": u[2],
-    # }
-    # save_fields_vtk(fields, timestep=i)
-    # reconstruct_mesh_from_vertices_and_faces(vertices_wp=vertices_wp, faces_np=faces_np, save_path=f"mesh_{i:06d}.stl")
-    # save_image(fields["u_magnitude"][grid_shape[0] // 2, :, :], timestep=i)
+    # Save standard visualization outputs
+    fields = {
+        "u_magnitude": (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5,
+        "u_x": u[0],
+        "u_y": u[1],
+        "u_z": u[2],
+    }
+    save_fields_vtk(fields, timestep=i)
+    reconstruct_mesh_from_vertices_and_faces(vertices_wp=vertices_wp, faces_np=faces_np, save_path=f"mesh_{i:06d}.stl")
+    save_image(fields["u_magnitude"][grid_shape[0] // 2, :, :], timestep=i)
 
-    # # Plot blade positions
-    # plt.figure(figsize=(10, 10))
-    # padding = 20
-    # x_min = -padding
-    # x_max = grid_shape[0] + padding
-    # y_min = -padding
-    # y_max = grid_shape[1] + padding
-    # plt.xlim(x_min, x_max)
-    # plt.ylim(y_min, y_max)
-    # plt.autoscale(False)
-    # for blade_id in range(num_blades):
-    #     start, end = blade_ranges[blade_id]
-    #     blade_vertices = vertices_wp[start:end].numpy()
-    #     plt.scatter(blade_vertices[:, 0], blade_vertices[:, 1], s=20, label=f"Blade {blade_id + 1}")
-    # plt.gca().set_aspect("equal", adjustable="box")
-    # plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize="small", markerscale=0.8)
-    # plt.title(f"Blade Positions at Step {i}")
-    # plt.xlabel("X")
-    # plt.ylabel("Y")
-    # plt.savefig(f"blade_positions_{i:06d}.png", bbox_inches="tight", dpi=150, pad_inches=0.2)
-    # plt.close()
+    # Plot blade positions
+    plt.figure(figsize=(10, 10))
+    padding = 20
+    x_min = -padding
+    x_max = grid_shape[0] + padding
+    y_min = -padding
+    y_max = grid_shape[1] + padding
+    plt.xlim(x_min, x_max)
+    plt.ylim(y_min, y_max)
+    plt.autoscale(False)
+    for blade_id in range(num_blades):
+        start, end = blade_ranges[blade_id]
+        blade_vertices = vertices_wp[start:end].numpy()
+        plt.scatter(blade_vertices[:, 0], blade_vertices[:, 1], s=20, label=f"Blade {blade_id + 1}")
+    plt.gca().set_aspect("equal", adjustable="box")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize="small", markerscale=0.8)
+    plt.title(f"Blade Positions at Step {i}")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.savefig(f"blade_positions_{i:06d}.png", bbox_inches="tight", dpi=150, pad_inches=0.2)
+    plt.close()
 
     save_usd_vorticity(
         i,
