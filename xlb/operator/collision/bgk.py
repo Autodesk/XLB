@@ -63,6 +63,10 @@ class BGK(Collision):
 
         return functional, kernel
 
+    def _construct_neon(self):
+        functional, _ = self._construct_warp()
+        return functional, None
+
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, feq, fout, rho, u, omega):
         # Launch the warp kernel

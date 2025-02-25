@@ -84,3 +84,7 @@ class FullwayBounceBackBC(BoundaryCondition):
             dim=f_pre.shape[1:],
         )
         return f_post
+
+    def _construct_neon(self):
+        functional,  _  = self._construct_warp()
+        return functional, None
