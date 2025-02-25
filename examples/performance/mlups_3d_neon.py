@@ -69,7 +69,7 @@ def setup_simulation(args):
     return backend, precision_policy
 
 
-def run(backend, precision_policy, grid_shape, num_steps):
+def run(macro, backend, precision_policy, grid_shape, num_steps):
     # Create grid and setup boundary conditions
     velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
     grid = grid_factory(grid_shape, velocity_set=velocity_set)
@@ -95,11 +95,18 @@ def run(backend, precision_policy, grid_shape, num_steps):
     # Initialize fields and run simulation
     omega = 1.0
     f_0, f_1, bc_mask, missing_mask = stepper.prepare_fields()
+    rho  = stepper.grid.create_field(1, dtype=precision_policy.store_precision)
+    u  = stepper.grid.create_field(3, dtype=precision_policy.store_precision)
+
     start_time = time.time()
 
     for i in range(num_steps):
         f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, omega, i)
         f_0, f_1 = f_1, f_0
+
+        if i % 10 == 0 or i == num_steps - 1:
+            wp.synchronize()
+            post_process(macro, rho, u, f_0, i)
     wp.synchronize()
 
     return time.time() - start_time
@@ -110,12 +117,43 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time):
     mlups = (total_lattice_updates / elapsed_time) / 1e6
     return mlups
 
+def post_process(macro, rho, u, f_0,  i):
+    # Write the results. We'll use JAX backend for the post-processing
+    # import jax.numpy as jnp
+    # if not isinstance(f_0, jnp.ndarray):
+    #     # If the backend is warp, we need to drop the last dimension added by warp for 2D simulations
+    #     f_0 = wp.to_jax(f_0)[..., 0]
+    # else:
+    #     f_0 = f_0
+    rho, u = macro(f_0, rho, u )
+    u.export_vti(f"lid_driven_cavity_{i}.vti", 'u')
+    pass
+
+    # # remove boundary cells
+    # rho = rho[:, 1:-1, 1:-1, 1:-1]
+    # u = u[:, 1:-1, 1:-1, 1:-1]
+    # u_magnitude = (u[0] ** 2 + u[1] ** 2) ** 0.5
+    #
+    # fields = {"rho": rho[0], "u_x": u[0], "u_y": u[1], "u_magnitude": u_magnitude}
+    #
+    # # save_fields_vtk(fields, timestep=i, prefix="lid_driven_cavity")
+    # ny=fields["u_magnitude"].shape[1]
+    # from xlb.utils import  save_image
+    # save_image(fields["u_magnitude"][:, ny//2, :], timestep=i, prefix="lid_driven_cavity")
 
 def main():
+
+
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)
-    elapsed_time = run(backend, precision_policy, grid_shape, args.num_steps)
+    from xlb.operator.macroscopic import Macroscopic
+    macro = Macroscopic(
+        compute_backend=ComputeBackend.NEON,
+        precision_policy=precision_policy,
+        velocity_set=xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=ComputeBackend.NEON),
+    )
+    elapsed_time = run(macro, backend, precision_policy, grid_shape, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
 
     print(f"Simulation completed in {elapsed_time:.2f} seconds")

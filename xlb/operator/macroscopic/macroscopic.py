@@ -70,7 +70,7 @@ class Macroscopic(Operator):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         import neon, typing
-        @neon.Container.factory
+        @neon.Container.factory("macroscopic")
         def container(
                 f_field: Any,
                 rho_field: Any,
@@ -78,11 +78,11 @@ class Macroscopic(Operator):
         ):
             _d = self.velocity_set.d
             def macroscopic_ll(loader: neon.Loader):
-                loader.declare_execution_scope(f_field.get_grid())
+                loader.set_grid(f_field.get_grid())
 
-                rho=loader.get_read_handel(rho_field)
-                u =loader.get_read_handel(u_fild)
-                f=loader.get_read_handel(f_field)
+                rho=loader.get_read_handle(rho_field)
+                u =loader.get_read_handle(u_fild)
+                f=loader.get_read_handle(f_field)
 
                 @wp.func
                 def macroscopic_cl(gIdx: typing.Any):
