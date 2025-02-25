@@ -33,6 +33,10 @@ class IncompressibleNavierStokesStepper(Stepper):
         force_vector=None,
     ):
         super().__init__(grid, boundary_conditions)
+        self.odd_or_even='even'
+        self.c_even = None
+        self.c_odd = None
+
 
         # Construct the collision operator
         if collision_type == "BGK":
@@ -83,17 +87,17 @@ class IncompressibleNavierStokesStepper(Stepper):
         if self.compute_backend == ComputeBackend.WARP:
             wp.copy(f_1, f_0)
         if self.compute_backend == ComputeBackend.NEON:
-            neon.Container.copy(f_1, f_0).run(0)
+            f_1.copy_from_run(f_0, 0)
 
         # Process boundary conditions and update masks
-        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask)
+        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
         # Initialize auxiliary data if needed
         f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
 
         return f_0, f_1, bc_mask, missing_mask
 
     @classmethod
-    def _process_boundary_conditions(cls, boundary_conditions, bc_mask, missing_mask):
+    def _process_boundary_conditions(cls, boundary_conditions, bc_mask, missing_mask, xlb_grid=None):
         """Process boundary conditions and update boundary masks."""
         # Check for boundary condition overlaps
         check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
@@ -102,14 +106,13 @@ class IncompressibleNavierStokesStepper(Stepper):
             velocity_set=DefaultConfig.velocity_set,
             precision_policy=DefaultConfig.default_precision_policy,
             compute_backend=DefaultConfig.default_backend,
-            grid=cls
         )
         # Split boundary conditions by type
         bc_with_vertices = [bc for bc in boundary_conditions if bc.mesh_vertices is not None]
         bc_with_indices = [bc for bc in boundary_conditions if bc.indices is not None]
         # Process indices-based boundary conditions
         if bc_with_indices:
-            bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask)
+            bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask, xlb_grid=xlb_grid)
         # Process mesh-based boundary conditions for 3D
         if DefaultConfig.velocity_set.d == 3 and bc_with_vertices:
             mesh_masker = MeshBoundaryMasker(
@@ -396,22 +399,23 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             return _f0_thread, _f1_thread, _missing_mask
 
-        import neon, typing
+        import typing
         @neon.Container.factory(name="nse_stepper")
         def container(
                 f_0_fd: Any,
                 f_1_fd: Any,
                 bc_mask_fd: Any,
                 missing_mask_fd: Any,
+                omega: Any,
                 timestep: int,
         ):
             cast_to_store_dtype = self.store_dtype
             def nse_stepper_ll(loader: neon.Loader):
-                loader.declare_execution_scope(bc_mask_fd.get_grid())
-                f_0_pn=loader.get_read_handel(f_0_fd)
-                f_1_pn =loader.get_read_handel(f_1_fd)
-                bc_mask_pn=loader.get_read_handel(bc_mask_fd)
-                missing_mask_pn=loader.get_read_handel(missing_mask_fd)
+                loader.set_grid(bc_mask_fd.get_grid())
+                f_0_pn=(loader.get_read_handle(f_0_fd))
+                f_1_pn =loader.get_read_handle(f_1_fd)
+                bc_mask_pn=loader.get_read_handle(bc_mask_fd)
+                missing_mask_pn=loader.get_read_handle(missing_mask_fd)
 
                 @wp.func
                 def nse_stepper_cl(index: typing.Any):
@@ -430,7 +434,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
                     _rho, _u = self.macroscopic.neon_functional(_f_post_stream)
                     _feq = self.equilibrium.neon_functional(_rho, _u)
-                    _f_post_collision = self.collision.neon_functional(_f_post_stream, _feq, _rho, _u)
+                    _f_post_collision = self.collision.neon_functional(_f_post_stream, _feq, _rho, _u, omega)
 
                     # Apply post-collision boundary conditions
                     _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False)
@@ -449,10 +453,9 @@ class IncompressibleNavierStokesStepper(Stepper):
         return None, container
 
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_launch(self, f_0, f_1, bc_mask, missing_mask, timestep):
+    def neon_launch(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
         #if self.c is None:
         #    self.c = self.neon_container(f_0, f_1, bc_mask, missing_mask, timestep)
-        import wpne
         is_odd = timestep%2 == 1
         is_even = not is_odd
 
@@ -463,8 +466,8 @@ class IncompressibleNavierStokesStepper(Stepper):
             c = self.c_odd
 
         if c is None:
-            c = self.neon_container(f_0, f_1, bc_mask, missing_mask, timestep)
-        c.run(0, container_runtime=wpne.Container.ContainerRuntime.neon)
+            c = self.neon_container(f_0, f_1, bc_mask, missing_mask, omega, timestep)
+        c.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
 
         if self.odd_or_even == 'even':
             self.c_even = c

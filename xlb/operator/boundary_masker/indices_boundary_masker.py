@@ -224,11 +224,11 @@ class IndicesBoundaryMasker(Operator):
         return None, None
 
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, grid=None):
+    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
         # Pre-allocate arrays with maximum possible size
-        velocity_set = grid._get_velocity_set()
-        missing_mask_warp = grid._create_warp_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
-        bc_mask_warp = grid._create_warp_field(cardinality=1, dtype=Precision.UINT8)
+        velocity_set = xlb_grid._get_velocity_set()
+        missing_mask_warp = xlb_grid._create_warp_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
+        bc_mask_warp = xlb_grid._create_warp_field(cardinality=1, dtype=Precision.UINT8)
         _, warp_kernel = self._construct_warp()
 
         max_size = sum(len(bc.indices[0]) if isinstance(bc.indices, list) else bc.indices.shape[1] for bc in bclist if bc.indices is not None)
@@ -290,24 +290,23 @@ class IndicesBoundaryMasker(Operator):
                 wp_is_interior,
                 bc_mask_warp,
                 missing_mask_warp,
-                start_index,
             ],
         )
         wp.synchronize()
 
-        import wpne, typing
-        @wpne.Container.factory
+        import neon, typing
+        @neon.Container.factory("")
         def container(
                 bc_mask_warp: typing.Any,
                 missing_mask_warp: typing.Any,
                 bc_mask_field: typing.Any,
                 missing_mask_field: typing.Any,
         ):
-            def loading_step(loader: wpne.Loader):
-                loader.declare_execution_scope(bc_mask.get_grid())
+            def loading_step(loader: neon.Loader):
+                loader.set_grid(bc_mask.get_grid())
 
-                bc_mask_hdl = loader.get_read_handel(bc_mask_field)
-                missing_mask_hdl = loader.get_read_handel(missing_mask_field)
+                bc_mask_hdl = loader.get_read_handle(bc_mask_field)
+                missing_mask_hdl = loader.get_read_handle(missing_mask_field)
 
                 @wp.func
                 def masker(gridIdx: typing.Any):
@@ -315,7 +314,7 @@ class IndicesBoundaryMasker(Operator):
                     gx = wp.neon_get_x(cIdx)
                     gy = wp.neon_get_y(cIdx)
                     gz = wp.neon_get_z(cIdx)
-                    # TODO@Max - XLB is flattening the z dimension in 3D, while neon uses the y dimension
+                    # TODO@Max - XLB is flattening the y dimension in 3D, while neon uses the z dimension
                     local_mask = bc_mask_warp[
                         0,
                         gx,

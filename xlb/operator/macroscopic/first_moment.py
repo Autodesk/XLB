@@ -65,3 +65,12 @@ class FirstMoment(Operator):
             dim=u.shape[1:],
         )
         return u
+
+    def _construct_neon(self):
+        functional,_  = self._construct_warp()
+        return functional, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f, rho):
+        # rise exception as this feature is not implemented yet
+        raise NotImplementedError("This feature is not implemented in NEON yet.")

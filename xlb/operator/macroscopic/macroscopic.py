@@ -26,8 +26,8 @@ class Macroscopic(Operator):
         return rho, u
 
     def _construct_warp(self):
-        zero_moment_func = self.zero_moment.warp_functional
-        first_moment_func = self.first_moment.warp_functional
+        zero_moment_func = self.zero_moment.neon_functional
+        first_moment_func = self.first_moment.neon_functional
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
@@ -66,33 +66,8 @@ class Macroscopic(Operator):
         return rho, u
 
     def _construct_neon(self):
-        zero_moment_func = self.zero_moment.neon_functional
-        first_moment_func = self.first_moment.neon_functional
+        functional, _ = self._construct_warp()
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        @wp.func
-        def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
-            return rho, u
-
-        @wp.kernel
-        def kernel(
-            f: wp.array4d(dtype=Any),
-            rho: wp.array4d(dtype=Any),
-            u: wp.array4d(dtype=Any),
-        ):
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)
-
-            _f = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1], index[2]]
-            _rho, _u = functional(_f)
-
-            rho[0, index[0], index[1], index[2]] = self.store_dtype(_rho)
-            for d in range(self.velocity_set.d):
-                u[d, index[0], index[1], index[2]] = self.store_dtype(_u[d])
 
         import neon, typing
         @neon.Container.factory

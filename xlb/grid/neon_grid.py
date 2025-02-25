@@ -20,7 +20,6 @@ class NeonGrid(Grid):
 
         super().__init__(shape, ComputeBackend.NEON)
 
-
     def _get_velocity_set(self):
         return self.xlb_lattice
 
@@ -29,7 +28,6 @@ class NeonGrid(Grid):
         pass
 
     def _initialize_backend(self):
-        import neon
 
         # FIXME@max: for now we hardcode the number of devices to 0
         num_devs = 1
@@ -80,9 +78,9 @@ class NeonGrid(Grid):
                                     dtype=dtype, )
 
         if fill_value is None:
-            neon.Container.zero(field).run(0)
+            field.zero_run(stream_idx = 0)
         else:
-            neon.Container.fill(field, fill_value).run(0)
+            field.fill_run(value=fill_value,stream_idx = 0)
         return field
 
     def _create_warp_field(self,
@@ -97,7 +95,7 @@ class NeonGrid(Grid):
 
         _d = self.xlb_lattice.d
 
-        import neon, typing
+        import typing
         @neon.Container.factory
         def container(
                 src_field: typing.Any,
