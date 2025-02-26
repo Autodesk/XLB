@@ -17,7 +17,6 @@ from xlb.grid import grid_factory
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 from xlb.distribute import distribute
-import xlb
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
@@ -69,7 +68,7 @@ def setup_simulation(args):
     return backend, precision_policy
 
 
-def run(macro, backend, precision_policy, grid_shape, num_steps):
+def run( backend, precision_policy, grid_shape, num_steps):
     # Create grid and setup boundary conditions
     velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
     grid = grid_factory(grid_shape, velocity_set=velocity_set)
@@ -88,16 +87,17 @@ def run(macro, backend, precision_policy, grid_shape, num_steps):
     omega = 1.0
 
     sim = xlb.helper.nse_solver.Nse_simulation(grid, velocity_set, stepper, omega)
+    print("start timing")
     start_time = time.time()
 
     for i in range(num_steps):
         sim.step()
 
-        if i % 10 == 0 or i == num_steps - 1:
-           sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
+    t = time.time() - start_time
 
-    return time.time() - start_time
+    sim.export_macroscopic("u_lid_driven_cavity_")
+    return t
 
 
 def calculate_mlups(cube_edge, num_steps, elapsed_time):
@@ -136,7 +136,6 @@ def post_process(macro, rho, u, f_0,  i):
     # save_image(fields["u_magnitude"][:, ny//2, :], timestep=i, prefix="lid_driven_cavity")
 
 def main():
-
 
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)

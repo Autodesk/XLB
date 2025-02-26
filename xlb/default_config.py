@@ -24,10 +24,10 @@ def init(velocity_set, default_backend, default_precision_policy):
         import warp as wp
         import neon
 
-        wp.config.mode = "release"
-        wp.config.llvm_cuda = False
-        wp.config.verbose = True
-        wp.verbose_warnings = True
+        #wp.config.mode = "release"
+        #wp.config.llvm_cuda = False
+        #wp.config.verbose = True
+        #wp.verbose_warnings = True
 
         wp.init()
 

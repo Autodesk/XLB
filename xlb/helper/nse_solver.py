@@ -68,10 +68,11 @@ class Nse_simulation:
             precision_policy=self.precision_policy,
             velocity_set=self.velocity_set,
         )
-        self.iteration
+
+        self.__init_containers()
 
     def __init_containers(self):
-        containers = self.stepper.get_containers(self.f_0, self.f_1, self.bc_mask, self.missing_mask, self.rho, self.u)
+        containers = self.stepper.get_containers(self.f_0, self.f_1, self.bc_mask, self.missing_mask, self.omega, self.iteration_idx)
         self.even_step = containers['even']
         self.odd_step = containers['odd']
 
@@ -81,16 +82,15 @@ class Nse_simulation:
         self.odd_macroscopic = containers['odd']
 
     def export_macroscopic(self, fname_prefix):
-        self.iteration_idx += 1
-
         if self.iteration_idx % 2 == 0:
-            self.even_macroscopic()
+            self.even_macroscopic.run(0)
         else:
-            self.odd_macroscopic()
+            self.odd_macroscopic.run(0)
 
         import warp as wp
         wp.synchronize()
         self.u.update_host(0)
+        wp.synchronize()
         self.u.export_vti(f"{fname_prefix}{self.iteration_idx}.vti", 'u')
 
         return
@@ -98,6 +98,8 @@ class Nse_simulation:
     def step(self):
         self.iteration_idx += 1
         if self.iteration_idx % 2 == 0:
-            self.even_step()
+            print("running even")
+            self.even_step.run(0)
         else:
-            self.odd_step()
+            print("running odd")
+            self.odd_step.run(0)

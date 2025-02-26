@@ -92,29 +92,29 @@ class IncompressibleNavierStokesStepper(Stepper):
         if True:
             import xlb.velocity_set
             from xlb.operator.macroscopic import Macroscopic
-            macro = Macroscopic(
-                compute_backend=ComputeBackend.NEON,
-                precision_policy=self.precision_policy,
-                velocity_set=xlb.velocity_set.D3Q19(precision_policy=self.precision_policy, backend=ComputeBackend.NEON),
-            )
+            # macro = Macroscopic(
+            #     compute_backend=ComputeBackend.NEON,
+            #     precision_policy=self.precision_policy,
+            #     velocity_set=xlb.velocity_set.D3Q19(precision_policy=self.precision_policy, backend=ComputeBackend.NEON),
+            # )
             rho = self.grid.create_field(1, dtype=self.precision_policy.store_precision)
             u = self.grid.create_field(3, dtype=self.precision_policy.store_precision)
-            rho, u = macro(f_0, rho, u)
-            wp.synchronize()
-            wp.synchronize()
-            u.update_host(0)
-            rho.update_host(0)
-            wp.synchronize()
-            u.export_vti("u_init.vti", 'u')
-            rho.export_vti("rho_init.vti", 'rho')
-            rho, u = macro(f_1, rho, u)
-            wp.synchronize()
-            wp.synchronize()
-            u.update_host(0)
-            rho.update_host(0)
-            wp.synchronize()
-            u.export_vti("u_f1_init.vti", 'u')
-            rho.export_vti("rho_f1_init.vti", 'rho')
+            # rho, u = macro(f_0, rho, u)
+            # wp.synchronize()
+            # wp.synchronize()
+            # u.update_host(0)
+            # rho.update_host(0)
+            # wp.synchronize()
+            # u.export_vti("u_init.vti", 'u')
+            # rho.export_vti("rho_init.vti", 'rho')
+            # rho, u = macro(f_1, rho, u)
+            # wp.synchronize()
+            # wp.synchronize()
+            # u.update_host(0)
+            # rho.update_host(0)
+            # wp.synchronize()
+            # u.export_vti("u_f1_init.vti", 'u')
+            # rho.export_vti("rho_f1_init.vti", 'rho')
         # Process boundary conditions and update masks
         bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
         # Initialize auxiliary data if needed
@@ -486,8 +486,8 @@ class IncompressibleNavierStokesStepper(Stepper):
 
     def get_containers(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
         _, container = self._construct_neon()
-        return {'even': container(f_0,  bc_mask, missing_mask, omega, timestep),
-                'odd': container(f_1, f_0, bc_mask, missing_mask, omega, timestep)}
+        return {'even': container(f_0, f_1,  bc_mask, missing_mask, omega, 0),
+                'odd': container(f_1, f_0, bc_mask, missing_mask, omega, 1)}
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_launch(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
