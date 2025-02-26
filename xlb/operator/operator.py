@@ -131,6 +131,18 @@ class Operator:
         elif self.compute_backend == ComputeBackend.WARP:
             return self.precision_policy.store_precision.wp_dtype
 
+    def get_precision_policy(self):
+        """
+        Returns the precision policy
+        """
+        return self.precision_policy
+
+    def get_grid(self):
+        """
+        Returns the grid object
+        """
+        return self.grid
+
     def _construct_warp(self):
         """
         Construct the warp functional and kernel of the operator

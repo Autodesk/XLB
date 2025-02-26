@@ -17,7 +17,7 @@ from xlb.grid import grid_factory
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 from xlb.distribute import distribute
-
+import xlb
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
@@ -86,19 +86,15 @@ def run(macro, backend, precision_policy, grid_shape, num_steps):
 
     # Initialize fields and run simulation
     omega = 1.0
-    f_0, f_1, bc_mask, missing_mask = stepper.prepare_fields()
-    rho  = stepper.grid.create_field(1, dtype=precision_policy.store_precision)
-    u  = stepper.grid.create_field(3, dtype=precision_policy.store_precision)
 
+    sim = xlb.helper.nse_solver.Nse_simulation(grid, velocity_set, stepper, omega)
     start_time = time.time()
 
     for i in range(num_steps):
-        f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, omega, i)
-        f_0, f_1 = f_1, f_0
+        sim.step()
 
-    #if i % 2 == 0 or i == num_steps - 1:
-        wp.synchronize()
-        post_process(macro, rho, u, f_0, i)
+        if i % 10 == 0 or i == num_steps - 1:
+           sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
 
     return time.time() - start_time
@@ -145,13 +141,7 @@ def main():
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)
-    from xlb.operator.macroscopic import Macroscopic
-    macro = Macroscopic(
-        compute_backend=ComputeBackend.NEON,
-        precision_policy=precision_policy,
-        velocity_set=xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=ComputeBackend.NEON),
-    )
-    elapsed_time = run(macro, backend, precision_policy, grid_shape, args.num_steps)
+    elapsed_time = run(backend, precision_policy, grid_shape, args.num_steps)
     mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
 
     print(f"Simulation completed in {elapsed_time:.2f} seconds")

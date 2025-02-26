@@ -42,6 +42,9 @@ class Grid(ABC):
     def _initialize_backend(self):
         pass
 
+    def get_compute_backend(self):
+        return self.compute_backend
+
     def bounding_box_indices(self, remove_edges=False):
         """
         This function calculates the indices of the bounding box of a 2D or 3D grid.

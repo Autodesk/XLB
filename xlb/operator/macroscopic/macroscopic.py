@@ -98,6 +98,11 @@ class Macroscopic(Operator):
             return macroscopic_ll
         return functional, container
 
+    def get_containers(self, f_0, f_1, rho, u):
+        _, container = self._construct_neon()
+        return {'even': container(f_0,   rho, u),
+                'odd': container(f_1,  rho, u)}
+
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, f, rho, u):
         c = self.neon_container(f, rho, u)

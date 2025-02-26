@@ -1,6 +1,8 @@
 # Base class for all stepper operators
 
 from functools import partial
+
+from docutils.nodes import container
 from jax import jit
 import warp as wp
 import neon
@@ -36,7 +38,6 @@ class IncompressibleNavierStokesStepper(Stepper):
         self.odd_or_even='even'
         self.c_even = None
         self.c_odd = None
-
 
         # Construct the collision operator
         if collision_type == "BGK":
@@ -88,11 +89,41 @@ class IncompressibleNavierStokesStepper(Stepper):
             wp.copy(f_1, f_0)
         if self.compute_backend == ComputeBackend.NEON:
             f_1.copy_from_run(f_0, 0)
-
+        if True:
+            import xlb.velocity_set
+            from xlb.operator.macroscopic import Macroscopic
+            macro = Macroscopic(
+                compute_backend=ComputeBackend.NEON,
+                precision_policy=self.precision_policy,
+                velocity_set=xlb.velocity_set.D3Q19(precision_policy=self.precision_policy, backend=ComputeBackend.NEON),
+            )
+            rho = self.grid.create_field(1, dtype=self.precision_policy.store_precision)
+            u = self.grid.create_field(3, dtype=self.precision_policy.store_precision)
+            rho, u = macro(f_0, rho, u)
+            wp.synchronize()
+            wp.synchronize()
+            u.update_host(0)
+            rho.update_host(0)
+            wp.synchronize()
+            u.export_vti("u_init.vti", 'u')
+            rho.export_vti("rho_init.vti", 'rho')
+            rho, u = macro(f_1, rho, u)
+            wp.synchronize()
+            wp.synchronize()
+            u.update_host(0)
+            rho.update_host(0)
+            wp.synchronize()
+            u.export_vti("u_f1_init.vti", 'u')
+            rho.export_vti("rho_f1_init.vti", 'rho')
         # Process boundary conditions and update masks
         bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
         # Initialize auxiliary data if needed
         f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
+        bc_mask.update_host(0)
+        missing_mask.update_host(0)
+        wp.synchronize()
+        #bc_mask.export_vti("bc_mask.vti", 'bc_mask')
+        #missing_mask.export_vti("missing_mask.vti", 'missing_mask')
 
         return f_0, f_1, bc_mask, missing_mask
 
@@ -412,17 +443,18 @@ class IncompressibleNavierStokesStepper(Stepper):
             cast_to_store_dtype = self.store_dtype
             def nse_stepper_ll(loader: neon.Loader):
                 loader.set_grid(bc_mask_fd.get_grid())
+
                 f_0_pn=(loader.get_read_handle(f_0_fd))
-                f_1_pn =loader.get_read_handle(f_1_fd)
                 bc_mask_pn=loader.get_read_handle(bc_mask_fd)
                 missing_mask_pn=loader.get_read_handle(missing_mask_fd)
+
+                f_1_pn =loader.get_write_handle(f_1_fd)
 
                 @wp.func
                 def nse_stepper_cl(index: typing.Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id == wp.uint8(255):
                         return
-
                     # Apply streaming
                     _f_post_stream = self.stream.neon_functional(f_0_pn, index)
 
@@ -452,29 +484,32 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         return None, container
 
+    def get_containers(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
+        _, container = self._construct_neon()
+        return {'even': container(f_0,  bc_mask, missing_mask, omega, timestep),
+                'odd': container(f_1, f_0, bc_mask, missing_mask, omega, timestep)}
+
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_launch(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
         #if self.c is None:
         #    self.c = self.neon_container(f_0, f_1, bc_mask, missing_mask, timestep)
-        is_odd = timestep%2 == 1
-        is_even = not is_odd
-
-        c = None
-        if self.odd_or_even == 'even':
-            c = self.c_even
-        else:
-            c = self.c_odd
-
-        if c is None:
-            c = self.neon_container(f_0, f_1, bc_mask, missing_mask, omega, timestep)
+        # c = None
+        # if self.odd_or_even == 'even':
+        #     c = self.c_even
+        # else:
+        #     c = self.c_odd
+        #
+        # if c is None:
+        #     pass
+        c = self.neon_container(f_0, f_1, bc_mask, missing_mask, omega, timestep)
         c.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
-
-        if self.odd_or_even == 'even':
-            self.c_even = c
-        else:
-            self.c_odd = c
-
-        if self.odd_or_even == 'even':
-            self.odd_or_even = 'odd'
+        #
+        # if self.odd_or_even == 'even':
+        #     c = self.c_even
+        # else:
+        #     c = self.c_odd
+        #
+        # if self.odd_or_even == 'even':
+        #     self.odd_or_even = 'odd'
 
         return f_0, f_1
