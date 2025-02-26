@@ -158,7 +158,7 @@ class IndicesBoundaryMasker(Operator):
         return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
+    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
         # Pre-allocate arrays with maximum possible size
         max_size = sum(len(bc.indices[0]) if isinstance(bc.indices, list) else bc.indices.shape[1] for bc in bclist if bc.indices is not None)
         indices = np.zeros((3, max_size), dtype=np.int32)

@@ -26,8 +26,8 @@ class Macroscopic(Operator):
         return rho, u
 
     def _construct_warp(self):
-        zero_moment_func = self.zero_moment.neon_functional
-        first_moment_func = self.first_moment.neon_functional
+        zero_moment_func = self.zero_moment.warp_functional
+        first_moment_func = self.first_moment.warp_functional
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
