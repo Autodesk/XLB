@@ -78,13 +78,20 @@ def run( backend, precision_policy, grid_shape, num_steps):
     walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
     walls = np.unique(np.array(walls), axis=-1).tolist()
 
-    boundary_conditions = [EquilibriumBC(rho=1.0, u=(0.02, 0.0, 0.0), indices=lid), FullwayBounceBackBC(indices=walls)]
+    prescribed_vel = 0.05
+
+    boundary_conditions = [EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid), FullwayBounceBackBC(indices=walls)]
 
     # Create stepper
     stepper = IncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-    # Initialize fields and run simulation
-    omega = 1.0
+    Re = 100000
+    clength = grid_shape[0] - 1
+    visc = prescribed_vel * clength / Re
+    omega = 1.0 / (3.0 * visc + 0.5)
+
+    # # Initialize fields and run simulation
+    # omega = 1.0
 
     sim = xlb.helper.nse_solver.Nse_simulation(grid, velocity_set, stepper, omega)
     print("start timing")
