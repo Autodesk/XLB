@@ -90,51 +90,54 @@ def save_usd_vorticity(
     vorticity_threshold,
     usd_stage,
 ):
-    device = "cuda:0"
-    macro_wp = Macroscopic(
-        compute_backend=ComputeBackend.WARP,
-        precision_policy=precision_policy,
-        velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
-    )
-    rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
-    u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
-    rho, u = macro_wp(f_current, rho, u)
-    u = u[:, 20:-20, 20:-20, 0:-20]
+    device = "cuda:1"
+    f_current_new = wp.clone(f_current, device=device)
+    bc_mask_new = wp.clone(bc_mask, device=device)
+    with wp.ScopedDevice(device):
+        macro_wp = Macroscopic(
+            compute_backend=ComputeBackend.WARP,
+            precision_policy=precision_policy,
+            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
+        )
+        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
+        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
+        rho, u = macro_wp(f_current_new, rho, u)
+        u = u[:, 20:-20, 20:-20, 0:-20]
 
-    vorticity = wp.zeros((3, *u.shape[1:]), dtype=wp.float32, device=device)
-    vorticity_magnitude = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-    vorticity, vorticity_magnitude = vorticity_operator(u, bc_mask, vorticity, vorticity_magnitude)
+        vorticity = wp.zeros((3, *u.shape[1:]), dtype=wp.float32, device=device)
+        vorticity_magnitude = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
+        vorticity, vorticity_magnitude = vorticity_operator(u, bc_mask_new, vorticity, vorticity_magnitude)
 
-    max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
-    max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
-    mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
-    mc.surface(vorticity_magnitude[0], vorticity_threshold)
-    if mc.verts.shape[0] == 0:
-        print(f"Warning: No vertices found for vorticity at timestep {timestep}.")
-        return
+        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
+        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
+        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
+        mc.surface(vorticity_magnitude[0], vorticity_threshold)
+        if mc.verts.shape[0] == 0:
+            print(f"Warning: No vertices found for vorticity at timestep {timestep}.")
+            return
 
-    grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
-    scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
-    scalars = grid_to_point_op(vorticity_magnitude, mc.verts, scalars)
+        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
+        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
+        scalars = grid_to_point_op(vorticity_magnitude, mc.verts, scalars)
 
-    colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
-    scalars_np = scalars.numpy()
-    vorticity_min = float(np.percentile(scalars_np, 5))
-    vorticity_max = float(np.percentile(scalars_np, 95))
-    if abs(vorticity_max - vorticity_min) < 1e-6:
-        vorticity_max = vorticity_min + 1e-6
+        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
+        scalars_np = scalars.numpy()
+        vorticity_min = float(np.percentile(scalars_np, 5))
+        vorticity_max = float(np.percentile(scalars_np, 95))
+        if abs(vorticity_max - vorticity_min) < 1e-6:
+            vorticity_max = vorticity_min + 1e-6
 
-    wp.launch(
-        get_color,
-        dim=mc.verts.shape[0],
-        inputs=(vorticity_min, vorticity_max, scalars),
-        outputs=(colors,),
-        device=device,
-    )
+        wp.launch(
+            get_color,
+            dim=mc.verts.shape[0],
+            inputs=(vorticity_min, vorticity_max, scalars),
+            outputs=(colors,),
+            device=device,
+        )
 
-    vertices = mc.verts.numpy()
-    indices = mc.indices.numpy()
-    tri_count = len(indices) // 3
+        vertices = mc.verts.numpy()
+        indices = mc.indices.numpy()
+        tri_count = len(indices) // 3
 
     usd_mesh.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
     usd_mesh.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
@@ -160,43 +163,46 @@ def save_usd_q_criterion(
     q_threshold,
     usd_stage,
 ):
-    device = "cuda:0"
-    macro_wp = Macroscopic(
-        compute_backend=ComputeBackend.WARP,
-        precision_policy=precision_policy,
-        velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
-    )
-    rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
-    u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
-    rho, u = macro_wp(f_current, rho, u)
-    u = u[:, 20:-20, 20:-20, 0:-20]
+    device = "cuda:1"
+    f_current_new = wp.clone(f_current, device=device)
+    bc_mask_new = wp.clone(bc_mask, device=device)
+    with wp.ScopedDevice(device):
+        macro_wp = Macroscopic(
+            compute_backend=ComputeBackend.WARP,
+            precision_policy=precision_policy,
+            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
+        )
+        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
+        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
+        rho, u = macro_wp(f_current_new, rho, u)
+        u = u[:, 20:-20, 20:-20, 0:-20]
 
-    norm_mu = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-    q_field = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-    norm_mu, q_field = q_criterion_operator(u, bc_mask, norm_mu, q_field)
+        norm_mu = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
+        q_field = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
+        norm_mu, q_field = q_criterion_operator(u, bc_mask_new, norm_mu, q_field)
 
-    max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
-    max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
-    mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
-    mc.surface(q_field[0], q_threshold)
-    if mc.verts.shape[0] == 0:
-        print(f"Warning: No vertices found for Q-criterion at timestep {timestep}.")
-        return
+        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
+        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
+        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
+        mc.surface(q_field[0], q_threshold)
+        if mc.verts.shape[0] == 0:
+            print(f"Warning: No vertices found for Q-criterion at timestep {timestep}.")
+            return
 
-    grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
-    scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
-    scalars = grid_to_point_op(norm_mu, mc.verts, scalars)
+        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
+        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
+        scalars = grid_to_point_op(norm_mu, mc.verts, scalars)
 
-    colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
-    vorticity_min = 0.0
-    vorticity_max = 0.1
-    wp.launch(
-        get_color,
-        dim=mc.verts.shape[0],
-        inputs=(vorticity_min, vorticity_max, scalars),
-        outputs=(colors,),
-        device=device,
-    )
+        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
+        vorticity_min = 0.0
+        vorticity_max = 0.1
+        wp.launch(
+            get_color,
+            dim=mc.verts.shape[0],
+            inputs=(vorticity_min, vorticity_max, scalars),
+            outputs=(colors,),
+            device=device,
+        )
 
     vertices = mc.verts.numpy()
     indices = mc.indices.numpy()
@@ -302,7 +308,7 @@ def load_and_prepare_meshes_car(grid_shape, stl_dir="/home/mehdi/Repos/stl-files
 
     # Calculate scale based on BODY width only
     Nx, Ny, Nz = grid_shape
-    target_body_width = Ny / 4.0
+    target_body_width = Ny / 3.0
     scale_factor = target_body_width / orig_body_width  # Use body's original width
 
     # Apply scale to ALL components
@@ -468,7 +474,7 @@ def bc_profile(precision_policy, grid_shape, u_max):
         z = _dtype(index[2])
         y_center = y - (L_y / _dtype(2.0))
         z_center = z - (L_z / _dtype(2.0))
-        r_sq = ((2.0 * y_center) / L_y) ** _dtype(2.0) + ((2.0 * z_center) / L_z) ** _dtype(2.0)
+        r_sq = ((_dtype(2.0) * y_center) / L_y) ** _dtype(2.0) + ((_dtype(2.0) * z_center) / L_z) ** _dtype(2.0)
         velocity_x = u_max_d * wp.max(_dtype(0.0), _dtype(1.0) - r_sq)
         return wp.vec(velocity_x, length=1)
 
@@ -573,6 +579,7 @@ def post_process(
     }
     slice_idy = grid_shape[1] // 2
     save_image(fields["u_magnitude"][:, slice_idy, :], timestep=i)
+    # save_fields_vtk(fields, i)
 
     save_usd_vorticity(
         i,
@@ -596,20 +603,20 @@ def post_process(
         usd_mesh_q_criterion,
         q_criterion_operator,
         precision_policy=precision_policy,
-        q_threshold=1e-6,
+        q_threshold=5e-6,
         usd_stage=usd_stage,
     )
 
-grid_shape = (300, 200, 100)
-u_max = 0.05
+grid_shape = (1024, 500, 200)
+u_max = 0.02
 iter_per_flow_passes = grid_shape[0] / u_max
-num_steps = 20000
-post_process_interval = 100
+num_steps = 2
+post_process_interval = 1000
 print_interval = 1000
 num_wheels = 4
 wheel_rotation_speed = -0.002
 
-Re = 2000000.0
+Re = 2e6
 clength = grid_shape[0] - 1
 visc = u_max * clength / Re
 omega = 1.0 / (3.0 * visc + 0.5)
@@ -672,16 +679,18 @@ bc_list = setup_boundary_conditions(grid, velocity_set, precision_policy, grid_s
 stepper = setup_stepper(grid, bc_list, omega)
 f_0, f_1, bc_mask, missing_mask = stepper.prepare_fields()
 
-q_criterion_operator = QCriterion(
+device = "cuda:1"
+with wp.ScopedDevice(device):
+    q_criterion_operator = QCriterion(
+        velocity_set=velocity_set,
+        precision_policy=precision_policy,
+        compute_backend=compute_backend,
+    )
+    vorticity_operator = Vorticity(
     velocity_set=velocity_set,
     precision_policy=precision_policy,
     compute_backend=compute_backend,
-)
-vorticity_operator = Vorticity(
-    velocity_set=velocity_set,
-    precision_policy=precision_policy,
-    compute_backend=compute_backend,
-)
+    )
 
 velocities_wp = wp.zeros(shape=vertices_wp.shape[0], dtype=wp.vec3)
 

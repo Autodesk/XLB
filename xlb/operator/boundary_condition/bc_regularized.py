@@ -150,7 +150,7 @@ class RegularizedBC(ZouHeBC):
             # Find the value of u from the missing directions
             # Since we are only considering normal velocity, we only need to find one value (stored at the center of f_1)
             # Create velocity vector by multiplying the prescribed value with the normal vector
-            prescribed_value = f_1[0, index[0], index[1], index[2]]
+            prescribed_value = self.compute_dtype(f_1[0, index[0], index[1], index[2]])
             _u = -prescribed_value * normals
 
             # calculate rho
@@ -186,7 +186,7 @@ class RegularizedBC(ZouHeBC):
 
             # Find the value of rho from the missing directions
             # Since we need only one scalar value, we only need to find one value (stored at the center of f_1)
-            _rho = f_1[0, index[0], index[1], index[2]]
+            _rho = self.compute_dtype(f_1[0, index[0], index[1], index[2]])
 
             # calculate velocity
             fsum = bc_helper.get_bc_fsum(_f, missing_mask)

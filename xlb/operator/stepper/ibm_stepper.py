@@ -18,6 +18,7 @@ from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMask
 from xlb.helper import check_bc_overlaps
 from xlb.helper.nse_solver import create_nse_fields
 from xlb.operator.stepper.nse_stepper import IncompressibleNavierStokesStepper
+from warp.utils import ScopedTimer
 
 
 class IBMStepper(IncompressibleNavierStokesStepper):
@@ -276,7 +277,92 @@ class IBMStepper(IncompressibleNavierStokesStepper):
 
             # Update f_1 with the new post-collision population
             for l in range(self.velocity_set.q):
-                f_1[l, index[0], index[1], index[2]] += feq_force[l] - feq[l]
+                f_1[l, index[0], index[1], index[2]] += self.store_dtype(feq_force[l] - feq[l])
+
+        # Add a new kernel for conservation-aware force normalization
+        @wp.kernel
+        def conservation_aware_normalize_forces(
+            eul_forces: wp.array(dtype=wp.vec3),
+            eul_weights: wp.array(dtype=Any),
+            eul_velocities: wp.array(dtype=wp.vec3),
+        ):
+            tid = wp.tid()
+            weight_sum = eul_weights[tid]
+
+            if weight_sum > self.compute_dtype(0.0):
+                # The accumulated forces contain the weighted sum of desired velocity changes
+                # We normalize by weight_sum to get the average desired velocity change
+                # This ensures that we're applying just the right amount of force to achieve
+                # the collective boundary condition, not over-enforcing it
+                eul_forces[tid] = eul_forces[tid] / weight_sum
+
+                # Note: In the IBM method, eul_forces now represents the target velocity,
+                # not the force directly. The actual force application happens in correct_eulerian_velocity
+                # and correct_population_ibm kernels.
+
+        # Add a new kernel that combines force interpolation and conservation in one step
+        @wp.kernel
+        def improved_interpolate_force_to_eulerian(
+            lag_positions: wp.array(dtype=wp.vec3),
+            lag_forces: wp.array(dtype=wp.vec3),
+            lag_areas: wp.array(dtype=Any),
+            eul_positions: wp.array(dtype=wp.vec3),
+            eul_velocities: wp.array(dtype=wp.vec3),  # Current Eulerian velocities
+            eul_forces: wp.array(dtype=wp.vec3),  # Will store desired velocity, not force directly
+            eul_weights: wp.array(dtype=Any),  # For normalization
+            grid: wp.uint64,
+        ):
+            tid = wp.tid()
+            Xk = lag_positions[tid]
+            Fk = lag_forces[tid]  # Fk here represents the desired velocity change at the Lagrangian point
+            Ak = lag_areas[tid]
+
+            # Query neighboring Eulerian points
+            query = wp.hash_grid_query(grid, Xk, 2.0)
+            index = int(0)
+
+            while wp.hash_grid_query_next(query, index):
+                x_pos = eul_positions[index]
+                w = weight(x_pos, Xk)
+
+                # The weight represents how much this Lagrangian point influences this Eulerian point
+                wp.atomic_add(eul_weights, index, w)
+
+                # We accumulate the weighted desired velocity from each Lagrangian point
+                # Each Lagrangian point contributes according to its weight and area
+                target_velocity = Fk * w * Ak
+                wp.atomic_add(eul_forces, index, target_velocity)
+
+        # Add this to the constructor
+        self.improved_interpolate_force_to_eulerian = improved_interpolate_force_to_eulerian
+
+        @wp.kernel
+        def physics_based_normalize_and_correct(
+            eul_forces: wp.array(dtype=wp.vec3),  # Contains accumulated weighted velocities
+            eul_weights: wp.array(dtype=Any),  # Contains sum of weights
+            eul_velocities: wp.array(dtype=wp.vec3),  # Current velocities
+        ):
+            tid = wp.tid()
+            weight_sum = eul_weights[tid]
+
+            if weight_sum > self.compute_dtype(0.0):
+                # Calculate the physically correct target velocity at this Eulerian point
+                # by taking the weighted average of all desired velocities from influencing Lagrangian points
+                target_velocity = eul_forces[tid] / weight_sum
+
+                # The force we need to apply is the difference between the target and current velocity
+                # This is the minimal force needed to satisfy the boundary conditions collectively
+                correction_force = target_velocity - eul_velocities[tid]
+
+                # Store the correction force back in eul_forces for use in later steps
+                eul_forces[tid] = correction_force
+
+                # Apply the correction directly to the velocity field
+                # TODO: This step can be kept or moved to correct_eulerian_velocity
+                eul_velocities[tid] += correction_force
+
+        # Add this to the constructor
+        self.physics_based_normalize_and_correct = physics_based_normalize_and_correct
 
         self.initialize_lagr_force = initialize_lagr_force
         self.compute_eulerian_velocity_from_f_1 = compute_eulerian_velocity_from_f_1
@@ -285,7 +371,7 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         self.interpolate_velocity_to_lagrangian = interpolate_velocity_to_lagrangian
         self.update_lagr_force = update_lagr_force
         self.correct_population_ibm = correct_population_ibm
-        self.normalize_eulerian_forces = normalize_eulerian_forces
+        self.normalize_eulerian_forces = conservation_aware_normalize_forces
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
@@ -301,75 +387,71 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         omega,
         timestep,
     ):
+        # Create Warp arrays for IBM method if not already created
         self.s_lagr_forces = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
-
         self.f_lagr_velocities = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
 
-        # Step 1: Perform LBM step
-        wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
+        # Single ScopedTimer with synchronization for the entire method
+        with ScopedTimer("IBM_Stepper", use_nvtx=True, synchronize=True, cuda_filter=wp.TIMING_ALL):
+            # Step 1: Perform LBM step
+            wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
 
-        num_iterations = 4
-        for _ in range(num_iterations):
-            self.f_eulerian_forces.zero_()
-            self.f_eulerian_weights.zero_()
-            wp.launch(kernel=self.compute_eulerian_velocity_from_f_1, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_velocities])
+            num_iterations = 1
+            for _ in range(num_iterations):
+                self.f_eulerian_forces.zero_()
+                self.f_eulerian_weights.zero_()
+                wp.launch(kernel=self.compute_eulerian_velocity_from_f_1, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_velocities])
 
-            # Step 3: Interpolate forces from Lagrangian to Eulerian grid
+                # Step 2: Use our improved interpolation that accumulates forces with the proper weighting
+                wp.launch(
+                    kernel=self.improved_interpolate_force_to_eulerian,
+                    dim=s_lagr_vertices_wp.shape[0],
+                    inputs=[
+                        s_lagr_vertices_wp,
+                        self.s_lagr_forces,
+                        lagr_solid_vertex_areas_wp,
+                        self.f_eulerian_points,
+                        self.f_eulerian_velocities,
+                        self.f_eulerian_forces,
+                        self.f_eulerian_weights,
+                        wp.uint64(self.hash_grid.id),
+                    ],
+                )
+
+                # Step 3: Use our physics-based normalization and correction
+                wp.launch(
+                    kernel=self.physics_based_normalize_and_correct,
+                    dim=self.f_eulerian_forces.shape[0],
+                    inputs=[self.f_eulerian_forces, self.f_eulerian_weights, self.f_eulerian_velocities],
+                )
+
+                # Step 4: Interpolate corrected velocities back to Lagrangian points
+                wp.launch(
+                    kernel=self.interpolate_velocity_to_lagrangian,
+                    dim=s_lagr_vertices_wp.shape[0],
+                    inputs=[s_lagr_vertices_wp, self.f_eulerian_points, self.f_eulerian_velocities, self.f_lagr_velocities, wp.uint64(self.hash_grid.id)],
+                )
+
+                # Step 5: Update Lagrangian forces
+                wp.launch(
+                    kernel=self.update_lagr_force,
+                    dim=s_lagr_vertices_wp.shape[0],
+                    inputs=[lagr_solid_velocities_wp, self.f_lagr_velocities, self.s_lagr_forces],
+                )
+
+            # Step 6: Correct populations
+            wp.launch(kernel=self.correct_population_ibm, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_forces])
+
+            # Step 7: Update solid velocities and positions
             wp.launch(
-                kernel=self.interpolate_force_to_eulerian_atomic,
+                kernel=lagr_update_kernel,
                 dim=s_lagr_vertices_wp.shape[0],
                 inputs=[
-                    s_lagr_vertices_wp,
+                    timestep,
                     self.s_lagr_forces,
-                    lagr_solid_vertex_areas_wp,
-                    self.f_eulerian_points,
-                    self.f_eulerian_forces,
-                    self.f_eulerian_weights,
-                    wp.uint64(self.hash_grid.id),
+                    s_lagr_vertices_wp,
+                    lagr_solid_velocities_wp,
                 ],
             )
-
-            # Step 4: Normalize Eulerian forces
-            wp.launch(
-                kernel=self.normalize_eulerian_forces,
-                dim=self.f_eulerian_forces.shape[0],
-                inputs=[self.f_eulerian_forces, self.f_eulerian_weights],
-            )
-
-            # Step 5: Correct Eulerian velocities
-            wp.launch(
-                kernel=self.correct_eulerian_velocity,
-                dim=self.f_eulerian_velocities.shape[0],
-                inputs=[self.f_eulerian_velocities, self.f_eulerian_forces],
-            )
-
-            # Step 6: Interpolate corrected velocities back to Lagrangian points
-            wp.launch(
-                kernel=self.interpolate_velocity_to_lagrangian,
-                dim=s_lagr_vertices_wp.shape[0],
-                inputs=[s_lagr_vertices_wp, self.f_eulerian_points, self.f_eulerian_velocities, self.f_lagr_velocities, wp.uint64(self.hash_grid.id)],
-            )
-
-            # Step 7: Update Lagrangian forces
-            wp.launch(
-                kernel=self.update_lagr_force,
-                dim=s_lagr_vertices_wp.shape[0],
-                inputs=[lagr_solid_velocities_wp, self.f_lagr_velocities, self.s_lagr_forces],
-            )
-
-        # Step 8: Correct populations
-        wp.launch(kernel=self.correct_population_ibm, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_forces])
-
-        # Step 9: Update solid velocities and positions
-        wp.launch(
-            kernel=lagr_update_kernel,
-            dim=s_lagr_vertices_wp.shape[0],
-            inputs=[
-                timestep,
-                self.s_lagr_forces,
-                s_lagr_vertices_wp,
-                lagr_solid_velocities_wp,
-            ],
-        )
 
         return f_0, f_1
