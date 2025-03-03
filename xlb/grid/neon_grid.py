@@ -24,10 +24,6 @@ class NeonGrid(Grid):
         return self.xlb_lattice
 
     def _initialize_backend(self):
-        # do nothing
-        pass
-
-    def _initialize_backend(self):
 
         # FIXME@max: for now we hardcode the number of devices to 0
         num_devs = 1
@@ -131,3 +127,6 @@ class NeonGrid(Grid):
         c.run(0)
         wp.synchronize()
         return warp_field
+
+    def get_neon_backend(self):
+        return self.bk

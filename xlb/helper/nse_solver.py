@@ -2,7 +2,7 @@ from xlb import DefaultConfig
 from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
 from typing import Tuple
-
+import neon
 
 def create_nse_fields(
     grid_shape: Tuple[int, int, int] = None,
@@ -81,6 +81,12 @@ class Nse_simulation:
         self.even_macroscopic = containers['even']
         self.odd_macroscopic = containers['odd']
 
+        self.skeleton_even = neon.Skeleton(self.grid.get_neon_backend())
+        self.skeleton_odd = neon.Skeleton(self.grid.get_neon_backend())
+
+        self.skeleton_even.sequence(name="even lbm", containers=[self.even_step])
+        self.skeleton_odd.sequence(name="odd lbm", containers=[self.odd_step])
+
     def export_macroscopic(self, fname_prefix):
         if self.iteration_idx % 2 == 0:
             self.even_macroscopic.run(0)
@@ -98,8 +104,6 @@ class Nse_simulation:
     def step(self):
         self.iteration_idx += 1
         if self.iteration_idx % 2 == 0:
-            print("running even")
             self.even_step.run(0)
         else:
-            print("running odd")
             self.odd_step.run(0)

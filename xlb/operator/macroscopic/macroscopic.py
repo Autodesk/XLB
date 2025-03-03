@@ -66,7 +66,17 @@ class Macroscopic(Operator):
         return rho, u
 
     def _construct_neon(self):
-        functional, _ = self._construct_warp()
+        zero_moment_func = self.zero_moment.neon_functional
+        first_moment_func = self.first_moment.neon_functional
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+
+        @wp.func
+        def functional(f: _f_vec):
+            rho = zero_moment_func(f)
+            u = first_moment_func(f, rho)
+            return rho, u
+
+
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         import neon, typing
