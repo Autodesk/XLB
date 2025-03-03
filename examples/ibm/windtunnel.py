@@ -18,13 +18,9 @@ import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from xlb.helper.ibm_helper import (
-    prepare_immersed_boundary,
-    transform_mesh,
-    reconstruct_mesh_from_vertices_and_faces,
-)
+from xlb.helper.ibm_helper import prepare_immersed_boundary
 from xlb.grid import grid_factory
-from pxr import Usd, UsdGeom, Vt
+from pxr import Usd, UsdGeom, Sdf, Vt
 from xlb.operator.postprocess import QCriterion, Vorticity, GridToPoint
 
 
@@ -230,12 +226,11 @@ def save_usd_car_parts(
     usd_car_body,
     usd_car_wheels,
     usd_stage,
+    lag_forces=None,
 ):
     # Apply offset to match velocity field slicing:
-    # X/Y: 20:-20 slice requires -20 offset
-    # Z: 0:-20 slice requires no offset
     offset = np.array([20.0, 20.0, 0.0])
-    
+
     body_vertices = vertices_wp.numpy()[:num_body_vertices] - offset
     wheels_vertices = vertices_wp.numpy()[num_body_vertices:] - offset
     car_body_tri_count = len(body_faces_np)
@@ -250,6 +245,46 @@ def save_usd_car_parts(
     usd_car_wheels.GetPointsAttr().Set(wheels_vertices.tolist(), time=timestep // post_process_interval)
     usd_car_wheels.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * car_wheels_tri_count), time=timestep // post_process_interval)
     usd_car_wheels.GetFaceVertexIndicesAttr().Set(Vt.IntArray(wheels_faces_np_corrected.flatten().tolist()), time=timestep // post_process_interval)
+
+    # Apply coloring based on lagrangian forces
+    if lag_forces is not None:
+        body_force_np = lag_forces.numpy()[:num_body_vertices, 0]
+        wheels_force_np = lag_forces.numpy()[num_body_vertices:, 0]
+
+        min_body_force = np.min(body_force_np)
+        max_body_force = np.max(body_force_np)
+
+        min_wheels_force = np.min(wheels_force_np)
+        max_wheels_force = np.max(wheels_force_np)
+
+        # Generate colors using the get_color kernel
+        body_colors = wp.zeros(num_body_vertices, dtype=wp.vec3)
+        wheels_colors = wp.zeros(vertices_wp.shape[0] - num_body_vertices, dtype=wp.vec3)
+
+        # Colors for body - using body-specific min/max range
+        wp.launch(
+            kernel=get_color,
+            dim=num_body_vertices,
+            inputs=[min_body_force, max_body_force, wp.from_numpy(body_force_np), body_colors],
+        )
+
+        # Colors for wheels - using wheels-specific min/max range
+        wp.launch(
+            kernel=get_color,
+            dim=vertices_wp.shape[0] - num_body_vertices,
+            inputs=[min_wheels_force, max_wheels_force, wp.from_numpy(wheels_force_np), wheels_colors],
+        )
+
+        # Convert to USD color format and set attributes
+        body_colors_np = body_colors.numpy()
+        wheels_colors_np = wheels_colors.numpy()
+
+        # Set colors directly to DisplayColorAttr and set interpolation to "vertex"
+        usd_car_body.GetDisplayColorAttr().Set(body_colors_np.tolist(), time=timestep // post_process_interval)
+        UsdGeom.Primvar(usd_car_body.GetDisplayColorAttr()).SetInterpolation("vertex")
+
+        usd_car_wheels.GetDisplayColorAttr().Set(wheels_colors_np.tolist(), time=timestep // post_process_interval)
+        UsdGeom.Primvar(usd_car_wheels.GetDisplayColorAttr()).SetInterpolation("vertex")
 
     print(f"Car body and wheels USD updated at timestep {timestep}")
 
@@ -268,9 +303,6 @@ def visualize_car_placement(vertices_wp, grid_shape):
     car_y = [car_min[1], car_min[1], car_max[1], car_max[1], car_min[1]]
     plt.plot(car_x, car_y, "r-", linewidth=2, label="Car")
 
-    # target_x = grid_shape[0] / 3.0
-    # plt.axvline(x=target_x, color='b', linestyle='--', label='Target Front')
-
     plt.title("Car Placement (Top View)")
     plt.xlabel("X (Flow Direction →)")
     plt.ylabel("Y (Width)")
@@ -282,7 +314,7 @@ def visualize_car_placement(vertices_wp, grid_shape):
     plt.close()
 
 
-def load_and_prepare_meshes_car(grid_shape, stl_dir="/home/mehdi/Repos/stl-files/ford"):
+def load_and_prepare_meshes_car(grid_shape, stl_dir="/home/mehdi/Repos/stl-files/car"):
     if not os.path.exists(stl_dir):
         raise FileNotFoundError(f"STL directory {stl_dir} does not exist.")
 
@@ -431,6 +463,18 @@ def load_and_prepare_meshes_car(grid_shape, stl_dir="/home/mehdi/Repos/stl-files
         center = np.mean(all_vertices[start_idx:end_idx], axis=0)
         wheel_centers.append(center)
 
+    # Calculate frontal area using the bounding box cross-section (YZ plane)
+    mesh = trimesh.Trimesh(vertices=all_vertices, faces=faces_np)
+    bounds = mesh.bounds
+    min_y, min_z = bounds[0][1], bounds[0][2]
+    max_y, max_z = bounds[1][1], bounds[1][2]
+    width = max_y - min_y
+    height = max_z - min_z
+    frontal_area = width * height
+
+    print(f"Calculated frontal area (bounding box): {frontal_area:.2f} square units")
+    print(f"  Width: {width:.2f}, Height: {height:.2f}")
+
     print("\nMesh preparation summary:")
     print(f"Target size (car width): {target_body_width:.2f}")
     print(f"Scale factor applied: {scale_factor:.4f}")
@@ -449,6 +493,7 @@ def load_and_prepare_meshes_car(grid_shape, stl_dir="/home/mehdi/Repos/stl-files
         "num_wheel_vertices": num_wheel_vertices,
         "body_faces_np": body_faces_np,
         "wheels_faces_np": wheels_faces_np,
+        "frontal_area": frontal_area,
     }
 
 
@@ -479,6 +524,35 @@ def bc_profile(precision_policy, grid_shape, u_max):
         return wp.vec(velocity_x, length=1)
 
     return bc_profile_warp
+
+
+def calculate_drag_coefficient(lag_forces, reference_velocity, frontal_area, areas_wp):
+    """
+    Calculate the drag coefficient (Cd) from lagrangian forces
+
+    Args:
+        lag_forces: Warp array of forces on vertices
+        reference_velocity: Reference velocity (u_max)
+        frontal_area: Frontal area of the car (from bounding box)
+        areas_wp: Warp array of vertex areas
+
+    Returns:
+        cd: Calculated drag coefficient
+    """
+    forces_np = lag_forces.numpy()
+    drag_forces = forces_np[:, 0]  # X-component is the drag direction
+
+    areas_np = areas_wp.numpy()
+
+    drag_forces = drag_forces * areas_np
+    total_drag = np.sum(drag_forces)
+
+    # Calculate dynamic pressure (rho = 1.0 in lattice units)
+    dynamic_pressure = 0.5 * reference_velocity**2
+
+    cd = total_drag / (dynamic_pressure * frontal_area)
+
+    return cd
 
 
 def setup_boundary_conditions(grid, velocity_set, precision_policy, grid_shape, u_max):
@@ -529,15 +603,29 @@ def rotate_wheels(
     )
 
     rel_pos = vertices[idx] - center
-    theta = _wheel_speed
-    c = wp.cos(theta)
-    s = wp.sin(theta)
 
-    x_new = c * rel_pos[0] - s * rel_pos[2]
-    z_new = s * rel_pos[0] + c * rel_pos[2]
-    new_rel_pos = wp.vec3(x_new, rel_pos[1], z_new)
-    vertices[idx] = new_rel_pos + center
-    velocities[idx] = wp.vec3(-_wheel_speed * rel_pos[2], 0.0, _wheel_speed * rel_pos[0])
+    # Use normalized length to prevent shrinking
+    radius = wp.sqrt(rel_pos[0] * rel_pos[0] + rel_pos[2] * rel_pos[2])
+    if radius > 1e-6:  # Avoid division by zero
+        # Normalize x-z components
+        norm_x = rel_pos[0] / radius
+        norm_z = rel_pos[2] / radius
+
+        # Apply rotation
+        theta = _wheel_speed
+        c = wp.cos(theta)
+        s = wp.sin(theta)
+
+        # Compute new position while preserving the radius
+        x_new = radius * (c * norm_x - s * norm_z)
+        z_new = radius * (s * norm_x + c * norm_z)
+
+        new_rel_pos = wp.vec3(x_new, rel_pos[1], z_new)
+        vertices[idx] = new_rel_pos + center
+        velocities[idx] = wp.vec3(-_wheel_speed * rel_pos[2], 0.0, _wheel_speed * rel_pos[0])
+    else:
+        # For points very close to rotation axis, just keep them as is
+        velocities[idx] = wp.vec3(0.0, 0.0, 0.0)
 
 
 def post_process(
@@ -545,18 +633,19 @@ def post_process(
     post_process_interval,
     f_current,
     bc_mask,
-    grid,
-    faces_np,
     vertices_wp,
     precision_policy,
     grid_shape,
-    wheel_ranges,
-    num_wheels,
     usd_mesh_vorticity,
     usd_mesh_q_criterion,
+    usd_stage,
     vorticity_operator,
     q_criterion_operator,
-    usd_stage,
+    lag_forces=None,
+    cd_values=None,
+    reference_velocity=None,
+    frontal_area=None,
+    areas_wp=None,
 ):
     if not isinstance(f_current, jnp.ndarray):
         f_jax = wp.to_jax(f_current)
@@ -579,7 +668,15 @@ def post_process(
     }
     slice_idy = grid_shape[1] // 2
     save_image(fields["u_magnitude"][:, slice_idy, :], timestep=i)
-    # save_fields_vtk(fields, i)
+    save_fields_vtk(fields, i)
+
+    # Calculate and store drag coefficient if forces are available
+    cd = calculate_drag_coefficient(lag_forces, reference_velocity, frontal_area, areas_wp)
+    cd_values.append((i, cd))
+    if i % post_process_interval == 0:
+        print(f"Step {i}: Drag Coefficient (Cd) = {cd:.6f}")
+        # Save current Cd values to file
+        save_drag_coefficient(cd_values, "drag_coefficient.csv")
 
     save_usd_vorticity(
         i,
@@ -607,16 +704,62 @@ def post_process(
         usd_stage=usd_stage,
     )
 
-grid_shape = (1024, 500, 200)
+    save_usd_car_parts(
+        i,
+        post_process_interval,
+        vertices_wp,
+        num_body_vertices,
+        body_faces_np,
+        wheels_faces_np,
+        usd_car_body,
+        usd_car_wheels,
+        usd_stage,
+        lag_forces=lag_forces,
+    )
+
+
+def save_drag_coefficient(cd_values, filename):
+    """
+    Save drag coefficient values to a CSV file
+
+    Args:
+        cd_values: List of (timestep, cd) tuples
+        filename: Output CSV filename
+    """
+    with open(filename, "w") as f:
+        f.write("timestep,cd\n")
+        for timestep, cd in cd_values:
+            f.write(f"{timestep},{cd}\n")
+
+    # Also create a plot if matplotlib is available
+    try:
+        timesteps = [t for t, _ in cd_values]
+        cds = [cd for _, cd in cd_values]
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(timesteps, cds, "b-")
+        plt.grid(True, linestyle="--", alpha=0.7)
+        plt.xlabel("Timestep")
+        plt.ylabel("Drag Coefficient (Cd)")
+        plt.title("Drag Coefficient vs Time")
+        plt.tight_layout()
+        plt.savefig("drag_coefficient.png", dpi=150)
+        plt.close()
+    except Exception as e:
+        print(f"Could not create Cd plot: {e}")
+
+
+# grid_shape = (1024, 500, 200)
+grid_shape = (256, 100, 100)
 u_max = 0.02
 iter_per_flow_passes = grid_shape[0] / u_max
-num_steps = 2
-post_process_interval = 1000
-print_interval = 1000
+num_steps = int(iter_per_flow_passes * 2)
+post_process_interval = 100
+print_interval = 100
 num_wheels = 4
 wheel_rotation_speed = -0.002
 
-Re = 2e6
+Re = 1e6
 clength = grid_shape[0] - 1
 visc = u_max * clength / Re
 omega = 1.0 / (3.0 * visc + 0.5)
@@ -637,6 +780,9 @@ print(f"  Inlet velocity: {u_max}")
 print(f"  Reynolds number: {Re}")
 print(f"  Max steps: {num_steps}")
 
+# Initialize list to store drag coefficient values
+cd_values = []
+
 usd_output_directory = "usd_output_car"
 os.makedirs(usd_output_directory, exist_ok=True)
 usd_file = os.path.join(usd_output_directory, "car_output.usd")
@@ -656,6 +802,7 @@ num_body_vertices = mesh_data["num_body_vertices"]
 num_wheel_vertices = mesh_data["num_wheel_vertices"]
 body_faces_np = mesh_data["body_faces_np"]
 wheels_faces_np = mesh_data["wheels_faces_np"]
+frontal_area = mesh_data["frontal_area"]
 
 visualize_car_placement(vertices_wp, grid_shape)
 
@@ -687,68 +834,92 @@ with wp.ScopedDevice(device):
         compute_backend=compute_backend,
     )
     vorticity_operator = Vorticity(
-    velocity_set=velocity_set,
-    precision_policy=precision_policy,
-    compute_backend=compute_backend,
+        velocity_set=velocity_set,
+        precision_policy=precision_policy,
+        compute_backend=compute_backend,
     )
 
 velocities_wp = wp.zeros(shape=vertices_wp.shape[0], dtype=wp.vec3)
 
-start_time = time.time()
-progress_bar = tqdm(range(num_steps), desc="Simulation Progress", unit="steps")
-
-for i in progress_bar:
-    f_0, f_1 = stepper(
-        f_0,
-        f_1,
-        vertices_wp,
-        areas_wp,
-        velocities_wp,
-        rotate_wheels,
-        bc_mask,
-        missing_mask,
-        omega,
-        i,
-    )
-    f_0, f_1 = f_1, f_0
-
-    if (i + 1) % print_interval == 0:
-        elapsed_time = time.time() - start_time
-        progress_bar.set_postfix({"Time elapsed": f"{elapsed_time:.2f}s"})
-
-    if i % post_process_interval == 0 or i == num_steps - 1:
-        post_process(
-            i,
-            post_process_interval,
+try:
+    for i in range(num_steps):
+        f_0, f_1, lag_forces = stepper(
             f_0,
+            f_1,
+            vertices_wp,
+            areas_wp,
+            velocities_wp,
             bc_mask,
-            grid,
-            faces_np,
-            vertices_wp,
-            precision_policy,
-            grid_shape,
-            wheel_ranges,
-            num_wheels,
-            usd_mesh_vorticity,
-            usd_mesh_q_criterion,
-            vorticity_operator,
-            q_criterion_operator,
-            usd_stage,
-        )
-        save_usd_car_parts(
+            missing_mask,
+            omega,
             i,
-            post_process_interval,
-            vertices_wp,
-            num_body_vertices,
-            body_faces_np,
-            wheels_faces_np,
-            usd_car_body,
-            usd_car_wheels,
-            usd_stage,
         )
+        # Swap f_0 and f_1
+        f_0, f_1 = f_1, f_0
+
+        # Update solid velocities and positions
+        wp.launch(
+            kernel=rotate_wheels,
+            dim=vertices_wp.shape[0],
+            inputs=[
+                i,
+                lag_forces,
+                vertices_wp,
+                velocities_wp,
+            ],
+        )
+
+        if print_interval > 0 and i % print_interval == 0:
+            print(f"Step {i}/{num_steps} completed")
+
+        if i % post_process_interval == 0 or i == num_steps - 1:
+            post_process(
+                i,
+                post_process_interval,
+                f_0,
+                bc_mask,
+                vertices_wp,
+                precision_policy,
+                grid_shape,
+                usd_mesh_vorticity,
+                usd_mesh_q_criterion,
+                usd_stage,
+                vorticity_operator,
+                q_criterion_operator,
+                lag_forces=lag_forces,
+                cd_values=cd_values,
+                reference_velocity=u_max,
+                frontal_area=frontal_area,
+                areas_wp=areas_wp,
+            )
+
+except KeyboardInterrupt:
+    print("\nSimulation interrupted by user. Saving current USD state...")
+    current_time_code = i // post_process_interval
+    usd_stage.SetStartTimeCode(0)
+    usd_stage.SetEndTimeCode(current_time_code)
+    usd_stage.SetTimeCodesPerSecond(30)
+    usd_stage.Save()
+
+    # Save drag coefficient data before exiting
+    if cd_values:
+        save_drag_coefficient(cd_values, "drag_coefficient.csv")
+        print("Drag coefficient data saved to drag_coefficient.csv")
+
+    print(f"USD file saved with {current_time_code + 1} frames. Exiting.")
+    import sys
+
+    sys.exit(0)
+
 
 usd_stage.SetStartTimeCode(0)
 usd_stage.SetEndTimeCode(num_steps // post_process_interval)
 usd_stage.SetTimeCodesPerSecond(30)
 usd_stage.Save()
+
+# Save final drag coefficient data
+if cd_values:
+    save_drag_coefficient(cd_values, "drag_coefficient.csv")
+    print("Drag coefficient data saved to drag_coefficient.csv")
+
 print("Simulation finished. USD file saved.")

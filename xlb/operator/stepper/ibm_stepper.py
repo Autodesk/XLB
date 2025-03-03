@@ -1,34 +1,23 @@
 from functools import partial
-from posixpath import dirname
 from jax import jit
 import warp as wp
 from typing import Any
+from contextlib import nullcontext
 
-from xlb import DefaultConfig
 from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
-from xlb.operator.stream import Stream
-from xlb.operator.collision import BGK, KBC
-from xlb.operator.equilibrium import QuadraticEquilibrium
-from xlb.operator.macroscopic import Macroscopic
-from xlb.operator.stepper import Stepper
-from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
-from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
-from xlb.helper import check_bc_overlaps
-from xlb.helper.nse_solver import create_nse_fields
 from xlb.operator.stepper.nse_stepper import IncompressibleNavierStokesStepper
 from warp.utils import ScopedTimer
 
 
 class IBMStepper(IncompressibleNavierStokesStepper):
-    def __init__(
-        self,
-        grid,
-        boundary_conditions=[],
-        collision_type="BGK",
-    ):
+    def __init__(self, grid, boundary_conditions=[], collision_type="BGK", use_scoped_timer=False):
         super().__init__(grid, boundary_conditions, collision_type)
+        # Initialize timer context based on the flag
+        self.timer_context = (
+            ScopedTimer("IBM_Stepper", use_nvtx=True, synchronize=True, cuda_filter=wp.TIMING_ALL) if use_scoped_timer else nullcontext()
+        )
 
         self.grid_dim = grid.shape
         dim_x, dim_y, dim_z = self.grid_dim
@@ -176,22 +165,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                 delta_f = Fk * w * Ak
                 wp.atomic_add(eul_forces, index, delta_f)
 
-        @wp.kernel
-        def normalize_eulerian_forces(
-            eul_forces: wp.array(dtype=wp.vec3),
-            eul_weights: wp.array(dtype=Any),
-        ):
-            tid = wp.tid()
-            weight_sum = eul_weights[tid]
-            if weight_sum > self.compute_dtype(0.0):
-                eul_forces[tid] = eul_forces[tid] / weight_sum
-
-        # Kernel to correct the fluid velocity at Eulerian grid points (Step 3)
-        @wp.kernel
-        def correct_eulerian_velocity(eul_velocities: wp.array(dtype=wp.vec3), eul_forces: wp.array(dtype=wp.vec3)):
-            tid = wp.tid()
-            eul_velocities[tid] = eul_velocities[tid] + eul_forces[tid]
-
         # Kernel to interpolate corrected velocities back to Lagrangian points (Step 4)
         @wp.kernel
         def interpolate_velocity_to_lagrangian(
@@ -296,10 +269,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                 # the collective boundary condition, not over-enforcing it
                 eul_forces[tid] = eul_forces[tid] / weight_sum
 
-                # Note: In the IBM method, eul_forces now represents the target velocity,
-                # not the force directly. The actual force application happens in correct_eulerian_velocity
-                # and correct_population_ibm kernels.
-
         # Add a new kernel that combines force interpolation and conservation in one step
         @wp.kernel
         def improved_interpolate_force_to_eulerian(
@@ -307,7 +276,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
             lag_forces: wp.array(dtype=wp.vec3),
             lag_areas: wp.array(dtype=Any),
             eul_positions: wp.array(dtype=wp.vec3),
-            eul_velocities: wp.array(dtype=wp.vec3),  # Current Eulerian velocities
             eul_forces: wp.array(dtype=wp.vec3),  # Will store desired velocity, not force directly
             eul_weights: wp.array(dtype=Any),  # For normalization
             grid: wp.uint64,
@@ -357,21 +325,14 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                 # Store the correction force back in eul_forces for use in later steps
                 eul_forces[tid] = correction_force
 
-                # Apply the correction directly to the velocity field
-                # TODO: This step can be kept or moved to correct_eulerian_velocity
-                eul_velocities[tid] += correction_force
-
-        # Add this to the constructor
         self.physics_based_normalize_and_correct = physics_based_normalize_and_correct
 
         self.initialize_lagr_force = initialize_lagr_force
         self.compute_eulerian_velocity_from_f_1 = compute_eulerian_velocity_from_f_1
         self.interpolate_force_to_eulerian_atomic = interpolate_force_to_eulerian_atomic
-        self.correct_eulerian_velocity = correct_eulerian_velocity
         self.interpolate_velocity_to_lagrangian = interpolate_velocity_to_lagrangian
         self.update_lagr_force = update_lagr_force
         self.correct_population_ibm = correct_population_ibm
-        self.normalize_eulerian_forces = conservation_aware_normalize_forces
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
@@ -381,18 +342,15 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         s_lagr_vertices_wp,
         lagr_solid_vertex_areas_wp,
         lagr_solid_velocities_wp,
-        lagr_update_kernel,
         bc_mask,
         missing_mask,
         omega,
         timestep,
     ):
-        # Create Warp arrays for IBM method if not already created
         self.s_lagr_forces = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
         self.f_lagr_velocities = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
 
-        # Single ScopedTimer with synchronization for the entire method
-        with ScopedTimer("IBM_Stepper", use_nvtx=True, synchronize=True, cuda_filter=wp.TIMING_ALL):
+        with self.timer_context:
             # Step 1: Perform LBM step
             wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
 
@@ -411,7 +369,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                         self.s_lagr_forces,
                         lagr_solid_vertex_areas_wp,
                         self.f_eulerian_points,
-                        self.f_eulerian_velocities,
                         self.f_eulerian_forces,
                         self.f_eulerian_weights,
                         wp.uint64(self.hash_grid.id),
@@ -429,7 +386,13 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                 wp.launch(
                     kernel=self.interpolate_velocity_to_lagrangian,
                     dim=s_lagr_vertices_wp.shape[0],
-                    inputs=[s_lagr_vertices_wp, self.f_eulerian_points, self.f_eulerian_velocities, self.f_lagr_velocities, wp.uint64(self.hash_grid.id)],
+                    inputs=[
+                        s_lagr_vertices_wp,
+                        self.f_eulerian_points,
+                        self.f_eulerian_velocities,
+                        self.f_lagr_velocities,
+                        wp.uint64(self.hash_grid.id),
+                    ],
                 )
 
                 # Step 5: Update Lagrangian forces
@@ -442,16 +405,4 @@ class IBMStepper(IncompressibleNavierStokesStepper):
             # Step 6: Correct populations
             wp.launch(kernel=self.correct_population_ibm, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_forces])
 
-            # Step 7: Update solid velocities and positions
-            wp.launch(
-                kernel=lagr_update_kernel,
-                dim=s_lagr_vertices_wp.shape[0],
-                inputs=[
-                    timestep,
-                    self.s_lagr_forces,
-                    s_lagr_vertices_wp,
-                    lagr_solid_velocities_wp,
-                ],
-            )
-
-        return f_0, f_1
+        return f_0, f_1, self.s_lagr_forces

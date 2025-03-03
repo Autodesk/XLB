@@ -166,12 +166,6 @@ def save_usd_vorticity(
     usd_mesh.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
     UsdGeom.Primvar(usd_mesh.GetDisplayColorAttr()).SetInterpolation("vertex")
 
-    # usd_stage.SetStartTimeCode(0)
-    # usd_stage.SetEndTimeCode(timestep)
-    # usd_stage.SetTimeCodesPerSecond(24)
-
-    # usd_stage.Save()
-
     print(f"Vorticity visualization at timestep {timestep}:")
     print(f"  Number of vertices: {len(vertices)}")
     print(f"  Number of triangles: {tri_count}")
@@ -252,9 +246,9 @@ def save_usd_q_criterion(timestep, bc_mask, f_current, grid_shape, usd_mesh, q_c
     print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
 
 
-# -------------------------- Function to Save Drone Body and Blades to USD --------------------------
-def save_usd_drone_and_blades(
-    timestep, post_process_interval, vertices_wp, num_body_vertices, body_faces_np, blades_faces_np, usd_drone_body, usd_drone_blades, usd_stage
+# -------------------------- Function to Save UAV Body and Blades to USD --------------------------
+def save_usd_uav_and_blades(
+    timestep, post_process_interval, vertices_wp, num_body_vertices, body_faces_np, blades_faces_np, usd_uav_body, usd_uav_blades, usd_stage
 ):
     # Get vertices and adjust for boundary condition offset
     body_vertices = vertices_wp.numpy()[:num_body_vertices]
@@ -265,20 +259,20 @@ def save_usd_drone_and_blades(
     blades_vertices = blades_vertices - 20
 
     # Process body mesh
-    drone_body_tri_count = len(body_faces_np)
-    usd_drone_body.GetPointsAttr().Set(body_vertices.tolist(), time=timestep // post_process_interval)
-    usd_drone_body.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * drone_body_tri_count), time=timestep // post_process_interval)
-    usd_drone_body.GetFaceVertexIndicesAttr().Set(Vt.IntArray(body_faces_np.flatten().tolist()), time=timestep // post_process_interval)
+    uav_body_tri_count = len(body_faces_np)
+    usd_uav_body.GetPointsAttr().Set(body_vertices.tolist(), time=timestep // post_process_interval)
+    usd_uav_body.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * uav_body_tri_count), time=timestep // post_process_interval)
+    usd_uav_body.GetFaceVertexIndicesAttr().Set(Vt.IntArray(body_faces_np.flatten().tolist()), time=timestep // post_process_interval)
 
     # Process blades mesh
     # Rebase blade face indices to the local blade vertex array
     blades_faces_np_corrected = blades_faces_np - num_body_vertices
-    drone_blades_tri_count = len(blades_faces_np_corrected)
-    usd_drone_blades.GetPointsAttr().Set(blades_vertices.tolist(), time=timestep // post_process_interval)
-    usd_drone_blades.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * drone_blades_tri_count), time=timestep // post_process_interval)
-    usd_drone_blades.GetFaceVertexIndicesAttr().Set(Vt.IntArray(blades_faces_np_corrected.flatten().tolist()), time=timestep // post_process_interval)
+    uav_blades_tri_count = len(blades_faces_np_corrected)
+    usd_uav_blades.GetPointsAttr().Set(blades_vertices.tolist(), time=timestep // post_process_interval)
+    usd_uav_blades.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * uav_blades_tri_count), time=timestep // post_process_interval)
+    usd_uav_blades.GetFaceVertexIndicesAttr().Set(Vt.IntArray(blades_faces_np_corrected.flatten().tolist()), time=timestep // post_process_interval)
 
-    print(f"Drone body and blades USD updated at timestep {timestep}")
+    print(f"UAV body and blades USD updated at timestep {timestep}")
 
 
 # -------------------------- Mesh Loading and IBM Setup --------------------------
@@ -404,7 +398,6 @@ def setup_stepper(grid, boundary_conditions, lbm_omega):
     )
 
 
-# -------------------------- Post-Processing (Extended with USD Output using Q Criterion) --------------------------
 def post_process(
     i,
     post_process_interval,
@@ -480,7 +473,7 @@ def post_process(
 
 
 # -------------------------- Simulation Parameters --------------------------
-grid_shape = (100, 200, 200)
+grid_shape = (512, 512, 512)
 u_max = 0.01
 num_steps = 100000
 post_process_interval = 100
@@ -523,8 +516,8 @@ os.makedirs(usd_output_directory, exist_ok=True)
 usd_file = os.path.join(usd_output_directory, "output.usd")
 usd_stage = Usd.Stage.CreateNew(usd_file)
 usd_mesh = UsdGeom.Mesh.Define(usd_stage, "/World/FluidField")
-usd_drone_body = UsdGeom.Mesh.Define(usd_stage, "/World/DroneBody")
-usd_drone_blades = UsdGeom.Mesh.Define(usd_stage, "/World/DroneBlades")
+usd_uav_body = UsdGeom.Mesh.Define(usd_stage, "/World/UAVBody")
+usd_uav_blades = UsdGeom.Mesh.Define(usd_stage, "/World/UAVBlades")
 
 mesh_data = load_and_prepare_meshes(grid_shape)
 vertices_wp = mesh_data["vertices_wp"]
@@ -611,16 +604,14 @@ def rotate_blades(
 
 
 start_time = time.time()
-progress_bar = tqdm(range(num_steps), desc="Simulation Progress", unit="steps")
 
-for i in progress_bar:
-    f_0, f_1 = stepper(
+for i in range(num_steps):
+    f_0, f_1, lag_forces = stepper(
         f_0,
         f_1,
         vertices_wp,
         vertex_areas_wp,
         velocities_wp,
-        rotate_blades,
         bc_mask,
         missing_mask,
         omega,
@@ -628,9 +619,12 @@ for i in progress_bar:
     )
     f_0, f_1 = f_1, f_0
 
-    if (i + 1) % print_interval == 0:
-        elapsed_time = time.time() - start_time
-        progress_bar.set_postfix({"Time elapsed": f"{elapsed_time:.2f}s"})
+    # Update solid velocities and positions
+    wp.launch(
+        kernel=rotate_blades,
+        dim=vertices_wp.shape[0],
+        inputs=[i, lag_forces, vertices_wp, velocities_wp],
+    )
 
     if i % post_process_interval == 0 or i == num_steps - 1:
         post_process(
@@ -649,15 +643,15 @@ for i in progress_bar:
             vorticity_operator,
             usd_stage,
         )
-        save_usd_drone_and_blades(
+        save_usd_uav_and_blades(
             i,
             post_process_interval,
             vertices_wp,
             num_body_vertices,
             body_faces_np,
             blades_faces_np,
-            usd_drone_body,
-            usd_drone_blades,
+            usd_uav_body,
+            usd_uav_blades,
             usd_stage,
         )
 
