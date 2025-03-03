@@ -103,7 +103,7 @@ def save_usd_vorticity(
     rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
     u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
     rho, u = macro_wp(f_current, rho, u)
-    u = u[:, 20:-20, 20:-20, 20:-20]  # Remove bc
+    u = u[:, 30:-30, 30:-30, 30:-30]  # Remove bc
 
     # Allocate arrays for vorticity and its magnitude
     vorticity = wp.zeros((3, *u.shape[1:]), dtype=wp.float32, device=device)
@@ -160,17 +160,11 @@ def save_usd_vorticity(
     indices = mc.indices.numpy()
     tri_count = len(indices) // 3
 
-    usd_mesh.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
-    UsdGeom.Primvar(usd_mesh.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-    # usd_stage.SetStartTimeCode(0)
-    # usd_stage.SetEndTimeCode(timestep)
-    # usd_stage.SetTimeCodesPerSecond(24)
-
-    # usd_stage.Save()
+    usd_mesh_vorticity.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
+    usd_mesh_vorticity.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
+    usd_mesh_vorticity.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
+    usd_mesh_vorticity.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
+    UsdGeom.Primvar(usd_mesh_vorticity.GetDisplayColorAttr()).SetInterpolation("vertex")
 
     print(f"Vorticity visualization at timestep {timestep}:")
     print(f"  Number of vertices: {len(vertices)}")
@@ -178,73 +172,141 @@ def save_usd_vorticity(
     print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
 
 
-def save_usd_q_criterion(timestep, bc_mask, f_current, grid_shape, usd_mesh, q_criterion_operator, precision_policy, q_threshold, usd_stage):
-    # Compute macroscopic quantities using WARP backend for Q-criterion
-    device = "cuda:0"  # Use the same device as the simulation
-    macro_wp = Macroscopic(
-        compute_backend=ComputeBackend.WARP,
-        precision_policy=precision_policy,
-        velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
-    )
-    rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
-    u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
-    rho, u = macro_wp(f_current, rho, u)
-    u = u[:, 1:-1, 1:-1, 1:-1]  # Remove bc
+def save_usd_vorticity(
+    timestep,
+    post_process_interval,
+    bc_mask,
+    f_current,
+    grid_shape,
+    usd_mesh_vorticity,
+    vorticity_operator,
+    precision_policy,
+    vorticity_threshold,
+    usd_stage,
+):
+    device = "cuda:1"
+    f_current_new = wp.clone(f_current, device=device)
+    bc_mask_new = wp.clone(bc_mask, device=device)
+    with wp.ScopedDevice(device):
+        macro_wp = Macroscopic(
+            compute_backend=ComputeBackend.WARP,
+            precision_policy=precision_policy,
+            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
+        )
+        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
+        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
+        rho, u = macro_wp(f_current_new, rho, u)
+        u = u[:, 30:-30, 30:-30, 30:-30]
 
-    # Allocate arrays for norm_mu and q_field on the same device as input
-    norm_mu = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-    q_field = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
+        vorticity = wp.zeros((3, *u.shape[1:]), dtype=wp.float32, device=device)
+        vorticity_magnitude = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
+        vorticity, vorticity_magnitude = vorticity_operator(u, bc_mask_new, vorticity, vorticity_magnitude)
 
-    # Compute Q criterion
-    norm_mu, q_field = q_criterion_operator(u, bc_mask, norm_mu, q_field)
+        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
+        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
+        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
+        mc.surface(vorticity_magnitude[0], vorticity_threshold)
+        if mc.verts.shape[0] == 0:
+            print(f"Warning: No vertices found for vorticity at timestep {timestep}.")
+            return
 
-    # Setup marching cubes on q_field[0] (use grid_shape minus ghost layers)
-    max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
-    max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
-    mc = wp.MarchingCubes(
-        nx=u.shape[1],
-        ny=u.shape[2],
-        nz=u.shape[3],
-        max_verts=max_verts,
-        max_tris=max_tris,
-        device=device,
-    )
+        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
+        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
+        scalars = grid_to_point_op(vorticity_magnitude, mc.verts, scalars)
 
-    # Extract isosurface at q_threshold
-    mc.surface(q_field[0], q_threshold)
+        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
+        scalars_np = scalars.numpy()
+        vorticity_min = float(np.percentile(scalars_np, 5))
+        vorticity_max = float(np.percentile(scalars_np, 95))
+        if abs(vorticity_max - vorticity_min) < 1e-6:
+            vorticity_max = vorticity_min + 1e-6
 
-    if mc.verts.shape[0] == 0:
-        print(f"Warning: No vertices found for Q-criterion at timestep {timestep}. Try adjusting q_threshold.")
-        return
+        wp.launch(
+            get_color,
+            dim=mc.verts.shape[0],
+            inputs=(vorticity_min, vorticity_max, scalars),
+            outputs=(colors,),
+            device=device,
+        )
 
-    grid_to_point_op = GridToPoint(
-        precision_policy=precision_policy,
-        compute_backend=ComputeBackend.WARP,
-    )
+        vertices = mc.verts.numpy()
+        indices = mc.indices.numpy()
+        tri_count = len(indices) // 3
 
-    scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
-    scalars = grid_to_point_op(norm_mu, mc.verts, scalars)
+    usd_mesh_vorticity.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
+    usd_mesh_vorticity.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
+    usd_mesh_vorticity.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
+    usd_mesh_vorticity.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
+    UsdGeom.Primvar(usd_mesh_vorticity.GetDisplayColorAttr()).SetInterpolation("vertex")
 
-    colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
-    vorticity_min = 0.0
-    vorticity_max = 0.1
-    wp.launch(
-        get_color,
-        dim=mc.verts.shape[0],
-        inputs=(vorticity_min, vorticity_max, scalars),
-        outputs=(colors,),
-        device=device,
-    )
+    print(f"Vorticity visualization at timestep {timestep}:")
+    print(f"  Number of vertices: {len(vertices)}")
+    print(f"  Number of triangles: {tri_count}")
+    print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
+
+
+def save_usd_q_criterion(
+    timestep,
+    post_process_interval,
+    bc_mask,
+    f_current,
+    grid_shape,
+    usd_mesh_q_criterion,
+    q_criterion_operator,
+    precision_policy,
+    q_threshold,
+    usd_stage,
+):
+    device = "cuda:1"
+    f_current_new = wp.clone(f_current, device=device)
+    bc_mask_new = wp.clone(bc_mask, device=device)
+    with wp.ScopedDevice(device):
+        macro_wp = Macroscopic(
+            compute_backend=ComputeBackend.WARP,
+            precision_policy=precision_policy,
+            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
+        )
+        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
+        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
+        rho, u = macro_wp(f_current_new, rho, u)
+        u = u[:, 30:-30, 30:-30, 30:-30]
+
+        norm_mu = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
+        q_field = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
+        norm_mu, q_field = q_criterion_operator(u, bc_mask_new, norm_mu, q_field)
+
+        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
+        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
+        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
+        mc.surface(q_field[0], q_threshold)
+        if mc.verts.shape[0] == 0:
+            print(f"Warning: No vertices found for Q-criterion at timestep {timestep}.")
+            return
+
+        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
+        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
+        scalars = grid_to_point_op(norm_mu, mc.verts, scalars)
+
+        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
+        vorticity_min = 0.0
+        vorticity_max = 0.1
+        wp.launch(
+            get_color,
+            dim=mc.verts.shape[0],
+            inputs=(vorticity_min, vorticity_max, scalars),
+            outputs=(colors,),
+            device=device,
+        )
 
     vertices = mc.verts.numpy()
     indices = mc.indices.numpy()
     tri_count = len(indices) // 3
 
-    usd_mesh.GetPointsAttr().Set(vertices.tolist(), time=timestep)
-    usd_mesh.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep)
-    usd_mesh.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep)
-    usd_mesh.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep)
-    UsdGeom.Primvar(usd_mesh.GetDisplayColorAttr()).SetInterpolation("vertex")
+    usd_mesh_q_criterion.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
+    usd_mesh_q_criterion.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
+    usd_mesh_q_criterion.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
+    usd_mesh_q_criterion.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
+    UsdGeom.Primvar(usd_mesh_q_criterion.GetDisplayColorAttr()).SetInterpolation("vertex")
 
     print(f"Q-criterion visualization at timestep {timestep}:")
     print(f"  Number of vertices: {len(vertices)}")
@@ -252,33 +314,47 @@ def save_usd_q_criterion(timestep, bc_mask, f_current, grid_shape, usd_mesh, q_c
     print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
 
 
-# -------------------------- Function to Save Drone Body and Blades to USD --------------------------
-def save_usd_drone_and_blades(
-    timestep, post_process_interval, vertices_wp, num_body_vertices, body_faces_np, blades_faces_np, usd_drone_body, usd_drone_blades, usd_stage
+# -------------------------- Function to Save UAV Body and Blades to USD --------------------------
+def save_usd_uav_and_blades(
+    timestep,
+    post_process_interval,
+    vertices_wp,
+    num_body_vertices,
+    body_faces_np,
+    blades_faces_np,
+    usd_uav_body,
+    usd_uav_blades,
+    usd_stage,
 ):
     # Get vertices and adjust for boundary condition offset
     body_vertices = vertices_wp.numpy()[:num_body_vertices]
     blades_vertices = vertices_wp.numpy()[num_body_vertices:]
 
     # Adjust vertices by subtracting the boundary condition offset (20 cells)
-    body_vertices = body_vertices - 20
-    blades_vertices = blades_vertices - 20
+    body_vertices = body_vertices - 30
+    blades_vertices = blades_vertices - 30
 
     # Process body mesh
-    drone_body_tri_count = len(body_faces_np)
-    usd_drone_body.GetPointsAttr().Set(body_vertices.tolist(), time=timestep // post_process_interval)
-    usd_drone_body.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * drone_body_tri_count), time=timestep // post_process_interval)
-    usd_drone_body.GetFaceVertexIndicesAttr().Set(Vt.IntArray(body_faces_np.flatten().tolist()), time=timestep // post_process_interval)
+    uav_body_tri_count = len(body_faces_np)
+    usd_uav_body.GetPointsAttr().Set(body_vertices.tolist(), time=timestep // post_process_interval)
+    usd_uav_body.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * uav_body_tri_count), time=timestep // post_process_interval)
+    usd_uav_body.GetFaceVertexIndicesAttr().Set(Vt.IntArray(body_faces_np.flatten().tolist()), time=timestep // post_process_interval)
 
     # Process blades mesh
     # Rebase blade face indices to the local blade vertex array
     blades_faces_np_corrected = blades_faces_np - num_body_vertices
-    drone_blades_tri_count = len(blades_faces_np_corrected)
-    usd_drone_blades.GetPointsAttr().Set(blades_vertices.tolist(), time=timestep // post_process_interval)
-    usd_drone_blades.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * drone_blades_tri_count), time=timestep // post_process_interval)
-    usd_drone_blades.GetFaceVertexIndicesAttr().Set(Vt.IntArray(blades_faces_np_corrected.flatten().tolist()), time=timestep // post_process_interval)
+    uav_blades_tri_count = len(blades_faces_np_corrected)
+    usd_uav_blades.GetPointsAttr().Set(blades_vertices.tolist(), time=timestep // post_process_interval)
+    usd_uav_blades.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * uav_blades_tri_count), time=timestep // post_process_interval)
+    usd_uav_blades.GetFaceVertexIndicesAttr().Set(Vt.IntArray(blades_faces_np_corrected.flatten().tolist()), time=timestep // post_process_interval)
 
-    print(f"Drone body and blades USD updated at timestep {timestep}")
+    current_time_code = i // post_process_interval
+    usd_stage.SetStartTimeCode(0)
+    usd_stage.SetEndTimeCode(current_time_code)
+    usd_stage.SetTimeCodesPerSecond(30)
+    usd_stage.Save()
+    
+    print(f"UAV body and blades USD updated at timestep {timestep}")
 
 
 # -------------------------- Mesh Loading and IBM Setup --------------------------
@@ -292,7 +368,7 @@ def load_and_prepare_meshes(grid_shape, stl_dir="../stl-files/X8_new"):
     num_blades = 8
     blade_ranges = []
     cumulative_vertex_count = 0
-    target_size = 50.0
+    target_size = 200.0
     body_scale = target_size / max(main_body_mesh.extents)
     domain_center = np.array([(s - 1) / 2 for s in grid_shape])
     main_body_mesh = transform_mesh(main_body_mesh, translation=domain_center, scale=body_scale)
@@ -404,7 +480,6 @@ def setup_stepper(grid, boundary_conditions, lbm_omega):
     )
 
 
-# -------------------------- Post-Processing (Extended with USD Output using Q Criterion) --------------------------
 def post_process(
     i,
     post_process_interval,
@@ -417,53 +492,55 @@ def post_process(
     grid_shape,
     blade_ranges,
     num_blades,
-    usd_mesh,
+    usd_mesh_vorticity,
+    usd_mesh_q_criterion,
     vorticity_operator,
+    q_criterion_operator,
     usd_stage,
 ):
-    # Compute macroscopic quantities using the JAX backend for visualization
-    if not isinstance(f_current, jnp.ndarray):
-        f_jax = wp.to_jax(f_current)
-    macro_jax = Macroscopic(
-        compute_backend=ComputeBackend.JAX,
-        precision_policy=precision_policy,
-        velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.JAX),
-    )
-    rho, u = macro_jax(f_jax)
-    u = u[:, 1:-1, 1:-1, 1:-1]  # Remove ghost layers if present
+    # # Compute macroscopic quantities using the JAX backend for visualization
+    # if not isinstance(f_current, jnp.ndarray):
+    #     f_jax = wp.to_jax(f_current)
+    # macro_jax = Macroscopic(
+    #     compute_backend=ComputeBackend.JAX,
+    #     precision_policy=precision_policy,
+    #     velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.JAX),
+    # )
+    # rho, u = macro_jax(f_jax)
+    # u = u[:, 1:-1, 1:-1, 1:-1]  # Remove ghost layers if present
 
-    # Save standard visualization outputs
-    fields = {
-        "u_magnitude": (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5,
-        "u_x": u[0],
-        "u_y": u[1],
-        "u_z": u[2],
-    }
-    save_fields_vtk(fields, timestep=i)
-    reconstruct_mesh_from_vertices_and_faces(vertices_wp=vertices_wp, faces_np=faces_np, save_path=f"mesh_{i:06d}.stl")
-    save_image(fields["u_magnitude"][grid_shape[0] // 2, :, :], timestep=i)
+    # # Save standard visualization outputs
+    # fields = {
+    #     "u_magnitude": (u[0] ** 2 + u[1] ** 2 + u[2] ** 2) ** 0.5,
+    #     "u_x": u[0],
+    #     "u_y": u[1],
+    #     "u_z": u[2],
+    # }
+    # save_fields_vtk(fields, timestep=i)
+    # reconstruct_mesh_from_vertices_and_faces(vertices_wp=vertices_wp, faces_np=faces_np, save_path=f"mesh_{i:06d}.stl")
+    # save_image(fields["u_magnitude"][grid_shape[0] // 2, :, :], timestep=i)
 
-    # Plot blade positions
-    plt.figure(figsize=(10, 10))
-    padding = 20
-    x_min = -padding
-    x_max = grid_shape[0] + padding
-    y_min = -padding
-    y_max = grid_shape[1] + padding
-    plt.xlim(x_min, x_max)
-    plt.ylim(y_min, y_max)
-    plt.autoscale(False)
-    for blade_id in range(num_blades):
-        start, end = blade_ranges[blade_id]
-        blade_vertices = vertices_wp[start:end].numpy()
-        plt.scatter(blade_vertices[:, 0], blade_vertices[:, 1], s=20, label=f"Blade {blade_id + 1}")
-    plt.gca().set_aspect("equal", adjustable="box")
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize="small", markerscale=0.8)
-    plt.title(f"Blade Positions at Step {i}")
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.savefig(f"blade_positions_{i:06d}.png", bbox_inches="tight", dpi=150, pad_inches=0.2)
-    plt.close()
+    # # Plot blade positions
+    # plt.figure(figsize=(10, 10))
+    # padding = 20
+    # x_min = -padding
+    # x_max = grid_shape[0] + padding
+    # y_min = -padding
+    # y_max = grid_shape[1] + padding
+    # plt.xlim(x_min, x_max)
+    # plt.ylim(y_min, y_max)
+    # plt.autoscale(False)
+    # for blade_id in range(num_blades):
+    #     start, end = blade_ranges[blade_id]
+    #     blade_vertices = vertices_wp[start:end].numpy()
+    #     plt.scatter(blade_vertices[:, 0], blade_vertices[:, 1], s=20, label=f"Blade {blade_id + 1}")
+    # plt.gca().set_aspect("equal", adjustable="box")
+    # plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize="small", markerscale=0.8)
+    # plt.title(f"Blade Positions at Step {i}")
+    # plt.xlabel("X")
+    # plt.ylabel("Y")
+    # plt.savefig(f"blade_positions_{i:06d}.png", bbox_inches="tight", dpi=150, pad_inches=0.2)
+    # plt.close()
 
     save_usd_vorticity(
         i,
@@ -471,24 +548,43 @@ def post_process(
         bc_mask,
         f_current,
         grid_shape,
-        usd_mesh,
+        usd_mesh_vorticity,
         vorticity_operator,
         precision_policy=precision_policy,
         vorticity_threshold=9e-3,
         usd_stage=usd_stage,
     )
 
+    save_usd_q_criterion(
+        i,
+        post_process_interval,
+        bc_mask,
+        f_current,
+        grid_shape,
+        usd_mesh_q_criterion,
+        q_criterion_operator,
+        precision_policy=precision_policy,
+        q_threshold=1e-6,
+        usd_stage=usd_stage,
+    )
+
+    current_time_code = i // post_process_interval
+    usd_stage.SetStartTimeCode(0)
+    usd_stage.SetEndTimeCode(current_time_code)
+    usd_stage.SetTimeCodesPerSecond(30)
+    usd_stage.Save()
+
 
 # -------------------------- Simulation Parameters --------------------------
-grid_shape = (100, 200, 200)
-u_max = 0.01
-num_steps = 100000
+grid_shape = (512, 512, 512)
+u_max = 0.04
+num_steps = 200
 post_process_interval = 100
 print_interval = 1000
 num_blades = 8
 angular_velocity = 0.001
 
-Re = 50000.0
+Re = 500000.0
 clength = grid_shape[2] - 1
 visc = u_max * clength / Re
 omega = 1.0 / (3.0 * visc + 0.5)
@@ -522,9 +618,10 @@ usd_output_directory = "usd_output"
 os.makedirs(usd_output_directory, exist_ok=True)
 usd_file = os.path.join(usd_output_directory, "output.usd")
 usd_stage = Usd.Stage.CreateNew(usd_file)
-usd_mesh = UsdGeom.Mesh.Define(usd_stage, "/World/FluidField")
-usd_drone_body = UsdGeom.Mesh.Define(usd_stage, "/World/DroneBody")
-usd_drone_blades = UsdGeom.Mesh.Define(usd_stage, "/World/DroneBlades")
+usd_mesh_vorticity = UsdGeom.Mesh.Define(usd_stage, "/World/Vorticity")
+usd_mesh_q_criterion = UsdGeom.Mesh.Define(usd_stage, "/World/QCriterion")
+usd_uav_body = UsdGeom.Mesh.Define(usd_stage, "/World/UAVBody")
+usd_uav_blades = UsdGeom.Mesh.Define(usd_stage, "/World/UAVBlades")
 
 mesh_data = load_and_prepare_meshes(grid_shape)
 vertices_wp = mesh_data["vertices_wp"]
@@ -611,55 +708,74 @@ def rotate_blades(
 
 
 start_time = time.time()
-progress_bar = tqdm(range(num_steps), desc="Simulation Progress", unit="steps")
 
-for i in progress_bar:
-    f_0, f_1 = stepper(
-        f_0,
-        f_1,
-        vertices_wp,
-        vertex_areas_wp,
-        velocities_wp,
-        rotate_blades,
-        bc_mask,
-        missing_mask,
-        omega,
-        i,
-    )
-    f_0, f_1 = f_1, f_0
-
-    if (i + 1) % print_interval == 0:
-        elapsed_time = time.time() - start_time
-        progress_bar.set_postfix({"Time elapsed": f"{elapsed_time:.2f}s"})
-
-    if i % post_process_interval == 0 or i == num_steps - 1:
-        post_process(
-            i,
-            post_process_interval,
+try:
+    for i in range(num_steps):
+        f_0, f_1, lag_forces = stepper(
             f_0,
+            f_1,
+            vertices_wp,
+            vertex_areas_wp,
+            velocities_wp,
             bc_mask,
-            grid,
-            faces_np,
-            vertices_wp,
-            precision_policy,
-            grid_shape,
-            blade_ranges,
-            num_blades,
-            usd_mesh,
-            vorticity_operator,
-            usd_stage,
-        )
-        save_usd_drone_and_blades(
+            missing_mask,
+            omega,
             i,
-            post_process_interval,
-            vertices_wp,
-            num_body_vertices,
-            body_faces_np,
-            blades_faces_np,
-            usd_drone_body,
-            usd_drone_blades,
-            usd_stage,
         )
+        f_0, f_1 = f_1, f_0
+
+        # Update solid velocities and positions
+        wp.launch(
+            kernel=rotate_blades,
+            dim=vertices_wp.shape[0],
+            inputs=[i, lag_forces, vertices_wp, velocities_wp],
+        )
+
+        # if i % post_process_interval == 0 or i == num_steps - 1:
+        #     post_process(
+        #         i,
+        #         post_process_interval,
+        #         f_0,
+        #         bc_mask,
+        #         grid,
+        #         faces_np,
+        #         vertices_wp,
+        #         precision_policy,
+        #         grid_shape,
+        #         blade_ranges,
+        #         num_blades,
+        #         usd_mesh_vorticity,
+        #         usd_mesh_q_criterion,
+        #         vorticity_operator,
+        #         q_criterion_operator,
+        #         usd_stage,
+        #     )
+        #     save_usd_uav_and_blades(
+        #         i,
+        #         post_process_interval,
+        #         vertices_wp,
+        #         num_body_vertices,
+        #         body_faces_np,
+        #         blades_faces_np,
+        #         usd_uav_body,
+        #         usd_uav_blades,
+        #         usd_stage,
+        #     )
+except KeyboardInterrupt:
+    print("\nSimulation interrupted by user. Saving current USD state...")
+    current_time_code = i // post_process_interval
+    usd_stage.SetStartTimeCode(0)
+    usd_stage.SetEndTimeCode(current_time_code)
+    usd_stage.SetTimeCodesPerSecond(30)
+    usd_stage.Save()
+
+    print(f"USD file saved with {current_time_code + 1} frames. Exiting.")
+    import sys
+
+    sys.exit(0)
+
+end_time = time.time()
+print(f"Simulation completed in {end_time - start_time} seconds")
 
 usd_stage.SetStartTimeCode(0)
 usd_stage.SetEndTimeCode(num_steps // post_process_interval)

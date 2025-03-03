@@ -114,10 +114,10 @@ def prepare_immersed_boundary(mesh, max_lbm_length, translation=None, rotation=N
 
     # Subdivide to ensure at least one vertex per cell
     mesh = mesh.subdivide_to_size(max_edge=1.0, max_iter=200)
-    
+
     # Calculate vertices and voronoi areas
     vertices_wp, vertex_areas_wp = calculate_voronoi_areas(mesh)
-    
+
     # Return the faces along with vertices and areas
     return vertices_wp, vertex_areas_wp, mesh.faces
 
