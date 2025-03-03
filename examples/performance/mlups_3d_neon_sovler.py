@@ -85,7 +85,7 @@ def run( backend, precision_policy, grid_shape, num_steps):
     # Create stepper
     stepper = IncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-    Re = 100000
+    Re = 10000.0
     clength = grid_shape[0] - 1
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
@@ -99,7 +99,8 @@ def run( backend, precision_policy, grid_shape, num_steps):
 
     for i in range(num_steps):
         sim.step()
-
+        if i%500 == 0:
+            sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time
 
