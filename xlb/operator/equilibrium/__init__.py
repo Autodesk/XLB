@@ -1,1 +1,2 @@
 from xlb.operator.equilibrium.quadratic_equilibrium import Equilibrium, QuadraticEquilibrium
+from xlb.operator.equilibrium.mulltires_quadratic_equilibrium import MultiresQuadraticEquilibrium

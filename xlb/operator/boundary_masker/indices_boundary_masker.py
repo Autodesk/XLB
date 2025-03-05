@@ -303,10 +303,10 @@ class IndicesBoundaryMasker(Operator):
                 missing_mask_field: typing.Any,
         ):
             def loading_step(loader: neon.Loader):
-                loader.set_grid(bc_mask.get_grid())
+                loader.set_mres_grid(bc_mask.get_grid(), 0)
 
-                bc_mask_hdl = loader.get_read_handle(bc_mask_field)
-                missing_mask_hdl = loader.get_read_handle(missing_mask_field)
+                bc_mask_hdl = loader.get_mres_write_handle(bc_mask_field)
+                missing_mask_hdl = loader.get_mres_write_handle(missing_mask_field)
 
                 @wp.func
                 def masker(gridIdx: typing.Any):

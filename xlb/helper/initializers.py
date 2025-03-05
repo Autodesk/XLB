@@ -1,6 +1,6 @@
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
-
+from xlb.operator.equilibrium import MultiresQuadraticEquilibrium
 
 def initialize_eq(f, grid, velocity_set, precision_policy, backend, rho=None, u=None):
     if rho is None:
@@ -17,6 +17,24 @@ def initialize_eq(f, grid, velocity_set, precision_policy, backend, rho=None, u=
 
     elif backend == ComputeBackend.NEON:
         f = equilibrium(rho, u, f)
+        pass
+    else:
+        raise NotImplementedError(f"Backend {backend} not implemented")
+
+    del rho, u
+
+    return f
+
+
+def initialize_multires_eq(f, grid, velocity_set, precision_policy, backend, rho=None, u=None):
+    if rho is None:
+        rho = grid.create_field(cardinality=1, fill_value=1.0, dtype=precision_policy.compute_precision)
+    if u is None:
+        u = grid.create_field(cardinality=velocity_set.d, fill_value=0.0, dtype=precision_policy.compute_precision)
+    equilibrium = MultiresQuadraticEquilibrium()
+    if backend == ComputeBackend.NEON:
+        for level in range(grid.count_levels):
+            equilibrium(level,rho, u, f)
         pass
     else:
         raise NotImplementedError(f"Backend {backend} not implemented")
