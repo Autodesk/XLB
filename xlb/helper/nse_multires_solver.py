@@ -64,16 +64,16 @@ class Nse_multires_simulation:
         self.skeleton_odd.sequence(name="odd lbm", containers=[self.odd_step])
 
     def export_macroscopic(self, fname_prefix):
-        if self.iteration_idx % 2 == 0:
-            self.even_macroscopic.run(0)
-        else:
-            self.odd_macroscopic.run(0)
-
-        import warp as wp
-        wp.synchronize()
-        self.u.update_host(0)
-        wp.synchronize()
-        self.u.export_vti(f"{fname_prefix}{self.iteration_idx}.vti", 'u')
+        # if self.iteration_idx % 2 == 0:
+        #     self.even_macroscopic.run(0)
+        # else:
+        #     self.odd_macroscopic.run(0)
+        #
+        # import warp as wp
+        # wp.synchronize()
+        # self.u.update_host(0)
+        # wp.synchronize()
+        # self.u.export_vti(f"{fname_prefix}{self.iteration_idx}.vti", 'u')
 
         return
 
