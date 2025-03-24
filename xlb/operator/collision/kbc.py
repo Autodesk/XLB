@@ -186,6 +186,8 @@ class KBC(Collision):
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _epsilon = wp.constant(self.compute_dtype(self.epsilon))
+        _inv_four = wp.constant(self.compute_dtype(1.0)/self.compute_dtype(4.0))
+        _inv_six = wp.constant(self.compute_dtype(1.0)/self.compute_dtype(6.0))
 
         @wp.func
         def decompose_shear_d2q9(fneq: Any):
@@ -204,47 +206,36 @@ class KBC(Collision):
 
         # Construct functional for decomposing shear
         @wp.func
-        def decompose_shear_d3q27(
-            fneq: Any,
-        ):
-            # Get momentum flux
+        def decompose_shear_d3q27(fneq: Any):
+            """Decompose shear components for D3Q27 in Warp."""
             pi = self.momentum_flux.warp_functional(fneq)
             nxz = pi[0] - pi[5]
             nyz = pi[3] - pi[5]
-
-            # set shear components
+            shear1_inv6 = (_two * nxz - nyz) * _inv_six
+            shear2_inv6 = (-nxz + _two * nyz) * _inv_six
+            shear3_inv6 = (-nxz - nyz) * _inv_six
+            pi_invFour1 = pi[1] * _inv_four
+            pi_invFour2 = pi[2] * _inv_four
+            pi_invFour4 = pi[2] * _inv_four
             s = _f_vec()
-
-            # For c = (i, 0, 0), c = (0, j, 0) and c = (0, 0, k)
-            two = self.compute_dtype(2.0)
-            four = self.compute_dtype(4.0)
-            six = self.compute_dtype(6.0)
-
-            s[9] = (two * nxz - nyz) / six
-            s[18] = (two * nxz - nyz) / six
-            s[3] = (-nxz + two * nyz) / six
-            s[6] = (-nxz + two * nyz) / six
-            s[1] = (-nxz - nyz) / six
-            s[2] = (-nxz - nyz) / six
-
-            # For c = (i, j, 0)
-            s[12] = pi[1] / four
-            s[24] = pi[1] / four
-            s[21] = -pi[1] / four
-            s[15] = -pi[1] / four
-
-            # For c = (i, 0, k)
-            s[10] = pi[2] / four
-            s[20] = pi[2] / four
-            s[19] = -pi[2] / four
-            s[11] = -pi[2] / four
-
-            # For c = (0, j, k)
-            s[8] = pi[4] / four
-            s[4] = pi[4] / four
-            s[7] = -pi[4] / four
-            s[5] = -pi[4] / four
-
+            s[9]  = shear1_inv6
+            s[18] = shear1_inv6
+            s[3]  = shear2_inv6
+            s[6]  = shear2_inv6
+            s[1]  = shear3_inv6
+            s[2]  = shear3_inv6
+            s[12] = pi_invFour1
+            s[24] = pi_invFour1
+            s[21] = -pi_invFour1
+            s[15] = -pi_invFour1
+            s[10]  = pi_invFour2
+            s[20] = pi_invFour2
+            s[19] = -pi_invFour2
+            s[11] = -pi_invFour2
+            s[8]  = pi_invFour4
+            s[4]  = pi_invFour4
+            s[7]  = -pi_invFour4
+            s[5]  = -pi_invFour4
             return s
 
         # Construct functional for computing entropic scalar product
