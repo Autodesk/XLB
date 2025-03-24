@@ -41,6 +41,10 @@ class VelocitySet(object):
         # Create all properties in NumPy first
         self._init_numpy_properties(c, w)
 
+        # Construct symmetry pairs for the non-center directions
+        self.symmetry_pairs = self._construct_symmetry_pairs()
+        self.n_symmetry_pairs = self.symmetry_pairs.shape[0]
+
         # Convert properties to backend-specific format
         if self.compute_backend == ComputeBackend.WARP:
             self._init_warp_properties()
@@ -84,6 +88,9 @@ class VelocitySet(object):
         self.cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._cc))
         self.c_float = wp.constant(wp.mat((self.d, self.q), dtype=dtype)(self._c_float))
         self.qi = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._qi))
+        # Convert symmetry pairs to a Warp constant (matrix of shape (n,2))
+        self.symmetry_pairs = wp.constant(wp.mat((self.symmetry_pairs.shape[0], 2), dtype=wp.int32)(self.symmetry_pairs))
+        self.n_symmetry_pairs = wp.constant(self.n_symmetry_pairs)
 
     def _init_jax_properties(self):
         """
@@ -231,3 +238,27 @@ class VelocitySet(object):
         This function returns the name of the lattice in the format of DxQy.
         """
         return "D{}Q{}".format(self.d, self.q)
+    
+    def _construct_symmetry_pairs(self):
+        """
+        Constructs an array of index pairs for the symmetric (non-center) velocities.
+        It assumes that the center (zero velocity) is treated separately.
+        For each non-center velocity i, if its opposite index (opp) is greater than i,
+        the pair (i, opp) is added.
+
+        Returns
+        -------
+        numpy.ndarray
+            An array of shape (n, 2) where each row contains a pair of indices (i, opp)
+            representing symmetric velocity directions.
+        """
+        pairs = []
+        for i in range(self.q):
+            # Check if the velocity is the center (zero vector)
+            if np.all(self._c[:, i] == 0):
+                continue
+            opp = self._opp_indices[i]
+            # Add each pair only once
+            if i < opp:
+                pairs.append((i, opp))
+        return np.array(pairs)
