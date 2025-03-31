@@ -5,7 +5,7 @@ from xlb.grid.multires_grid import NeonMultiresGrid
 from xlb.precision_policy import Precision
 from typing import Tuple, List
 import neon
-
+import warp as wp
 
 class Nse_multires_simulation:
     def __init__(self, grid, velocity_set, stepper, omega):
@@ -24,6 +24,14 @@ class Nse_multires_simulation:
 
         self.rho = grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
         self.u = grid.create_field(cardinality=3, dtype=self.precision_policy.store_precision)
+
+        fname_prefix='test'
+        self.rho.fill_run(0, 0.0, 0)
+        self.rho.fill_run(0, 1.0, 0)
+        wp.synchronize()
+        self.rho.update_host(0)
+        wp.synchronize()
+        self.rho.export_vti(f"{fname_prefix}_topology.vti", 'u')
 
         self.odd_step = None
         self.even_step = None

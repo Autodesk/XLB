@@ -73,8 +73,12 @@ def run(backend, precision_policy, grid_shape, num_steps):
     dim = neon.Index_3d(grid_shape[0],
                         grid_shape[1],
                         grid_shape[2])
-    level_zero_mask = np.ones((dim.x, dim.y, dim.z), dtype=int)
+    level_zero_mask = np.ones((dim.x//2, dim.y, dim.z), dtype=int)
     level_zero_mask = np.ascontiguousarray(level_zero_mask, dtype=np.int32)
+
+    level_one_mask = np.ones((dim.x//2, dim.y, dim.z), dtype=int)
+    level_one_mask = np.ascontiguousarray(level_one_mask, dtype=np.int32)
+
     #
     # level_one_mask = np.zeros((2, 2, 2), dtype=int)
     # level_one_mask[0, 0, 0] = 1
@@ -92,8 +96,9 @@ def run(backend, precision_policy, grid_shape, num_steps):
     #                   stencil=[[0, 0, 0], [1, 0, 0]], )
 
     grid = multires_grid_factory(grid_shape, velocity_set=velocity_set,
-                                 sparsity_pattern_list=[level_zero_mask],
-                                 sparsity_pattern_origins=[neon.Index_3d(0, 0, 0)])
+                                 sparsity_pattern_list=[level_one_mask, level_zero_mask, ],
+                                 sparsity_pattern_origins=[ neon.Index_3d(dim.x//2+1, 0, 0), neon.Index_3d(0, 0, 0),])
+
     box = grid.bounding_box_indices()
     box_no_edge = grid.bounding_box_indices(remove_edges=True)
     lid = box_no_edge["top"]
