@@ -73,31 +73,62 @@ def run(backend, precision_policy, grid_shape, num_steps):
     dim = neon.Index_3d(grid_shape[0],
                         grid_shape[1],
                         grid_shape[2])
-    level_zero_mask = np.ones((dim.x//2, dim.y, dim.z), dtype=int)
+    level_zero_mask = np.zeros((dim.x, dim.y, dim.z), dtype=int)
     level_zero_mask = np.ascontiguousarray(level_zero_mask, dtype=np.int32)
+    # loop over all the elements in level_zero_mask and set to one any that have x=0 or y=0 or z=0
+    for i in range(dim.x):
+        for j in range(dim.y):
+            for k in range(dim.z):
+                if i == 0 or j == 0 or k == 0:
+                    level_zero_mask[i, j, k] = 1
+                if i == dim.x-1 or j == dim.y-1 or k == dim.z-1:
+                    level_zero_mask[i, j, k] = 1
+                if i == 1 or j == 1 or k == 1:
+                    level_zero_mask[i, j, k] = 1
+                if i == dim.x-2 or j == dim.y-2 or k == dim.z-2:
+                    level_zero_mask[i, j, k] = 1
+                if (i == 2 or j == 2 or k == 2):
+                    level_zero_mask[i, j, k] = 1
+                if i == dim.x-3 or j == dim.y-3 or k == dim.z-3:
+                    level_zero_mask[i, j, k] = 1
+                if i == 3 or j == 3 or k == 3:
+                    level_zero_mask[i, j, k] = 1
+                if i == dim.x-4 or j == dim.y-4 or k == dim.z-4:
+                    level_zero_mask[i, j, k] = 1
 
-    level_one_mask = np.ones((dim.x//2, dim.y, dim.z), dtype=int)
+
+
+    level_one_mask = np.ones((dim.x//2, dim.y//2, dim.z//2), dtype=int)
+    m = neon.Index_3d(dim.x // 2, dim.y // 2, dim.z // 2)
+    # level_one_mask[0, 0, 0] = 1
+    # # level_one_mask[1, 0, 0] = 1
+    # # level_one_mask[2, 0, 0] = 1
+    # # level_one_mask[2, 0, 0] = 1
+    # # level_one_mask[m.x-3, 0, 0] = 1
+    # # level_one_mask[m.x-2, 0, 0] = 1
+    # # level_one_mask[m.x-1, 0, 0] = 1
+
+    for i in range(dim.x//2):
+        for j in range(dim.y//2):
+            for k in range(dim.z//2):
+                m = neon.Index_3d(dim.x//2,
+                                  dim.y//2,
+                                  dim.z//2)
+                if i == 0 or j == 0 or k == 0:
+                    level_one_mask[i, j, k] = 0
+                if i == m.x-1 or j == m.y-1 or k == m.z-1:
+                    level_one_mask[i, j, k] = 0
+                if i == 1 or j == 1 or k == 1:
+                    level_one_mask[i, j, k] = 0
+                if (i == m.x-2 or j == m.y-2 or k == m.z-2):
+                    level_one_mask[i, j, k] = 0
+
     level_one_mask = np.ascontiguousarray(level_one_mask, dtype=np.int32)
 
-    #
-    # level_one_mask = np.zeros((2, 2, 2), dtype=int)
-    # level_one_mask[0, 0, 0] = 1
-    # level_one_mask[0, 0, 1] = 0
-    # level_one_mask[0, 1, 0] = 0
-    # level_one_mask[1, 1, 1] = 1
-    #
-    # grid = neon.mGrid(bk, dim,
-    #                   sparsity_pattern_list=[
-    #                       np.ascontiguousarray(maskZero, dtype=np.int32),
-    #                       np.ascontiguousarray(maskOne, dtype=np.int32),
-    #                   ],
-    #                   sparsity_pattern_origins=[neon.Index_3d(0, 0, 0),
-    #                                             neon.Index_3d(0, 0, 0)],
-    #                   stencil=[[0, 0, 0], [1, 0, 0]], )
-
     grid = multires_grid_factory(grid_shape, velocity_set=velocity_set,
-                                 sparsity_pattern_list=[level_one_mask, level_zero_mask, ],
-                                 sparsity_pattern_origins=[ neon.Index_3d(dim.x//2+1, 0, 0), neon.Index_3d(0, 0, 0),])
+                                 sparsity_pattern_list=[ level_zero_mask,level_one_mask ,],
+                                 sparsity_pattern_origins=[ neon.Index_3d(0, 0, 0),
+                                                            neon.Index_3d(0, 0, 0),])
 
     box = grid.bounding_box_indices()
     box_no_edge = grid.bounding_box_indices(remove_edges=True)
@@ -121,13 +152,16 @@ def run(backend, precision_policy, grid_shape, num_steps):
     # omega = 1.0
 
     sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
+
+    sim.export_macroscopic("Initial_")
+
     print("start timing")
     start_time = time.time()
 
     for i in range(num_steps):
         print(f"step {i}")
         sim.step()
-        if i%500 == 0:
+        if i%1 == 0:
             sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time

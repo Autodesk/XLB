@@ -85,6 +85,10 @@ class MultiresQuadraticEquilibrium(Equilibrium):
                     for l in range(self.velocity_set.q):
                         #wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
                         wp.neon_write(f_pn, index, l, feq[l])
+                    if wp.neon_has_children(f_pn, index):
+                        for l in range(self.velocity_set.q):
+                            zero_val = self.compute_dtype(0.0)
+                            wp.neon_write(f_pn, index, l, zero_val)
                 loader.declare_kernel(quadratic_equilibrium_cl)
             return quadratic_equilibrium_ll
         return functional, container

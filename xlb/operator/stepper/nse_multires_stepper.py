@@ -76,10 +76,11 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
         # Initialize distribution functions if initializer is provided
         if initializer is not None:
-            f_0 = initializer(self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
+            # throw an exception because this option is not implemented yet
+            raise Exception("Initializer is not implemented yet")
+            #f_0 = initializer(self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
         else:
             from xlb.helper.initializers import initialize_multires_eq
-
             f_0 = initialize_multires_eq(f_0, self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
 
         if self.compute_backend == ComputeBackend.NEON:
@@ -93,7 +94,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         bc_mask.update_host(0)
         missing_mask.update_host(0)
         wp.synchronize()
-        #bc_mask.export_vti("bc_mask.vti", 'bc_mask')
+        bc_mask.export_vti("bc_mask.vti", 'bc_mask')
         #missing_mask.export_vti("missing_mask.vti", 'missing_mask')
 
         return f_0, f_1, bc_mask, missing_mask
@@ -303,12 +304,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 timestep: int,
         ):
             num_levels = f_0_fd.get_grid().get_num_levels()
-            if level != 0:
-                # throw an exception
-                raise Exception("Only the finest level is supported for now")
 
             # module op to define odd of even iteration
-            od_or_even = wp.module("odd_or_even", "even")
+            od_or_even = wp.mod(timestep, 2)
 
             def ll_collide_coarse(loader: neon.Loader):
                 loader.set_mres_grid(bc_mask_fd.get_grid(), level)
@@ -316,12 +314,12 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 f_0_pn=loader.get_mres_read_handle(f_0_fd)
                 bc_mask_pn=loader.get_mres_read_handle(bc_mask_fd)
                 missing_mask_pn=loader.get_mres_read_handle(missing_mask_fd)
-
                 f_1_pn =loader.get_mres_write_handle(f_1_fd)
+
+                _c = self.velocity_set.c
 
                 @wp.func
                 def cl_collide_coarse(index: typing.Any):
-                    _c = self.velocity_set.c
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     """
                     The c++ version starts with the following, which I am not sure is right:
@@ -358,6 +356,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         for l in range(self.velocity_set.q):
                             wp.neon_write(f_1_pn, index, l, self.compute_dtype(0))
 
+                    wp.print("collide_coarse")
+
 
 
                 loader.declare_kernel(cl_collide_coarse)
@@ -379,75 +379,65 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
             #     raise Exception("Only the finest level is supported for now")
 
             # module op to define odd of even iteration
-            od_or_even = wp.module("odd_or_even", "even")
+            #od_or_even = wp.module("odd_or_even", "even")
 
             def ll_stream_coarse(loader: neon.Loader):
                 loader.set_mres_grid(bc_mask_fd.get_grid(), level)
 
                 f_0_pn = loader.get_mres_read_handle(f_0_fd)
+                f_1_pn = loader.get_mres_write_handle(f_1_fd)
+
                 bc_mask_pn = loader.get_mres_read_handle(bc_mask_fd)
                 missing_mask_pn = loader.get_mres_read_handle(missing_mask_fd)
 
-                f_1_pn = loader.get_mres_write_handle(f_1_fd)
+                _c = self.velocity_set.c
 
                 @wp.func
                 def cl_stream_coarse(index: typing.Any):
-                    _c = self.velocity_set.c
+                    _missing_mask = _missing_mask_vec()
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id != wp.uint8(255):
                         if not wp.neon_has_children(f_0_pn, index):
                             # do stream normally
-                            _f_post_stream = self.stream.warp_functional(f_0, index)
+                            _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                            _f_post_stream = self.stream.neon_functional(f_0_pn, index)
 
                             # do mres corrections
                             for l in range(self.velocity_set.q):
                                 pull_direction = wp.neon_ngh_idx(wp.int8(-_c[0, l]), wp.int8(-_c[1, l]), wp.int8(-_c[2, l]))
-                                if wp.neon_hasChildren(bc_mask_pn, index, pull_direction):
+                                _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
+                                if wp.neon_has_children(f_0_pn, index, pull_direction):
                                     is_valid = wp.bool(False)
-                                    read_accumulate_date = wp.neon_ngh_data(bc_mask_pn, index, pull_direction, l, is_valid)
+                                    read_accumulate_date = wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
                                     if is_valid:
-                                        _f_post_stream[l] = read_accumulate_date * this.compute_dtype(0.5)
+                                        wp.print("read_accumulate_date")
+                                        _f_post_stream[l] = self.compute_dtype(33) #read_accumulate_date * self.compute_dtype(0.5)
 
                             # do non mres post-streaming corrections
-                            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
+                            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_stream, True)
 
+                            for l in range(self.velocity_set.q):
+                                wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
+                    wp.print("stream_coarse")
 
+                loader.declare_kernel(cl_stream_coarse)
 
-                            if level < num_levels - 1:
-                                ## Store
-                                if od_or_even == 0:
-                                    wp.neon_mres_lbm_store_op(
-                                        f_0_pn,
-                                        index,
-                                        l,
-                                        push_direction,
-                                        _f_post_collision[l],
-                                    )
-                                else:
-                                    wp.neon_mres_lbm_store_op(
-                                        f_1_pn,
-                                        index,
-                                        l,
-                                        push_direction,
-                                        _f_post_collision[l],
-                                    )
+            return ll_stream_coarse
 
-                                wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
-
-                loader.declare_kernel(cl_collide_coarse)
-
-            return ll_collide_coarse
-
-        return None, {"single_step_finest": single_step_finest, "collide_coarse": collide_coarse, "stream_coarse": stream_coarse}
+        return None, {
+            #"single_step_finest": single_step_finest,
+            "collide_coarse": collide_coarse,
+            "stream_coarse": stream_coarse}
 
 
 
     def get_containers(self, target_level,  f_0, f_1, bc_mask, missing_mask,  omega, timestep):
+        containers = {'even': {}, 'odd': {}}
         _, container = self._construct_neon()
-        even = container(target_level, f_0, f_1, bc_mask, missing_mask, omega, 0)
-        odd = container(target_level, f_1, f_0, bc_mask, missing_mask, omega, 1)
-        return {'even': even,
-                'odd':odd}
+        for key in container.keys():
+            containers['odd'][key] = container[key](target_level, f_1, f_0, bc_mask, missing_mask, omega, 1)
+            containers['even'][key] = container[key](target_level, f_0, f_1, bc_mask, missing_mask, omega, 0)
+        return containers
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_launch(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):

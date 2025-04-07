@@ -48,46 +48,71 @@ class Nse_multires_simulation:
 
     def __init_containers(self, num_levels):
         # working only with level 0 for now
-        target_level = 0
-        containers = self.stepper.get_containers(target_level,
-                                                 self.f_0,
-                                                 self.f_1,
-                                                 self.bc_mask,
-                                                 self.missing_mask,
-                                                 self.omega,
-                                                 self.iteration_idx)
+        self.containers = {}
+        for target_level in range(num_levels):
+            self.containers[f"{target_level}"] = self.stepper.get_containers(target_level,
+                                                     self.f_0,
+                                                     self.f_1,
+                                                     self.bc_mask,
+                                                     self.missing_mask,
+                                                     self.omega,
+                                                     self.iteration_idx)
+            pass
 
-        self.even_step = containers['even']
-        self.odd_step = containers['odd']
+        # self.even_step = containers['even']
+        # self.odd_step = containers['odd']
+        #
+        self.macroscopics = {}
 
-        containers = self.macro.get_containers(target_level, self.f_0, self.f_1,self.rho, self.u)
+        for target_level in range(num_levels):
+            self.macroscopics[f"{target_level}"] = self.macro.get_containers(target_level, self.f_0, self.f_1, self.bc_mask, self.rho, self.u)
 
-        self.even_macroscopic = containers['even']
-        self.odd_macroscopic = containers['odd']
-
-        self.skeleton_even = neon.Skeleton(self.grid.get_neon_backend())
-        self.skeleton_odd = neon.Skeleton(self.grid.get_neon_backend())
-
-        self.skeleton_even.sequence(name="even lbm", containers=[self.even_step])
-        self.skeleton_odd.sequence(name="odd lbm", containers=[self.odd_step])
+        #
+        # # self.skeleton_even = neon.Skeleton(self.grid.get_neon_backend())
+        # # self.skeleton_odd = neon.Skeleton(self.grid.get_neon_backend())
+        # #
+        # # self.skeleton_even.sequence(name="even lbm", containers=[self.even_step])
+        # # self.skeleton_odd.sequence(name="odd lbm", containers=[self.odd_step])
 
     def export_macroscopic(self, fname_prefix):
-        # if self.iteration_idx % 2 == 0:
-        #     self.even_macroscopic.run(0)
-        # else:
-        #     self.odd_macroscopic.run(0)
-        #
-        # import warp as wp
-        # wp.synchronize()
-        # self.u.update_host(0)
-        # wp.synchronize()
-        # self.u.export_vti(f"{fname_prefix}{self.iteration_idx}.vti", 'u')
+        print("exporting macroscopic")
+        for target_level in range(self.grid.count_levels):
+            if self.iteration_idx % 2 == 0:
+                self.macroscopics[f"{target_level}"]['even'][0].run(0)
+            else:
+                self.macroscopics[f"{target_level}"]['odd'][0].run(0)
+
+
+        import warp as wp
+        wp.synchronize()
+        self.u.update_host(0)
+        wp.synchronize()
+        self.u.export_vti(f"{fname_prefix}{self.iteration_idx}.vti", 'u')
+        print("DONE exporting macroscopic")
 
         return
 
+    # one step at the corase level
     def step(self):
         self.iteration_idx += 1
+
         if self.iteration_idx % 2 == 0:
-            self.even_step.run(0)
+            self.containers["1"]["even"]['collide_coarse'].run(0)
+            wp.synchronize()
+            self.containers["0"]["even"]['collide_coarse'].run(0)
+            wp.synchronize()
+            self.containers["0"]["even"]['stream_coarse'].run(0)
+            wp.synchronize()
+            self.containers["0"]["odd"]['collide_coarse'].run(0)
+            wp.synchronize()
+            self.containers["0"]["odd"]['stream_coarse'].run(0)
+            wp.synchronize()
+            self.containers["1"]["even"]['stream_coarse'].run(0)
+            wp.synchronize()
         else:
-            self.odd_step.run(0)
+            self.containers["1"]["odd"]["collide_coarse"].run(0)
+            self.containers["0"]["even"]["collide_coarse"].run(0)
+            self.containers["0"]["even"]["stream_coarse"].run(0)
+            self.containers["0"]["odd"]["collide_coarse"].run(0)
+            self.containers["0"]["odd"]["stream_coarse"].run(0)
+            self.containers["1"]["odd"]["stream_coarse"].run(0)

@@ -76,10 +76,11 @@ class MultiresMacroscopic(Operator):
         import neon, typing
         @neon.Container.factory("macroscopic")
         def container(
-                level: int,
-                f_field: Any,
-                rho_field: Any,
-                u_fild: Any,
+            level: int,
+            f_field: Any,
+            bc_mask: Any,
+            rho_field: Any,
+            u_fild: Any,
         ):
             _d = self.velocity_set.d
             def macroscopic_ll(loader: neon.Loader):
@@ -88,27 +89,53 @@ class MultiresMacroscopic(Operator):
                 rho=loader.get_mres_read_handle(rho_field)
                 u =loader.get_mres_read_handle(u_fild)
                 f=loader.get_mres_write_handle(f_field)
+                bc_mask_pn = loader.get_mres_write_handle(bc_mask)
 
                 @wp.func
                 def macroscopic_cl(gIdx: typing.Any):
                     _f = _f_vec()
+                    _boundary_id = wp.neon_read(bc_mask_pn, gIdx, 0)
+
                     for l in range(self.velocity_set.q):
                         _f[l] = wp.neon_read(f, gIdx,l)
                     _rho, _u = functional(_f)
+                    if _boundary_id != wp.uint8(0):
+                        _rho = self.compute_dtype(1.0)
+                        for d in range(_d):
+                            _u[d] = self.compute_dtype(0.0)
+                    if _boundary_id == wp.uint8(255):
+                        _rho = self.compute_dtype(0.0)
+                        for d in range(_d):
+                            _u[d] = self.compute_dtype(0.0)
+
                     wp.neon_write(rho, gIdx, 0, _rho)
                     for d in range(_d):
                         wp.neon_write(u, gIdx, d, _u[d])
 
+                    if wp.neon_has_children(f, gIdx):
+                        offVal = self.compute_dtype(-33000.0)
+                        zero_val = self.compute_dtype(0.0)
+                        wp.neon_write(rho, gIdx, 0, zero_val)
+                        wp.neon_write(u, gIdx, 0, offVal)
+                        wp.neon_write(u, gIdx, 1, zero_val)
+                        wp.neon_write(u, gIdx, 2, zero_val)
+                    else:
+                        offVal = self.compute_dtype(+33000.0)
+                        zero_val = self.compute_dtype(0.0)
+                        wp.neon_write(rho, gIdx, 0, zero_val)
+                        wp.neon_write(u, gIdx, 0, offVal)
+                        wp.neon_write(u, gIdx, 1, zero_val)
+                        wp.neon_write(u, gIdx, 2, zero_val)
                 loader.declare_kernel(macroscopic_cl)
             return macroscopic_ll
         return functional, container
 
-    def get_containers(self, target_level, f_0, f_1, rho, u):
+    def get_containers(self, target_level, f_0, f_1, bc_mask, rho, u):
         _, container = self._construct_neon()
         evenList = []
         oddList = []
-        evenList.append(container(target_level, f_0,   rho, u))
-        oddList.append( container(target_level, f_1,  rho, u))
+        evenList.append(container(target_level, f_0, bc_mask,   rho, u))
+        oddList.append( container(target_level, f_1, bc_mask,  rho, u))
         return {'even':evenList ,
                 'odd':oddList }
 
