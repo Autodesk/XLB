@@ -62,6 +62,7 @@ class MultiresMacroscopic(Operator):
     def _construct_neon(self):
         zero_moment_func = self.zero_moment.neon_functional
         first_moment_func = self.first_moment.neon_functional
+        print(f"VELOCITY SET: {self.velocity_set.q}")
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
@@ -86,10 +87,10 @@ class MultiresMacroscopic(Operator):
             def macroscopic_ll(loader: neon.Loader):
                 loader.set_mres_grid(f_field.get_grid(), level)
 
-                rho=loader.get_mres_read_handle(rho_field)
-                u =loader.get_mres_read_handle(u_fild)
-                f=loader.get_mres_write_handle(f_field)
-                bc_mask_pn = loader.get_mres_write_handle(bc_mask)
+                rho=loader.get_mres_write_handle(rho_field)
+                u =loader.get_mres_write_handle(u_fild)
+                f=loader.get_mres_read_handle(f_field)
+                bc_mask_pn = loader.get_mres_read_handle(bc_mask)
 
                 @wp.func
                 def macroscopic_cl(gIdx: typing.Any):
@@ -98,12 +99,15 @@ class MultiresMacroscopic(Operator):
 
                     for l in range(self.velocity_set.q):
                         _f[l] = wp.neon_read(f, gIdx,l)
+
                     _rho, _u = functional(_f)
+
                     if _boundary_id != wp.uint8(0):
                         _rho = self.compute_dtype(1.0)
                         for d in range(_d):
                             _u[d] = self.compute_dtype(0.0)
-                    if _boundary_id == wp.uint8(255):
+
+                    if _boundary_id == wp.uint8(255) or wp.neon_has_children(f, gIdx):
                         _rho = self.compute_dtype(0.0)
                         for d in range(_d):
                             _u[d] = self.compute_dtype(0.0)
@@ -112,20 +116,6 @@ class MultiresMacroscopic(Operator):
                     for d in range(_d):
                         wp.neon_write(u, gIdx, d, _u[d])
 
-                    if wp.neon_has_children(f, gIdx):
-                        offVal = self.compute_dtype(-33000.0)
-                        zero_val = self.compute_dtype(0.0)
-                        wp.neon_write(rho, gIdx, 0, zero_val)
-                        wp.neon_write(u, gIdx, 0, offVal)
-                        wp.neon_write(u, gIdx, 1, zero_val)
-                        wp.neon_write(u, gIdx, 2, zero_val)
-                    else:
-                        offVal = self.compute_dtype(+33000.0)
-                        zero_val = self.compute_dtype(0.0)
-                        wp.neon_write(rho, gIdx, 0, zero_val)
-                        wp.neon_write(u, gIdx, 0, offVal)
-                        wp.neon_write(u, gIdx, 1, zero_val)
-                        wp.neon_write(u, gIdx, 2, zero_val)
                 loader.declare_kernel(macroscopic_cl)
             return macroscopic_ll
         return functional, container

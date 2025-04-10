@@ -16,22 +16,24 @@ class Nse_multires_simulation:
         self.omega = omega
         count_levels = grid.count_levels
         # Create fields
-        self.f_0, self.f_1, self.bc_mask, self.missing_mask = stepper.prepare_fields()
-        # self.f_0 = grid.create_field(cardinality=self.velocity_set.q, dtype=self.precision_policy.store_precision)
-        # self.f_1 = grid.create_field(cardinality=self.velocity_set.q, dtype=self.precision_policy.store_precision)
-        # self.missing_mask = grid.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
-        # self.bc_mask = grid.create_field(cardinality=1, dtype=Precision.UINT8)
-
         self.rho = grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
         self.u = grid.create_field(cardinality=3, dtype=self.precision_policy.store_precision)
-
         fname_prefix='test'
-        self.rho.fill_run(0, 0.0, 0)
+        self.u.fill_run(0, 0.0, 0)
+        self.u.fill_run(1, 0.0, 0)
         self.rho.fill_run(0, 1.0, 0)
+        self.rho.fill_run(1, 1.0, 0)
         wp.synchronize()
-        self.rho.update_host(0)
+        self.u.update_host(0)
         wp.synchronize()
-        self.rho.export_vti(f"{fname_prefix}_topology.vti", 'u')
+        self.u.export_vti(f"u_{fname_prefix}_topology.vti", 'u')
+
+
+        self.f_0, self.f_1, self.bc_mask, self.missing_mask = stepper.prepare_fields(rho=self.rho,u=self.u)
+        wp.synchronize()
+        self.u.update_host(0)
+        wp.synchronize()
+        self.u.export_vti(f"u_t2_{fname_prefix}_topology.vti", 'u')
 
         self.odd_step = None
         self.even_step = None

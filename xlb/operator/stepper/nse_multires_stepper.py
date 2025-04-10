@@ -22,7 +22,6 @@ from xlb.operator.boundary_condition.boundary_condition_registry import boundary
 from xlb.operator.collision import ForcedCollision
 from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
 from xlb.helper import check_bc_overlaps
-from xlb.helper.nse_solver import create_nse_fields
 
 
 class MultiresIncompressibleNavierStokesStepper(Stepper):
@@ -53,7 +52,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         self.equilibrium = QuadraticEquilibrium(self.velocity_set, self.precision_policy, self.compute_backend)
         self.macroscopic = Macroscopic(self.velocity_set, self.precision_policy, self.compute_backend)
 
-    def prepare_fields(self, initializer=None):
+    def prepare_fields(self, rho, u, initializer=None):
         """Prepare the fields required for the stepper.
 
         Args:
@@ -69,32 +68,33 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 - bc_mask: Boundary condition mask indicating which BC applies to each node
                 - missing_mask: Mask indicating which populations are missing at boundary nodes
         """
-        # Create fields using the helper function
-        _, f_0, f_1, missing_mask, bc_mask = create_nse_fields(
-            grid=self.grid, velocity_set=self.velocity_set, compute_backend=self.compute_backend, precision_policy=self.precision_policy
-        )
 
-        # Initialize distribution functions if initializer is provided
-        if initializer is not None:
-            # throw an exception because this option is not implemented yet
-            raise Exception("Initializer is not implemented yet")
-            #f_0 = initializer(self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
-        else:
-            from xlb.helper.initializers import initialize_multires_eq
-            f_0 = initialize_multires_eq(f_0, self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
+        f_0 = self.grid.create_field(cardinality=self.velocity_set.q, dtype=self.precision_policy.store_precision)
+        f_1 = self.grid.create_field(cardinality=self.velocity_set.q, dtype=self.precision_policy.store_precision)
+        missing_mask = self.grid.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
+        bc_mask = self.grid.create_field(cardinality=1, dtype=Precision.UINT8)
 
-        if self.compute_backend == ComputeBackend.NEON:
-            for level in range(self.grid.count_levels):
-                f_1.copy_from_run(level, f_0, 0)
+        from xlb.helper.initializers import initialize_multires_eq
+        f_0 = initialize_multires_eq(f_0, self.grid, self.velocity_set, self.precision_policy, self.compute_backend, rho=rho, u=u)
+
+        for level in range(self.grid.count_levels):
+            f_1.copy_from_run(level, f_0, 0)
+        f_0.update_host(0)
+        wp.synchronize()
+        f_0.export_vti("f0_eq_init.vti", "init_f0")
+
 
         # Process boundary conditions and update masks
         bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
         # Initialize auxiliary data if needed
         f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
+        # bc_mask.update_host(0)
         bc_mask.update_host(0)
-        missing_mask.update_host(0)
+        f_0.update_host(0)
         wp.synchronize()
         bc_mask.export_vti("bc_mask.vti", 'bc_mask')
+        f_0.export_vti("init_f0.vti", 'init_f0')
+
         #missing_mask.export_vti("missing_mask.vti", 'missing_mask')
 
         return f_0, f_1, bc_mask, missing_mask
@@ -357,10 +357,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     else:
                         for l in range(self.velocity_set.q):
                             wp.neon_write(f_1_pn, index, l, self.compute_dtype(0))
-
-                    wp.print("collide_coarse")
-
-
+                    wp.print("stream_coarse")
 
                 loader.declare_kernel(cl_collide_coarse)
             return ll_collide_coarse
@@ -412,8 +409,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                     is_valid = wp.bool(False)
                                     read_accumulate_date = wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
                                     if is_valid:
-                                        wp.print("read_accumulate_date")
-                                        _f_post_stream[l] = self.compute_dtype(33) #read_accumulate_date * self.compute_dtype(0.5)
+                                        _f_post_stream[l] = read_accumulate_date #read_accumulate_date * self.compute_dtype(0.5)
 
                             # do non mres post-streaming corrections
                             _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_stream, True)

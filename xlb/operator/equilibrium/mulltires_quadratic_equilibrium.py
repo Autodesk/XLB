@@ -81,21 +81,19 @@ class MultiresQuadraticEquilibrium(Equilibrium):
                     _rho = wp.neon_read(rho_pn, index, 0)
                     feq = functional(_rho, _u)
 
-                    # Set the output
-                    for l in range(self.velocity_set.q):
-                        #wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
-                        wp.neon_write(f_pn, index, l, feq[l])
                     if wp.neon_has_children(f_pn, index):
                         for l in range(self.velocity_set.q):
-                            zero_val = self.compute_dtype(0.0)
-                            wp.neon_write(f_pn, index, l, zero_val)
+                            feq[l] = self.compute_dtype(0.0)
+                    # Set the output
+                    for l in range(self.velocity_set.q):
+                        wp.neon_write(f_pn, index, l, feq[l])
                 loader.declare_kernel(quadratic_equilibrium_cl)
             return quadratic_equilibrium_ll
         return functional, container
 
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, leve, rho, u, f):
-        c = self.neon_container( leve, rho, u, f)
-        c.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
+    def neon_implementation(self, level, rho, u, f, stream):
+        c = self.neon_container( level, rho, u, f)
+        c.run(stream, container_runtime=neon.Container.ContainerRuntime.neon)
 
         return f
