@@ -49,6 +49,8 @@ class Nse_multires_simulation:
     def __init_containers(self, num_levels):
         # working only with level 0 for now
         self.containers = {}
+        self.macroscopics = {}
+
         for target_level in range(num_levels):
             self.containers[f"{target_level}"] = self.stepper.get_containers(target_level,
                                                      self.f_0,
@@ -59,23 +61,12 @@ class Nse_multires_simulation:
                                                      self.iteration_idx)
             pass
 
-        # self.even_step = containers['even']
-        # self.odd_step = containers['odd']
-        #
-        self.macroscopics = {}
-
         for target_level in range(num_levels):
             self.macroscopics[f"{target_level}"] = self.macro.get_containers(target_level, self.f_0, self.f_1, self.bc_mask, self.rho, self.u)
 
-        #
-        # # self.skeleton_even = neon.Skeleton(self.grid.get_neon_backend())
-        # # self.skeleton_odd = neon.Skeleton(self.grid.get_neon_backend())
-        # #
-        # # self.skeleton_even.sequence(name="even lbm", containers=[self.even_step])
-        # # self.skeleton_odd.sequence(name="odd lbm", containers=[self.odd_step])
 
     def export_macroscopic(self, fname_prefix):
-        print("exporting macroscopic")
+        print(f"exporting macroscopic: #levels {self.grid.count_levels}")
         for target_level in range(self.grid.count_levels):
             if self.iteration_idx % 2 == 0:
                 self.macroscopics[f"{target_level}"]['even'][0].run(0)
