@@ -126,7 +126,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     prescribed_vel = 0.05
 
     boundary_conditions = [EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
-                           FullwayBounceBackBC(indices=walls)]
+                           EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls)]
 
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")

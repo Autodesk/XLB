@@ -91,17 +91,11 @@ class Nse_multires_simulation:
 
         if self.iteration_idx % 2 == 0:
             self.containers["1"]["even"]['collide_coarse'].run(0)
-            wp.synchronize()
             self.containers["0"]["even"]['collide_coarse'].run(0)
-            wp.synchronize()
             self.containers["0"]["even"]['stream_coarse'].run(0)
-            wp.synchronize()
             self.containers["0"]["odd"]['collide_coarse'].run(0)
-            wp.synchronize()
             self.containers["0"]["odd"]['stream_coarse'].run(0)
-            wp.synchronize()
             self.containers["1"]["even"]['stream_coarse'].run(0)
-            wp.synchronize()
         else:
             self.containers["1"]["odd"]["collide_coarse"].run(0)
             self.containers["0"]["even"]["collide_coarse"].run(0)
