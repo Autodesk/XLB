@@ -392,6 +392,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _missing_mask = _missing_mask_vec()
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id != wp.uint8(255):
+                        #  if (!pin.hasChildren(cell)) {
                         if not wp.neon_has_children(f_0_pn, index):
                             # do stream normally
                             _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
@@ -401,11 +402,27 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                             for l in range(self.velocity_set.q):
                                 pull_direction = wp.neon_ngh_idx(wp.int8(-_c[0, l]), wp.int8(-_c[1, l]), wp.int8(-_c[2, l]))
                                 _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
-                                if wp.neon_has_children(f_0_pn, index, pull_direction):
+
+                                #  if (!pin.hasChildren(cell, dir)) {
+                                if not wp.neon_has_children(f_0_pn, index, pull_direction):
+                                    #if (nghType.mIsValid) {
+                                    # NOTHING as taken  care after
+                                    # } else if (pin.hasParent(cell) && !(dir.x == 0 && dir.y == 0 && dir.z == 0)) {
+                                    if wp.neon_has_parent(f_0_pn, index):
+                                        if pull_direction.x != 0 or pull_direction.y != 0 or pull_direction.z != 0:
+                                            # is_valid = wp.bool(False)
+                                            # uncle_val = wp.neon_uncle_read(f_0_pn, index, pull_direction, l, self.compute_dtype(0), is_valid)
+                                            # if is_valid:
+                                            #     #_f_post_stream[l] = uncle_val
+                                            #     # HERE DB
+                                            _f_post_stream[l] =  self.compute_dtype(0.0)
+                                else:
                                     is_valid = wp.bool(False)
                                     read_accumulate_date = wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
                                     if is_valid:
-                                        _f_post_stream[l] = read_accumulate_date #read_accumulate_date * self.compute_dtype(0.5)
+                                        #_f_post_stream[l] = read_accumulate_date * self.compute_dtype(0.5)
+                                        # HERE DB
+                                        _f_post_stream[l] = self.compute_dtype(0.0)
 
                             # do non mres post-streaming corrections
                             _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_stream, True)
