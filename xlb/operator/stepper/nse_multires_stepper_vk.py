@@ -429,7 +429,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                             for l in range(self.velocity_set.q):
                                 wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
-                    wp.print("stream_coarse")
+                    # wp.print("stream_coarse")
 
                 loader.declare_kernel(cl_stream_coarse)
 
