@@ -108,7 +108,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-    Re = 10000.0
+    Re = 100.0
     clength = grid_shape[0] - 1
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
