@@ -82,74 +82,33 @@ class Nse_multires_simulation:
 
     # one step at the corase level
     def step(self):
-        self.iteration_idx += 1
-        iteration_id = self.iteration_idx % 2
 
-        # op_name, mres_level, f_0, f_1, bc_mask, missing_mask,  omega, timestep
-        ## LEVEL 1
-        if  self.count_levels == 2:
+        def recurtion(level):
+            if level < 0:
+                return
+            print(f"RECURTION down to level {level}")
+            print(f"RECURTION Level {level}, COLLIDE")
+
             self.stepper.launch_container(
-            streamId= 0,
-            op_name="collide_coarse",
-            mres_level=1,
-            f_0=self.f_0,
-            f_1=self.f_1,
-            bc_mask=self.bc_mask,
-            missing_mask=self.missing_mask,
-            omega=self.omega,
-            timestep=iteration_id,
+                streamId=0,
+                op_name="collide_coarse",
+                mres_level=level,
+                f_0=self.f_0,
+                f_1=self.f_1,
+                bc_mask=self.bc_mask,
+                missing_mask=self.missing_mask,
+                omega=self.omega,
+                timestep=iteration_id,
             )
-        ## LEVEL 0
-        self.stepper.launch_container(
-            streamId= 0,
-            op_name="collide_coarse",
-            mres_level=0,
-            f_0=self.f_0,
-            f_1=self.f_1,
-            bc_mask=self.bc_mask,
-            missing_mask=self.missing_mask,
-            omega=self.omega,
-            timestep=iteration_id,
-        )
-        self.stepper.launch_container(
-                            streamId= 0,
-            op_name="stream_coarse",
-            mres_level=0,
-            f_0=self.f_1,
-            f_1=self.f_0,
-            bc_mask=self.bc_mask,
-            missing_mask=self.missing_mask,
-            omega=self.omega,
-            timestep=iteration_id,
-        )
-        self.stepper.launch_container(
-                            streamId= 0,
-            op_name="collide_coarse",
-            mres_level=0,
-            f_0=self.f_0,
-            f_1=self.f_1,
-            bc_mask=self.bc_mask,
-            missing_mask=self.missing_mask,
-            omega=self.omega,
-            timestep=iteration_id,
-        )
-        self.stepper.launch_container(
-            streamId= 0,
-            op_name="stream_coarse",
-            mres_level=0,
-            f_0=self.f_1,
-            f_1=self.f_0,
-            bc_mask=self.bc_mask,
-            missing_mask=self.missing_mask,
-            omega=self.omega,
-            timestep=iteration_id,
-        )
-        # LEVEL 0
-        if  self.count_levels == 2:
+
+            recurtion(level-1)
+            recurtion(level-1)
+
+            print(f"RECURTION Level {level}, stream_coarse_step_A")
             self.stepper.launch_container(
-                streamId= 0,
-                op_name="stream_coarse",
-                mres_level=1,
+                streamId=0,
+                op_name="stream_coarse_step_A",
+                mres_level=level,
                 f_0=self.f_1,
                 f_1=self.f_0,
                 bc_mask=self.bc_mask,
@@ -157,5 +116,110 @@ class Nse_multires_simulation:
                 omega=self.omega,
                 timestep=iteration_id,
             )
+            print(f"RECURTION Level {level}, stream_coarse_step_B")
+
+            self.stepper.launch_container(
+                streamId=0,
+                op_name="stream_coarse_step_B",
+                mres_level=level,
+                f_0=self.f_1,
+                f_1=self.f_0,
+                bc_mask=self.bc_mask,
+                missing_mask=self.missing_mask,
+                omega=self.omega,
+                timestep=iteration_id,
+            )
+
+            print(f"RECURTION Level {level}, stream_coarse_step_C")
+
+            self.stepper.launch_container(
+                streamId=0,
+                op_name="stream_coarse_step_C",
+                mres_level=level,
+                f_0=self.f_1,
+                f_1=self.f_0,
+                bc_mask=self.bc_mask,
+                missing_mask=self.missing_mask,
+                omega=self.omega,
+                timestep=iteration_id,
+            )
+
+        self.iteration_idx += 1
+        iteration_id = self.iteration_idx % 2
+
+        recurtion(self.count_levels-1)
+
+        # # op_name, mres_level, f_0, f_1, bc_mask, missing_mask,  omega, timestep
+        # ## LEVEL 1
+        # if  self.count_levels == 2:
+        #     self.stepper.launch_container(
+        #     streamId= 0,
+        #     op_name="collide_coarse",
+        #     mres_level=1,
+        #     f_0=self.f_0,
+        #     f_1=self.f_1,
+        #     bc_mask=self.bc_mask,
+        #     missing_mask=self.missing_mask,
+        #     omega=self.omega,
+        #     timestep=iteration_id,
+        #     )
+        # ## LEVEL 0
+        # self.stepper.launch_container(
+        #     streamId= 0,
+        #     op_name="collide_coarse",
+        #     mres_level=0,
+        #     f_0=self.f_0,
+        #     f_1=self.f_1,
+        #     bc_mask=self.bc_mask,
+        #     missing_mask=self.missing_mask,
+        #     omega=self.omega,
+        #     timestep=iteration_id,
+        # )
+        # self.stepper.launch_container(
+        #                     streamId= 0,
+        #     op_name="stream_coarse",
+        #     mres_level=0,
+        #     f_0=self.f_1,
+        #     f_1=self.f_0,
+        #     bc_mask=self.bc_mask,
+        #     missing_mask=self.missing_mask,
+        #     omega=self.omega,
+        #     timestep=iteration_id,
+        # )
+        # self.stepper.launch_container(
+        #                     streamId= 0,
+        #     op_name="collide_coarse",
+        #     mres_level=0,
+        #     f_0=self.f_0,
+        #     f_1=self.f_1,
+        #     bc_mask=self.bc_mask,
+        #     missing_mask=self.missing_mask,
+        #     omega=self.omega,
+        #     timestep=iteration_id,
+        # )
+        # self.stepper.launch_container(
+        #     streamId= 0,
+        #     op_name="stream_coarse",
+        #     mres_level=0,
+        #     f_0=self.f_1,
+        #     f_1=self.f_0,
+        #     bc_mask=self.bc_mask,
+        #     missing_mask=self.missing_mask,
+        #     omega=self.omega,
+        #     timestep=iteration_id,
+        # )
+        # # LEVEL 0
+        # if  self.count_levels == 2:
+        #     self.stepper.launch_container(
+        #         streamId= 0,
+        #         op_name="stream_coarse",
+        #         mres_level=1,
+        #         f_0=self.f_1,
+        #         f_1=self.f_0,
+        #         bc_mask=self.bc_mask,
+        #         missing_mask=self.missing_mask,
+        #         omega=self.omega,
+        #         timestep=iteration_id,
+        #     )
 
 

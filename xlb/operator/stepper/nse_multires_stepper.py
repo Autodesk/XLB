@@ -266,18 +266,21 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 #     wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, _f_post_collision[l])
                                 # else:
                                 wp.neon_mres_lbm_store_op(f_1_pn, index, l, push_direction, _f_post_collision[l])
+                                wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, _f_post_collision[l])
 
                             wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
                     else:
                         for l in range(self.velocity_set.q):
                             wp.neon_write(f_1_pn, index, l, self.compute_dtype(0))
+                            wp.neon_write(f_0_pn, index, l, self.compute_dtype(0))
+
                     #wp.print("stream_coarse")
 
                 loader.declare_kernel(cl_collide_coarse)
             return ll_collide_coarse
 
         @neon.Container.factory(name="stream_coarse")
-        def stream_coarse(
+        def stream_coarse_step_A(
             level: int,
             f_0_fd: Any,
             f_1_fd: Any,
@@ -319,25 +322,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                             _f_post_collision = _f0_thread
                             _f_post_stream = self.stream.neon_functional(f_0_pn, index)
 
-                            #do mres corrections
-                            for l in range(self.velocity_set.q):
-                                pull_direction = wp.neon_ngh_idx(wp.int8(-_c[0, l]),
-                                                                 wp.int8(-_c[1, l]),
-                                                                 wp.int8(-_c[2, l]))
-                                _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
-                                if wp.neon_has_children(f_0_pn, index, pull_direction):
-                                    is_valid = wp.bool(False)
-                                    read_accumulate_date = wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
-                                    if is_valid:
-                                        _f_post_stream[l] = read_accumulate_date * self.compute_dtype(0.5)
-
-                            # do non mres post-streaming corrections
-                            _f_post_stream = apply_bc(index, timestep,
-                                                      _boundary_id, _missing_mask,
-                                                      f_0_pn, f_1_pn,
-                                                      _f_post_collision, _f_post_stream,
-                                                      True)
-
                             for l in range(self.velocity_set.q):
                                 wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
                     #wp.print("stream_coarse")
@@ -346,10 +330,128 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
             return ll_stream_coarse
 
+        @neon.Container.factory(name="stream_coarse")
+        def stream_coarse_step_B(
+            level: int,
+            f_0_fd: Any,
+            f_1_fd: Any,
+            bc_mask_fd: Any,
+            missing_mask_fd: Any,
+            omega: Any,
+            timestep: int,
+        ):
+            num_levels = f_0_fd.get_grid().get_num_levels()
+            # if level != 0:
+            #     # throw an exception
+            #     raise Exception("Only the finest level is supported for now")
+
+            # module op to define odd of even iteration
+            #od_or_even = wp.module("odd_or_even", "even")
+
+            def ll_stream_coarse(loader: neon.Loader):
+                loader.set_mres_grid(bc_mask_fd.get_grid(), level)
+
+                f_0_pn = loader.get_mres_read_handle(f_0_fd)
+                f_1_pn = loader.get_mres_write_handle(f_1_fd)
+
+                bc_mask_pn = loader.get_mres_read_handle(bc_mask_fd)
+                missing_mask_pn = loader.get_mres_read_handle(missing_mask_fd)
+
+                _c = self.velocity_set.c
+
+                @wp.func
+                def cl_stream_coarse(index: typing.Any):
+                    _missing_mask = _missing_mask_vec()
+                    _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
+                    if _boundary_id != wp.uint8(255):
+                        if not wp.neon_has_children(f_0_pn, index):
+                            #do mres corrections
+                            is_valid = wp.bool(False)
+                            for l in range(self.velocity_set.q):
+                                if l == 9:
+                                    continue
+                                pull_direction = wp.neon_ngh_idx(wp.int8(-_c[0, l]),
+                                                                 wp.int8(-_c[1, l]),
+                                                                 wp.int8(-_c[2, l]))
+                                # if (!pin.hasChildren(cell, dir)) {
+                                if not wp.neon_has_children(f_0_pn, index, pull_direction):
+                                    # read value for now, but a is_valid_ngh would be fine
+                                    wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
+                                    # } else if (pin.hasParent(cell) && !(dir.x == 0 && dir.y == 0 && dir.z == 0)) {
+                                    if not is_valid:
+                                        if wp.neon_has_parent(f_0_pn, index):
+                                            is_valid = wp.bool(False)
+                                            uncle_val = wp.neon_uncle_read(f_0_pn, index, pull_direction, l, self.compute_dtype(0), is_valid)
+                                            if is_valid:
+                                                wp.neon_write(f_1_pn, index, l, uncle_val)
+
+                                # else:
+                                #     read_accumulate_date = wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
+                                #     if is_valid:
+                                #         val = read_accumulate_date * self.compute_dtype(0.5)
+                                #         wp.neon_write(f_1_pn, index, l, val)
+
+
+                loader.declare_kernel(cl_stream_coarse)
+
+            return ll_stream_coarse
+
+        @neon.Container.factory(name="stream_coarse")
+        def stream_coarse_step_C(
+            level: int,
+            f_0_fd: Any,
+            f_1_fd: Any,
+            bc_mask_fd: Any,
+            missing_mask_fd: Any,
+            omega: Any,
+            timestep: int,
+        ):
+
+            def ll_stream_coarse(loader: neon.Loader):
+                loader.set_mres_grid(bc_mask_fd.get_grid(), level)
+
+                f_0_pn = loader.get_mres_read_handle(f_0_fd)
+                f_1_pn = loader.get_mres_write_handle(f_1_fd)
+
+                bc_mask_pn = loader.get_mres_read_handle(bc_mask_fd)
+                missing_mask_pn = loader.get_mres_read_handle(missing_mask_fd)
+
+                _c = self.velocity_set.c
+
+                @wp.func
+                def cl_stream_coarse(index: typing.Any):
+                    _missing_mask = _missing_mask_vec()
+                    _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
+                    if _boundary_id != wp.uint8(255):
+                        if not wp.neon_has_children(f_0_pn, index):
+                            # do stream normally
+                            _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                            _f_post_collision = _f0_thread
+                            _f_post_stream = _f1_thread
+
+
+                            # do non mres post-streaming corrections
+                            _f_post_stream = apply_bc(
+                                index, timestep,
+                                _boundary_id,
+                                _missing_mask,
+                                f_0_pn, f_1_pn,
+                                _f_post_collision, _f_post_stream, True
+                            )
+
+                            for l in range(self.velocity_set.q):
+                                wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
+
+                loader.declare_kernel(cl_stream_coarse)
+
+            return ll_stream_coarse
+
         return None, {
             #"single_step_finest": single_step_finest,
             "collide_coarse": collide_coarse,
-            "stream_coarse": stream_coarse}
+            "stream_coarse_step_A": stream_coarse_step_A,
+            "stream_coarse_step_B": stream_coarse_step_B,
+            "stream_coarse_step_C": stream_coarse_step_C}
 
     def get_containers(self, target_level,  f_0, f_1, bc_mask, missing_mask,  omega, timestep):
         containers = {'even': {}, 'odd': {}}
