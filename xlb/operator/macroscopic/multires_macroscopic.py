@@ -107,7 +107,7 @@ class MultiresMacroscopic(Operator):
                         for d in range(_d):
                             _u[d] = self.compute_dtype(0.0)
 
-                    if _boundary_id == wp.uint8(255) or wp.neon_has_children(f, gIdx):
+                    if _boundary_id == wp.uint8(255) or wp.neon_has_child(f, gIdx):
                         _rho = self.compute_dtype(0.0)
                         for d in range(_d):
                             _u[d] = self.compute_dtype(0.0)

@@ -233,6 +233,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 f_1_pn =loader.get_mres_write_handle(f_1_fd)
 
                 _c = self.velocity_set.c
+                _w = self.velocity_set.w
 
                 @wp.func
                 def cl_collide_coarse(index: typing.Any):
@@ -245,7 +246,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     if _boundary_id == wp.uint8(255):
                         return
 
-                    if not wp.neon_has_children(f_0_pn, index):
+                    if not wp.neon_has_child(f_0_pn, index):
 
                         # Read thread data for populations, these are post streaming
                         _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
@@ -256,7 +257,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         _f_post_collision = self.collision.neon_functional(_f_post_stream, _feq, _rho, _u, omega)
 
                         # Apply post-collision boundary conditions
-                        _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False)
+                        #_f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False)
 
                         for l in range(self.velocity_set.q):
                             push_direction = wp.neon_ngh_idx(wp.int8(_c[0, l]), wp.int8(_c[1, l]), wp.int8(_c[2, l]))
@@ -265,8 +266,10 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 # if even_itertation == 0:
                                 #     wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, _f_post_collision[l])
                                 # else:
-                                wp.neon_mres_lbm_store_op(f_1_pn, index, l, push_direction, _f_post_collision[l])
-                                wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, _f_post_collision[l])
+                                val = _f_post_collision[l]
+                                #val = self.compute_dtype(1.0)
+                                wp.neon_mres_lbm_store_op(f_1_pn, index, l, push_direction, val)
+                                wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, val)
 
                             wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
                     else:
@@ -313,7 +316,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _missing_mask = _missing_mask_vec()
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id != wp.uint8(255):
-                        if not wp.neon_has_children(f_0_pn, index):
+                        if not wp.neon_has_child(f_0_pn, index):
                             # do stream normally
                             _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn,
                                                                                          f_1_pn,
@@ -358,38 +361,64 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 missing_mask_pn = loader.get_mres_read_handle(missing_mask_fd)
 
                 _c = self.velocity_set.c
+                _w = self.velocity_set.w
 
                 @wp.func
                 def cl_stream_coarse(index: typing.Any):
-                    _missing_mask = _missing_mask_vec()
+                    # _missing_mask = _missing_mask_vec()
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id != wp.uint8(255):
-                        if not wp.neon_has_children(f_0_pn, index):
-                            #do mres corrections
-                            is_valid = wp.bool(False)
-                            for l in range(self.velocity_set.q):
-                                if l == 9:
-                                    continue
-                                pull_direction = wp.neon_ngh_idx(wp.int8(-_c[0, l]),
-                                                                 wp.int8(-_c[1, l]),
-                                                                 wp.int8(-_c[2, l]))
-                                # if (!pin.hasChildren(cell, dir)) {
-                                if not wp.neon_has_children(f_0_pn, index, pull_direction):
-                                    # read value for now, but a is_valid_ngh would be fine
-                                    wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
-                                    # } else if (pin.hasParent(cell) && !(dir.x == 0 && dir.y == 0 && dir.z == 0)) {
-                                    if not is_valid:
-                                        if wp.neon_has_parent(f_0_pn, index):
-                                            is_valid = wp.bool(False)
-                                            uncle_val = wp.neon_uncle_read(f_0_pn, index, pull_direction, l, self.compute_dtype(0), is_valid)
-                                            if is_valid:
-                                                wp.neon_write(f_1_pn, index, l, uncle_val)
+                        return
 
-                                # else:
-                                #     read_accumulate_date = wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
-                                #     if is_valid:
-                                #         val = read_accumulate_date * self.compute_dtype(0.5)
-                                #         wp.neon_write(f_1_pn, index, l, val)
+                    are_we_a_halo_cell = wp.neon_has_child(f_0_pn, index)
+                    if are_we_a_halo_cell:
+                        # HERE: we are a halo cell so we just exit
+                        return
+                    for l in range(self.velocity_set.q):
+                        if l == 9:
+                            # HERE, we skip the center direction
+                            continue
+
+                        pull_direction = wp.neon_ngh_idx(wp.int8(-_c[0, l]),
+                                                         wp.int8(-_c[1, l]),
+                                                         wp.int8(-_c[2, l]))
+
+                        has_ngh_at_same_level = wp.bool(False)
+                        accumulated = wp.neon_read_ngh(f_0_pn, index, pull_direction, l, self.compute_dtype(55555), has_ngh_at_same_level)
+
+                        # if (!pin.hasChildren(cell, dir)) {
+                        if not wp.neon_has_finer_ngh(f_0_pn, index, pull_direction):
+                            # NO finer ngh. in the pull direction (opposite of l)
+                            if not has_ngh_at_same_level:
+                                # NO ngh. at the same level
+                                # COULD we have a ngh. at the courser level?
+                                if wp.neon_has_parent(f_0_pn, index):
+                                    # YES ghost cell on top of us
+                                    has_a_courser_ngh = wp.bool(False)
+                                    exploded_pop = wp.neon_lbm_read_coarser_ngh(f_0_pn, index, pull_direction, l, self.compute_dtype(0), has_a_courser_ngh)
+                                    if has_a_courser_ngh:
+                                        # Full state:
+                                        # NO finer ngh. in the pull direction (opposite of l)
+                                        # NO ngh. at the same level
+                                        # YES ghost cell on top of us
+                                        # YES courser ngh.
+                                        # -> **Explosion**
+                                        wp.neon_write(f_1_pn, index, l, exploded_pop)
+                        else:
+                            # HERE -> I have a finer neigh. in direction pull (opposite l)
+                            # Then I have to read from the halo on top of my finer neigh.
+                            if has_ngh_at_same_level:
+                                if l == 10:
+                                    wp.print(accumulated)
+                                # accumulated = _w[l]
+                                # Full State
+                                # YES finer ngh. in the pull direction (opposite of l)
+                                # YES ngh. at the same level
+                                # -> **Coalescence**
+                                accumulated = accumulated / self.compute_dtype(16)
+                                wp.neon_write(f_1_pn, index, l, accumulated)
+                            else:
+                                wp.print("ERRRRRRORRRRRRRRRRRRRR")
 
 
                 loader.declare_kernel(cl_stream_coarse)
@@ -423,7 +452,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _missing_mask = _missing_mask_vec()
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id != wp.uint8(255):
-                        if not wp.neon_has_children(f_0_pn, index):
+                        if not wp.neon_has_child(f_0_pn, index):
                             # do stream normally
                             _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
                             _f_post_collision = _f0_thread

@@ -81,7 +81,7 @@ class MultiresQuadraticEquilibrium(Equilibrium):
                     _rho = wp.neon_read(rho_pn, index, 0)
                     feq = functional(_rho, _u)
 
-                    if wp.neon_has_children(f_pn, index):
+                    if wp.neon_has_child(f_pn, index):
                         for l in range(self.velocity_set.q):
                             feq[l] = self.compute_dtype(0.0)
                     # Set the output

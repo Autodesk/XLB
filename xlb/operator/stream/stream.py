@@ -137,7 +137,7 @@ class Stream(Operator):
                                       wp.int8(-_c[2, l]))
 
                 unused_is_valid = wp.bool(False)
-                _f[l] = wp.neon_ngh_data(f, index, ngh, l, self.compute_dtype(0), unused_is_valid)
+                _f[l] = wp.neon_read_ngh(f, index, ngh, l, self.compute_dtype(0), unused_is_valid)
 
             return _f
 

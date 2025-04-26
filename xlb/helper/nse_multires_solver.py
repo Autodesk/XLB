@@ -100,6 +100,18 @@ class Nse_multires_simulation:
                 omega=self.omega,
                 timestep=iteration_id,
             )
+            # if(level == 0):
+            #     wp.synchronize()
+            #     self.f_0.update_host(0)
+            #     self.f_1.update_host(0)
+            #     wp.synchronize()
+            #     self.f_0.export_vti(f"pop_0_", "pop_0")
+            #     self.f_1.export_vti(f"pop_1_", "pop_1")
+            #     # exit
+            #     import sys
+            #     print("exit")
+            #     #sys.exit()
+            #     pass
 
             recurtion(level-1)
             recurtion(level-1)
@@ -143,6 +155,19 @@ class Nse_multires_simulation:
                 omega=self.omega,
                 timestep=iteration_id,
             )
+            # if(level == 1):
+            #     wp.synchronize()
+            #     self.f_0.update_host(0)
+            #     self.f_1.update_host(0)
+            #     wp.synchronize()
+            #     self.f_0.export_vti(f"pop_0_qq", "pop_0")
+            #     self.f_1.export_vti(f"pop_1_qq", "pop_1")
+            #     # exit
+            #     import sys
+            #     print("exit")
+            #     sys.exit()
+            #     pass
+
 
         self.iteration_idx += 1
         iteration_id = self.iteration_idx % 2
