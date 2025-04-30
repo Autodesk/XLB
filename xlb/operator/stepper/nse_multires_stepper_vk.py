@@ -282,9 +282,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 is_valid = False
                                 value = self.compute_dtype(0)
                                 if od_or_even == 0:
-                                    value = wp.neon_uncle_read(f_1_pn, index, push_direction, opposite_l, value, is_valid)
+                                    value = wp.neon_read_uncle(f_1_pn, index, push_direction, opposite_l, value, is_valid)
                                 else:
-                                    value = wp.neon_uncle_read(f_0_pn, index, push_direction, opposite_l, value, is_valid)
+                                    value = wp.neon_read_uncle(f_0_pn, index, push_direction, opposite_l, value, is_valid)
                                 if is_valid:
                                     wp.neon_write(f_1_pn, index, l, _f_post_stream[l], value)
 
@@ -327,7 +327,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     if _boundary_id == wp.uint8(255):
                         return
 
-                    if not wp.neon_has_children(f_0_pn, index):
+                    if not wp.neon_has_child(f_0_pn, index):
 
                         # Read thread data for populations, these are post streaming
                         _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
@@ -393,7 +393,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id != wp.uint8(255):
                         #  if (!pin.hasChildren(cell)) {
-                        if not wp.neon_has_children(f_0_pn, index):
+                        if not wp.neon_has_child(f_0_pn, index):
                             # do stream normally
                             _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
                             _f_post_stream = self.stream.neon_functional(f_0_pn, index)
@@ -404,21 +404,21 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
 
                                 #  if (!pin.hasChildren(cell, dir)) {
-                                if not wp.neon_has_children(f_0_pn, index, pull_direction):
+                                if not wp.neon_has_child(f_0_pn, index, pull_direction):
                                     #if (nghType.mIsValid) {
                                     # NOTHING as taken  care after
                                     # } else if (pin.hasParent(cell) && !(dir.x == 0 && dir.y == 0 && dir.z == 0)) {
                                     if wp.neon_has_parent(f_0_pn, index):
                                         if pull_direction.x != 0 or pull_direction.y != 0 or pull_direction.z != 0:
                                             # is_valid = wp.bool(False)
-                                            # uncle_val = wp.neon_uncle_read(f_0_pn, index, pull_direction, l, self.compute_dtype(0), is_valid)
+                                            # uncle_val = wp.neon_read_uncle(f_0_pn, index, pull_direction, l, self.compute_dtype(0), is_valid)
                                             # if is_valid:
                                             #     #_f_post_stream[l] = uncle_val
                                             #     # HERE DB
                                             _f_post_stream[l] =  self.compute_dtype(0.0)
                                 else:
                                     is_valid = wp.bool(False)
-                                    read_accumulate_date = wp.neon_ngh_data(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
+                                    read_accumulate_date = wp.neon_read_ngh(f_1_pn, index, pull_direction, l, self.compute_dtype(0),is_valid)
                                     if is_valid:
                                         #_f_post_stream[l] = read_accumulate_date * self.compute_dtype(0.5)
                                         # HERE DB

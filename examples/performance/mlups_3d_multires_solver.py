@@ -94,7 +94,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
             for k in range(dim.z):
                 idx = neon.Index_3d(i,j,k)
                 val = 0
-                if peel(dim, idx, 20, True):
+                if peel(dim, idx, 4, True):
                     val = 1
                 level_zero_mask[i, j, k] = val
 
