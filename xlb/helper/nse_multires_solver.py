@@ -18,21 +18,29 @@ class Nse_multires_simulation:
         # Create fields
         self.rho = grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
         self.u = grid.create_field(cardinality=3, dtype=self.precision_policy.store_precision)
+        self.coalescence_factor = grid.create_field(cardinality=velocity_set.q, dtype=self.precision_policy.store_precision)
+
         fname_prefix='test'
 
         for level in range(self.count_levels):
             self.u.fill_run(level, 0.0, 0)
             self.rho.fill_run(level, 1.0, 0)
-        wp.synchronize()
-        self.u.update_host(0)
-        wp.synchronize()
-        self.u.export_vti(f"u_{fname_prefix}_topology.vti", 'u')
+            self.coalescence_factor.fill_run(level, 0.0, 0)
+
+
+
+        #wp.synchronize()
+        #self.u.update_host(0)
+        #wp.synchronize()
+        #self.u.export_vti(f"u_{fname_prefix}_topology.vti", 'u')
 
         self.f_0, self.f_1, self.bc_mask, self.missing_mask = stepper.prepare_fields(rho=self.rho,u=self.u)
-        wp.synchronize()
-        self.u.update_host(0)
-        wp.synchronize()
-        self.u.export_vti(f"u_t2_{fname_prefix}_topology.vti", 'u')
+        stepper.prepare_coalescence_count(coalescence_factor=self.coalescence_factor, bc_mask=self.bc_mask)
+
+        #wp.synchronize()
+        #self.u.update_host(0)
+        #wp.synchronize()
+        #self.u.export_vti(f"u_t2_{fname_prefix}_topology.vti", 'u')
 
         self.odd_step = None
         self.even_step = None
@@ -138,7 +146,7 @@ class Nse_multires_simulation:
                 f_1=self.f_0,
                 bc_mask=self.bc_mask,
                 missing_mask=self.missing_mask,
-                omega=self.omega,
+                omega = self.coalescence_factor,
                 timestep=iteration_id,
             )
 

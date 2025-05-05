@@ -94,7 +94,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
             for k in range(dim.z):
                 idx = neon.Index_3d(i,j,k)
                 val = 0
-                if peel(dim, idx, 4, True):
+                if peel(dim, idx, dim.x/9, True):
                     val = 1
                 level_zero_mask[i, j, k] = val
 
@@ -105,9 +105,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
         for j in range(m.x):
             for k in range(m.x):
                 idx = neon.Index_3d(i,j,k)
-                val = 0
-                if peel(dim, idx, dim.x, True) and peel(dim, idx, 3, False):
-                    val = 1
+                val = 1
                 level_one_mask[i, j, k] = val
 
     level_one_mask = np.ascontiguousarray(level_one_mask, dtype=np.int32)
@@ -131,11 +129,13 @@ def run(backend, precision_policy, grid_shape, num_steps):
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-    Re = 100.0
+    Re = 1000.0
 
     clength = grid_shape[0] - 1
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
+    omega = 1.0
+
 
     # # Initialize fields and run simulation
     # omega = 1.0
@@ -150,7 +150,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     for i in range(num_steps):
         print(f"step {i}")
         sim.step()
-        if i%1 == 0:
+        if i%10 == 0:
             sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time
