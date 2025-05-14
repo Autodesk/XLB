@@ -92,6 +92,9 @@ class NeonMultiresGrid(Grid):
                 field.fill_run(level= l, value=fill_value,stream_idx = 0)
         return field
 
+    def get_neon_backend(self):
+        return self.bk
+
     def _create_warp_field(self,
                            cardinality: int,
                            dtype: Literal[Precision.FP32, Precision.FP64, Precision.FP16] = None,

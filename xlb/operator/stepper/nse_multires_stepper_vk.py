@@ -1,5 +1,5 @@
 # Base class for all stepper operators
-
+import typing
 from functools import partial
 
 from docutils.nodes import container
@@ -454,6 +454,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
     def launch_container(self, streamId, op_name, mres_level, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
         self.containers[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep).run(0)
+
+    def add_to_app(self, app:typing.List, op_name, mres_level, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
+        app.append(self.containers[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep))
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_launch(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):

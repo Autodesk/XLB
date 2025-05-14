@@ -130,7 +130,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
     walls = np.unique(np.array(walls), axis=-1).tolist()
 
-    prescribed_vel = 0.05
+    prescribed_vel = 0.1
 
     boundary_conditions = [EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
                            EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls)]
@@ -138,12 +138,12 @@ def run(backend, precision_policy, grid_shape, num_steps):
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-    Re = 1000.0
+    Re = 5000.0
 
     clength = grid_shape[0] - 1
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
-    omega = 1.0
+    #omega = 1.0
 
 
     # # Initialize fields and run simulation
@@ -152,16 +152,17 @@ def run(backend, precision_policy, grid_shape, num_steps):
     sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
 
     sim.export_macroscopic("Initial_")
+    sim.step()
 
     print("start timing")
+    wp.synchronize()
     start_time = time.time()
 
     for i in range(num_steps):
-        print(f"step {i}")
         sim.step()
-        if i%10 == 0:
-            sim.export_macroscopic("u_lid_driven_cavity_")
-    wp.synchronize()
+        if i%100 == 0:
+            print(f"step {i}")
+        #    sim.export_macroscopic("u_lid_driven_cavity_")
     t = time.time() - start_time
 
     sim.export_macroscopic("u_lid_driven_cavity_")
@@ -169,27 +170,11 @@ def run(backend, precision_policy, grid_shape, num_steps):
 
 
 def calculate_mlups(cube_edge, num_steps, elapsed_time):
-    total_lattice_updates = cube_edge**3 * num_steps
+    num_step_finer = num_steps * 2**(4-1)
+    total_lattice_updates = cube_edge**3 * num_step_finer
     mlups = (total_lattice_updates / elapsed_time) / 1e6
     return mlups
 
-def post_process(macro, rho, u, f_0,  i):
-    # Write the results. We'll use JAX backend for the post-processing
-    # import jax.numpy as jnp
-    # if not isinstance(f_0, jnp.ndarray):
-    #     # If the backend is warp, we need to drop the last dimension added by warp for 2D simulations
-    #     f_0 = wp.to_jax(f_0)[..., 0]
-    # else:
-    #     f_0 = f_0
-    rho, u = macro(f_0, rho, u )
-    wp.synchronize()
-    u.update_host(0)
-    rho.update_host(0)
-    wp.synchronize()
-    u.export_vti(f"u_lid_driven_cavity_{i}.vti", 'u')
-    rho.export_vti(f"rho_lid_driven_cavity_{i}.vti", 'rho')
-
-    pass
 
     # # remove boundary cells
     # rho = rho[:, 1:-1, 1:-1, 1:-1]

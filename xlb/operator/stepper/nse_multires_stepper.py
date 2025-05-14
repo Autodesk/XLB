@@ -26,15 +26,15 @@ from xlb.helper import check_bc_overlaps
 
 class MultiresIncompressibleNavierStokesStepper(Stepper):
     def __init__(
-        self,
-        grid,
-        boundary_conditions=[],
-        collision_type="BGK",
-        forcing_scheme="exact_difference",
-        force_vector=None,
+            self,
+            grid,
+            boundary_conditions=[],
+            collision_type="BGK",
+            forcing_scheme="exact_difference",
+            force_vector=None,
     ):
         super().__init__(grid, boundary_conditions)
-        self.odd_or_even='even'
+        self.odd_or_even = 'even'
         self.c_even = None
         self.c_odd = None
 
@@ -45,7 +45,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
             self.collision = KBC(self.velocity_set, self.precision_policy, self.compute_backend)
 
         if force_vector is not None:
-            self.collision = ForcedCollision(collision_operator=self.collision, forcing_scheme=forcing_scheme, force_vector=force_vector)
+            self.collision = ForcedCollision(collision_operator=self.collision, forcing_scheme=forcing_scheme,
+                                             force_vector=force_vector)
 
         # Construct the operators
         self.stream = Stream(self.velocity_set, self.precision_policy, self.compute_backend)
@@ -75,16 +76,18 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         bc_mask = self.grid.create_field(cardinality=1, dtype=Precision.UINT8)
 
         from xlb.helper.initializers import initialize_multires_eq
-        f_0 = initialize_multires_eq(f_0, self.grid, self.velocity_set, self.precision_policy, self.compute_backend, rho=rho, u=u)
+        f_0 = initialize_multires_eq(f_0, self.grid, self.velocity_set, self.precision_policy, self.compute_backend,
+                                     rho=rho, u=u)
 
         for level in range(self.grid.count_levels):
             f_1.copy_from_run(level, f_0, 0)
         f_0.update_host(0)
         wp.synchronize()
-        #f_0.export_vti("f0_eq_init.vti", "init_f0")
+        # f_0.export_vti("f0_eq_init.vti", "init_f0")
 
         # Process boundary conditions and update masks
-        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
+        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask,
+                                                                  xlb_grid=self.grid)
         # Initialize auxiliary data if needed
         f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
         # bc_mask.update_host(0)
@@ -92,8 +95,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         f_0.update_host(0)
         wp.synchronize()
         bc_mask.export_vti("bc_mask.vti", 'bc_mask')
-        #f_0.export_vti("init_f0.vti", 'init_f0')
-        #missing_mask.export_vti("missing_mask.vti", 'missing_mask')
+        # f_0.export_vti("init_f0.vti", 'init_f0')
+        # missing_mask.export_vti("missing_mask.vti", 'missing_mask')
 
         return f_0, f_1, bc_mask, missing_mask
 
@@ -124,7 +127,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                                                  wp.int8(_c[2, l]))
                                 val = self.compute_dtype(1)
                                 wp.neon_mres_lbm_store_op(coalescence_factor_pn, index, l, push_direction, val)
+
                 loader.declare_kernel(cl_collide_coarse)
+
             return ll_coalescence_count
 
         for level in range(num_levels):
@@ -162,7 +167,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         # HERE: we are a halo cell so we just exit
                         return
 
-
                     for l in range(self.velocity_set.q):
                         if l == 9:
                             # HERE, we skip the center direction
@@ -173,7 +177,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                                          wp.int8(-_c[2, l]))
 
                         has_ngh_at_same_level = wp.bool(False)
-                        coalescence_factor = wp.neon_read_ngh(coalescence_factor_pn, index, pull_direction, l, self.compute_dtype(0), has_ngh_at_same_level)
+                        coalescence_factor = wp.neon_read_ngh(coalescence_factor_pn, index, pull_direction, l,
+                                                              self.compute_dtype(0), has_ngh_at_same_level)
 
                         # if (!pin.hasChildren(cell, dir)) {
                         if not wp.neon_has_finer_ngh(coalescence_factor_pn, index, pull_direction):
@@ -194,13 +199,15 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 # YES ngh. at the same level
                                 # -> **Coalescence**
                                 if coalescence_factor > self.compute_dtype(0):
-                                    coalescence_factor = self.compute_dtype(1)/( self.compute_dtype(2)*coalescence_factor)
+                                    coalescence_factor = self.compute_dtype(1) / (
+                                            self.compute_dtype(2) * coalescence_factor)
                                     wp.neon_write(coalescence_factor_pn, index, l, coalescence_factor)
 
                             else:
                                 wp.print("ERRRRRRORRRRRRRRRRRRRR")
 
                 loader.declare_kernel(compute)
+
             return loading
 
         for level in range(num_levels):
@@ -252,7 +259,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
         _opp_indices = self.velocity_set.opp_indices
-        #_cast_to_store_dtype = self.store_dtype()
+        # _cast_to_store_dtype = self.store_dtype()
 
         # Read the list of bc_to_id created upon instantiation
         bc_to_id = boundary_condition_registry.bc_to_id
@@ -268,15 +275,15 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
         @wp.func
         def apply_bc(
-            index: Any,
-            timestep: Any,
-            _boundary_id: Any,
-            missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
-            is_post_streaming: bool,
+                index: Any,
+                timestep: Any,
+                _boundary_id: Any,
+                missing_mask: Any,
+                f_0: Any,
+                f_1: Any,
+                f_pre: Any,
+                f_post: Any,
+                is_post_streaming: bool,
         ):
             f_result = f_post
 
@@ -285,11 +292,15 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 if is_post_streaming:
                     if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.STREAMING):
                         if _boundary_id == wp.static(self.boundary_conditions[i].id):
-                            f_result = wp.static(self.boundary_conditions[i].neon_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                            f_result = wp.static(self.boundary_conditions[i].neon_functional)(index, timestep,
+                                                                                              missing_mask, f_0, f_1,
+                                                                                              f_pre, f_post)
                 else:
                     if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.COLLISION):
                         if _boundary_id == wp.static(self.boundary_conditions[i].id):
-                            f_result = wp.static(self.boundary_conditions[i].neon_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                            f_result = wp.static(self.boundary_conditions[i].neon_functional)(index, timestep,
+                                                                                              missing_mask, f_0, f_1,
+                                                                                              f_pre, f_post)
                     if wp.static(self.boundary_conditions[i].id in extrapolation_outflow_bc_ids):
                         if _boundary_id == wp.static(self.boundary_conditions[i].id):
                             f_result = wp.static(self.boundary_conditions[i].prepare_bc_auxilary_data)(
@@ -299,10 +310,10 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
         @wp.func
         def neon_get_thread_data(
-            f0_pn: Any,
-            f1_pn: Any,
-            missing_mask_pn: Any,
-            index: Any,
+                f0_pn: Any,
+                f1_pn: Any,
+                missing_mask_pn: Any,
+                index: Any,
         ):
             # Read thread data for populations
             _f0_thread = _f_vec()
@@ -318,7 +329,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
         import typing
 
-
         @neon.Container.factory(name="collide_coarse")
         def collide_coarse(
                 level: int,
@@ -332,21 +342,28 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
             num_levels = f_0_fd.get_grid().get_num_levels()
 
             # module op to define odd of even iteration
-            even_itertation = wp.mod(timestep, 2)==0
+            even_itertation = wp.mod(timestep, 2) == 0
 
             def ll_collide_coarse(loader: neon.Loader):
                 loader.set_mres_grid(bc_mask_fd.get_grid(), level)
 
-                f_0_pn=loader.get_mres_read_handle(f_0_fd)
-                bc_mask_pn=loader.get_mres_read_handle(bc_mask_fd)
-                missing_mask_pn=loader.get_mres_read_handle(missing_mask_fd)
-                f_1_pn =loader.get_mres_write_handle(f_1_fd)
+                if level + 1 < f_0_fd.get_grid().get_num_levels():
+                    f_0_pn = loader.get_mres_write_handle(f_0_fd, neon.Loader.Operation.stencil_up)
+                    f_1_pn = loader.get_mres_write_handle(f_1_fd, neon.Loader.Operation.stencil_up)
+                else:
+                    f_0_pn = loader.get_mres_read_handle(f_0_fd)
+                    f_1_pn = loader.get_mres_write_handle(f_1_fd)
+
+                # fake loading to enforce sequential step
+
+                bc_mask_pn = loader.get_mres_read_handle(bc_mask_fd)
+                missing_mask_pn = loader.get_mres_read_handle(missing_mask_fd)
 
                 _c = self.velocity_set.c
                 _w = self.velocity_set.w
 
                 @wp.func
-                def cl_collide_coarse(index: typing.Any):
+                def device(index: typing.Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     """
                     The c++ version starts with the following, which I am not sure is right:
@@ -359,7 +376,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     if not wp.neon_has_child(f_0_pn, index):
 
                         # Read thread data for populations, these are post streaming
-                        _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                        _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn,
+                                                                                     index)
                         _f_post_stream = _f0_thread
 
                         _rho, _u = self.macroscopic.neon_functional(_f_post_stream)
@@ -367,13 +385,13 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         _f_post_collision = self.collision.neon_functional(_f_post_stream, _feq, _rho, _u, omega)
 
                         # Apply post-collision boundary conditions
-                        #_f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False)
+                        # _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False)
 
                         for l in range(self.velocity_set.q):
                             push_direction = wp.neon_ngh_idx(wp.int8(_c[0, l]),
                                                              wp.int8(_c[1, l]),
                                                              wp.int8(_c[2, l]))
-                            if(level < num_levels - 1):
+                            if (level < num_levels - 1):
                                 val = _f_post_collision[l]
                                 wp.neon_mres_lbm_store_op(f_1_pn, index, l, push_direction, val)
                                 wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, val)
@@ -384,26 +402,28 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                             wp.neon_write(f_1_pn, index, l, self.compute_dtype(0))
                             wp.neon_write(f_0_pn, index, l, self.compute_dtype(0))
 
-                loader.declare_kernel(cl_collide_coarse)
+                loader.declare_kernel(device)
+
             return ll_collide_coarse
 
         @neon.Container.factory(name="stream_coarse_step_A")
         def stream_coarse_step_A(
-            level: int,
-            f_0_fd: Any,
-            f_1_fd: Any,
-            bc_mask_fd: Any,
-            missing_mask_fd: Any,
-            omega: Any,
-            timestep: int,
+                level: int,
+                f_0_fd: Any,
+                f_1_fd: Any,
+                bc_mask_fd: Any,
+                missing_mask_fd: Any,
+                omega: Any,
+                timestep: int,
         ):
             num_levels = f_0_fd.get_grid().get_num_levels()
+
             # if level != 0:
             #     # throw an exception
             #     raise Exception("Only the finest level is supported for now")
 
             # module op to define odd of even iteration
-            #od_or_even = wp.module("odd_or_even", "even")
+            # od_or_even = wp.module("odd_or_even", "even")
 
             def ll_stream_coarse(loader: neon.Loader):
                 loader.set_mres_grid(bc_mask_fd.get_grid(), level)
@@ -438,7 +458,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                     for l in range(self.velocity_set.q):
                         wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
-                    #wp.print("stream_coarse")
+                    # wp.print("stream_coarse")
 
                 loader.declare_kernel(cl_stream_coarse)
 
@@ -446,13 +466,13 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
         @neon.Container.factory(name="stream_coarse_step_B")
         def stream_coarse_step_B(
-            level: int,
-            f_0_fd: Any,
-            f_1_fd: Any,
-            bc_mask_fd: Any,
-            missing_mask_fd: Any,
-            omega: Any,
-            timestep: int,
+                level: int,
+                f_0_fd: Any,
+                f_1_fd: Any,
+                bc_mask_fd: Any,
+                missing_mask_fd: Any,
+                omega: Any,
+                timestep: int,
         ):
             def ll_stream_coarse(loader: neon.Loader):
                 loader.set_mres_grid(bc_mask_fd.get_grid(), level)
@@ -462,7 +482,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                 bc_mask_pn = loader.get_mres_read_handle(bc_mask_fd)
                 missing_mask_pn = loader.get_mres_read_handle(missing_mask_fd)
-                coalescence_factor_pn  = loader.get_mres_read_handle(coalescence_factor_fd)
+                coalescence_factor_pn = loader.get_mres_read_handle(coalescence_factor_fd)
 
                 _c = self.velocity_set.c
                 _w = self.velocity_set.w
@@ -478,7 +498,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         # HERE: we are a halo cell so we just exit
                         return
 
-
                     for l in range(self.velocity_set.q):
                         if l == 9:
                             # HERE, we skip the center direction
@@ -489,7 +508,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                                          wp.int8(-_c[2, l]))
 
                         has_ngh_at_same_level = wp.bool(False)
-                        accumulated = wp.neon_read_ngh(f_0_pn, index, pull_direction, l, self.compute_dtype(0), has_ngh_at_same_level)
+                        accumulated = wp.neon_read_ngh(f_0_pn, index, pull_direction, l, self.compute_dtype(0),
+                                                       has_ngh_at_same_level)
 
                         # if (!pin.hasChildren(cell, dir)) {
                         if not wp.neon_has_finer_ngh(f_0_pn, index, pull_direction):
@@ -500,7 +520,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 if wp.neon_has_parent(f_0_pn, index):
                                     # YES halo cell on top of us
                                     has_a_courser_ngh = wp.bool(False)
-                                    exploded_pop = wp.neon_lbm_read_coarser_ngh(f_0_pn, index, pull_direction, l, self.compute_dtype(0), has_a_courser_ngh)
+                                    exploded_pop = wp.neon_lbm_read_coarser_ngh(f_0_pn, index, pull_direction, l,
+                                                                                self.compute_dtype(0),
+                                                                                has_a_courser_ngh)
                                     if has_a_courser_ngh:
                                         # Full state:
                                         # NO finer ngh. in the pull direction (opposite of l)
@@ -525,26 +547,25 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 # YES ngh. at the same level
                                 # -> **Coalescence**
                                 coalescence_factor = wp.neon_read(coalescence_factor_pn, index, l)
-                                accumulated = accumulated *coalescence_factor
+                                accumulated = accumulated * coalescence_factor
                                 wp.neon_write(f_1_pn, index, l, accumulated)
 
                             else:
                                 wp.print("ERRRRRRORRRRRRRRRRRRRR")
 
-
                 loader.declare_kernel(cl_stream_coarse)
 
             return ll_stream_coarse
 
-        @neon.Container.factory(name="stream_coarse")
+        @neon.Container.factory(name="stream_coarse_step_C")
         def stream_coarse_step_C(
-            level: int,
-            f_0_fd: Any,
-            f_1_fd: Any,
-            bc_mask_fd: Any,
-            missing_mask_fd: Any,
-            omega: Any,
-            timestep: int,
+                level: int,
+                f_0_fd: Any,
+                f_1_fd: Any,
+                bc_mask_fd: Any,
+                missing_mask_fd: Any,
+                omega: Any,
+                timestep: int,
         ):
 
             def ll_stream_coarse(loader: neon.Loader):
@@ -576,7 +597,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _f_post_collision = _f0_thread
                     _f_post_stream = _f1_thread
 
-
                     # do non mres post-streaming corrections
                     _f_post_stream = apply_bc(
                         index, timestep,
@@ -594,13 +614,13 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
             return ll_stream_coarse
 
         return None, {
-            #"single_step_finest": single_step_finest,
+            # "single_step_finest": single_step_finest,
             "collide_coarse": collide_coarse,
             "stream_coarse_step_A": stream_coarse_step_A,
             "stream_coarse_step_B": stream_coarse_step_B,
             "stream_coarse_step_C": stream_coarse_step_C}
 
-    def get_containers(self, target_level,  f_0, f_1, bc_mask, missing_mask,  omega, timestep):
+    def get_containers(self, target_level, f_0, f_1, bc_mask, missing_mask, omega, timestep):
         containers = {'even': {}, 'odd': {}}
         _, container = self._construct_neon()
         for key in container.keys():
@@ -609,14 +629,17 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         return containers
 
     def init_containers(self):
-        self.containers=None
+        self.containers = None
         _, self.containers = self._construct_neon()
 
-    def launch_container(self, streamId, op_name, mres_level, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
+    def launch_container(self, streamId, op_name, mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep):
         self.containers[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep).run(0)
 
+    def add_to_app(self, app, op_name, mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep):
+        app.append(self.containers[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep))
+
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_launch(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
+    def neon_launch(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
         c = self.neon_container(f_0, f_1, bc_mask, missing_mask, omega, timestep)
         c.run(0)
         return f_0, f_1

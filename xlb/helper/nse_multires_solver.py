@@ -7,6 +7,7 @@ from typing import Tuple, List
 import neon
 import warp as wp
 
+
 class Nse_multires_simulation:
     def __init__(self, grid, velocity_set, stepper, omega):
         self.stepper = stepper
@@ -18,29 +19,28 @@ class Nse_multires_simulation:
         # Create fields
         self.rho = grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
         self.u = grid.create_field(cardinality=3, dtype=self.precision_policy.store_precision)
-        self.coalescence_factor = grid.create_field(cardinality=velocity_set.q, dtype=self.precision_policy.store_precision)
+        self.coalescence_factor = grid.create_field(cardinality=velocity_set.q,
+                                                    dtype=self.precision_policy.store_precision)
 
-        fname_prefix='test'
+        fname_prefix = 'test'
 
         for level in range(self.count_levels):
             self.u.fill_run(level, 0.0, 0)
             self.rho.fill_run(level, 1.0, 0)
             self.coalescence_factor.fill_run(level, 0.0, 0)
 
+        # wp.synchronize()
+        # self.u.update_host(0)
+        # wp.synchronize()
+        # self.u.export_vti(f"u_{fname_prefix}_topology.vti", 'u')
 
-
-        #wp.synchronize()
-        #self.u.update_host(0)
-        #wp.synchronize()
-        #self.u.export_vti(f"u_{fname_prefix}_topology.vti", 'u')
-
-        self.f_0, self.f_1, self.bc_mask, self.missing_mask = stepper.prepare_fields(rho=self.rho,u=self.u)
+        self.f_0, self.f_1, self.bc_mask, self.missing_mask = stepper.prepare_fields(rho=self.rho, u=self.u)
         stepper.prepare_coalescence_count(coalescence_factor=self.coalescence_factor, bc_mask=self.bc_mask)
 
-        #wp.synchronize()
-        #self.u.update_host(0)
-        #wp.synchronize()
-        #self.u.export_vti(f"u_t2_{fname_prefix}_topology.vti", 'u')
+        # wp.synchronize()
+        # self.u.update_host(0)
+        # wp.synchronize()
+        # self.u.export_vti(f"u_t2_{fname_prefix}_topology.vti", 'u')
 
         self.odd_step = None
         self.even_step = None
@@ -54,6 +54,7 @@ class Nse_multires_simulation:
         )
 
         self.__init_containers(self.count_levels)
+        self._step_init()
 
     def __init_containers(self, num_levels):
         # working only with level 0 for now
@@ -77,7 +78,7 @@ class Nse_multires_simulation:
 
     def export_macroscopic(self, fname_prefix):
         print(f"exporting macroscopic: #levels {self.grid.count_levels}")
-        self.macro.launch_container(streamId = 0, f_0 = self.f_0, bc_mask = self.bc_mask, rho = self.rho, u = self.u)
+        self.macro.launch_container(streamId=0, f_0=self.f_0, bc_mask=self.bc_mask, rho=self.rho, u=self.u)
 
         import warp as wp
         wp.synchronize()
@@ -88,17 +89,22 @@ class Nse_multires_simulation:
 
         return
 
-    # one step at the corase level
     def step(self):
+        self.iteration_idx = self.iteration_idx + 1
+        self.sk.run()
 
-        def recurtion(level):
+    # one step at the corase level
+    def _step_init(self):
+        self.app = []
+
+        def recurtion(level, app):
             if level < 0:
                 return
             print(f"RECURTION down to level {level}")
             print(f"RECURTION Level {level}, COLLIDE")
 
-            self.stepper.launch_container(
-                streamId=0,
+            self.stepper.add_to_app(
+                app=app,
                 op_name="collide_coarse",
                 mres_level=level,
                 f_0=self.f_0,
@@ -121,12 +127,12 @@ class Nse_multires_simulation:
             #     #sys.exit()
             #     pass
 
-            recurtion(level-1)
-            recurtion(level-1)
+            recurtion(level - 1, app)
+            recurtion(level - 1, app)
 
             print(f"RECURTION Level {level}, stream_coarse_step_A")
-            self.stepper.launch_container(
-                streamId=0,
+            self.stepper.add_to_app(
+                app=app,
                 op_name="stream_coarse_step_A",
                 mres_level=level,
                 f_0=self.f_1,
@@ -138,22 +144,22 @@ class Nse_multires_simulation:
             )
             print(f"RECURTION Level {level}, stream_coarse_step_B")
 
-            self.stepper.launch_container(
-                streamId=0,
+            self.stepper.add_to_app(
+                app=app,
                 op_name="stream_coarse_step_B",
                 mres_level=level,
                 f_0=self.f_1,
                 f_1=self.f_0,
                 bc_mask=self.bc_mask,
                 missing_mask=self.missing_mask,
-                omega = self.coalescence_factor,
+                omega=self.coalescence_factor,
                 timestep=iteration_id,
             )
 
             print(f"RECURTION Level {level}, stream_coarse_step_C")
 
-            self.stepper.launch_container(
-                streamId=0,
+            self.stepper.add_to_app(
+                app=app,
                 op_name="stream_coarse_step_C",
                 mres_level=level,
                 f_0=self.f_1,
@@ -176,12 +182,10 @@ class Nse_multires_simulation:
             #     sys.exit()
             #     pass
 
-
         self.iteration_idx += 1
         iteration_id = self.iteration_idx % 2
 
-        recurtion(self.count_levels-1)
-
-
-
-
+        recurtion(self.count_levels - 1, app=self.app)
+        bk = self.grid.get_neon_backend()
+        self.sk = neon.Skeleton(backend=bk)
+        self.sk.sequence("mres_nse_stepper", self.app)
