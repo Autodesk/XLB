@@ -203,7 +203,7 @@ def main():
     print(f"Number of levels {stats['num_levels']}")
     print(f"Cube edge {args.cube_edge}")
     print(f"Coarse Iterations {args.num_steps}")
-    print(f"Fine Iterations {lups_stats["finer_steps"]}")
+    print(f"Fine Iterations {mlups_stats["finer_steps"]}")
     print(f"EMLUPs: {mlups_stats["EMLUPS"]:.2f}")
 
 
