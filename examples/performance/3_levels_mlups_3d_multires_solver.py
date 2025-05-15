@@ -146,10 +146,6 @@ def run(backend, precision_policy, grid_shape, num_steps):
     omega = 1.0 / (3.0 * visc + 0.5)
     #omega = 1.0
 
-
-    # # Initialize fields and run simulation
-    # omega = 1.0
-
     sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
 
     # sim.export_macroscopic("Initial_")
@@ -157,7 +153,6 @@ def run(backend, precision_policy, grid_shape, num_steps):
 
     print("start timing")
     wp.synchronize()
-
     start_time = time.time()
     for i in range(num_steps):
         sim.step()
