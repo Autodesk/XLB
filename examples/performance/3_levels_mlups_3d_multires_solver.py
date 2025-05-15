@@ -112,7 +112,8 @@ def run(backend, precision_policy, grid_shape, num_steps):
     l1 = get_peeled_np(1, 7)
     l2 = get_peeled_np(2, 4)
 
-    lastLevel = 3
+    num_levels = 4
+    lastLevel = num_levels -1
     divider = 2**lastLevel
     m = neon.Index_3d(dim.x // divider +1, dim.y // divider+1, dim.z // divider+1)
     lastLevel = np.ones((m.x, m.y, m.z), dtype=int)
@@ -156,21 +157,23 @@ def run(backend, precision_policy, grid_shape, num_steps):
 
     print("start timing")
     wp.synchronize()
-    start_time = time.time()
 
+    start_time = time.time()
     for i in range(num_steps):
         sim.step()
         if i%100 == 0:
             print(f"step {i}")
         #    sim.export_macroscopic("u_lid_driven_cavity_")
+    wp.synchronize()
     t = time.time() - start_time
+    print(f"Timing  {t}")
 
     sim.export_macroscopic("u_lid_driven_cavity_")
-    return t
+    return {"time":t, "num_levels":num_levels}
 
 
-def calculate_mlups(cube_edge, num_steps, elapsed_time):
-    num_step_finer = num_steps * 2**(4-1)
+def calculate_mlups(cube_edge, num_steps, elapsed_time, num_levels):
+    num_step_finer = num_steps * 2**(num_levels-1)
     total_lattice_updates = cube_edge**3 * num_step_finer
     mlups = (total_lattice_updates / elapsed_time) / 1e6
     return mlups
@@ -193,11 +196,13 @@ def main():
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)
-    elapsed_time = run(backend, precision_policy, grid_shape, args.num_steps)
-    mlups = calculate_mlups(args.cube_edge, args.num_steps, elapsed_time)
+    stats = run(backend, precision_policy, grid_shape, args.num_steps)
+    mlups = calculate_mlups(args.cube_edge, args.num_steps, stats['time'], stats['num_levels'])
 
-    print(f"Simulation completed in {elapsed_time:.2f} seconds")
-    print(f"MLUPs: {mlups:.2f}")
+    print(f"Simulation completed in {stats['time']:.2f} seconds")
+    print(f"Number of levels {stats['num_levels']}")
+    print(f"Cube edge {args.cube_edge}")
+    print(f"EMLUPs: {mlups:.2f}")
 
 
 if __name__ == "__main__":
