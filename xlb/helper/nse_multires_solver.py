@@ -112,7 +112,7 @@ class Nse_multires_simulation:
                 bc_mask=self.bc_mask,
                 missing_mask=self.missing_mask,
                 omega=self.omega,
-                timestep=iteration_id,
+                timestep=0,
             )
             # if(level == 0):
             #     wp.synchronize()
@@ -140,7 +140,7 @@ class Nse_multires_simulation:
                 bc_mask=self.bc_mask,
                 missing_mask=self.missing_mask,
                 omega=self.omega,
-                timestep=iteration_id,
+                timestep=0,
             )
             print(f"RECURTION Level {level}, stream_coarse_step_B")
 
@@ -153,7 +153,7 @@ class Nse_multires_simulation:
                 bc_mask=self.bc_mask,
                 missing_mask=self.missing_mask,
                 omega=self.coalescence_factor,
-                timestep=iteration_id,
+                timestep=0,
             )
 
             print(f"RECURTION Level {level}, stream_coarse_step_C")
@@ -167,7 +167,7 @@ class Nse_multires_simulation:
                 bc_mask=self.bc_mask,
                 missing_mask=self.missing_mask,
                 omega=self.omega,
-                timestep=iteration_id,
+                timestep=0,
             )
             # if(level == 1):
             #     wp.synchronize()
@@ -181,9 +181,6 @@ class Nse_multires_simulation:
             #     print("exit")
             #     sys.exit()
             #     pass
-
-        self.iteration_idx += 1
-        iteration_id = self.iteration_idx % 2
 
         recurtion(self.count_levels - 1, app=self.app)
         bk = self.grid.get_neon_backend()
