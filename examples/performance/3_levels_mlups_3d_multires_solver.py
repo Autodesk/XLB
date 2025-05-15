@@ -152,8 +152,8 @@ def run(backend, precision_policy, grid_shape, num_steps):
 
     sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
 
-    sim.export_macroscopic("Initial_")
-    sim.step()
+    # sim.export_macroscopic("Initial_")
+    # sim.step()
 
     print("start timing")
     wp.synchronize()
@@ -176,7 +176,7 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time, num_levels):
     num_step_finer = num_steps * 2**(num_levels-1)
     total_lattice_updates = cube_edge**3 * num_step_finer
     mlups = (total_lattice_updates / elapsed_time) / 1e6
-    return mlups
+    return {"EMLUPS":mlups, "finer_steps":num_step_finer}
 
 
     # # remove boundary cells
@@ -197,12 +197,14 @@ def main():
     backend, precision_policy = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)
     stats = run(backend, precision_policy, grid_shape, args.num_steps)
-    mlups = calculate_mlups(args.cube_edge, args.num_steps, stats['time'], stats['num_levels'])
+    mlups_stats = calculate_mlups(args.cube_edge, args.num_steps, stats['time'], stats['num_levels'])
 
     print(f"Simulation completed in {stats['time']:.2f} seconds")
     print(f"Number of levels {stats['num_levels']}")
     print(f"Cube edge {args.cube_edge}")
-    print(f"EMLUPs: {mlups:.2f}")
+    print(f"Coarse Iterations {args.num_steps}")
+    print(f"Fine Iterations {lups_stats["finer_steps"]}")
+    print(f"EMLUPs: {mlups_stats["EMLUPS"]:.2f}")
 
 
 if __name__ == "__main__":
