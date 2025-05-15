@@ -205,7 +205,8 @@ def main():
     print(f"Coarse Iterations {args.num_steps}")
     finer_steps = mlups_stats["finer_steps"]
     print(f"Fine Iterations {finer_steps}")
-    print(f"EMLUPs: {mlups_stats["EMLUPS"]:.2f}")
+    EMLUPS = mlups_stats["EMLUPS"]
+    print(f"EMLUPs: {EMLUPS:.2f}")
 
 
 if __name__ == "__main__":
