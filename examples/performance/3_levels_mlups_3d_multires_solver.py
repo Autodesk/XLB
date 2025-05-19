@@ -6,6 +6,7 @@ import numpy as np
 
 # add a directory to the PYTHON PATH
 import sys
+
 # sys.path.append('/home/max/repos/neon/warping/neon_warp_testing/neon_py_bindings/py/')
 import neon
 
@@ -16,29 +17,48 @@ from xlb.operator.stepper import MultiresIncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 from xlb.distribute import distribute
 
+
+import time
+import numpy as np
+import vtk
+from vtk.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
+from pathlib import Path
+import open3d as o3d
+from tabulate import tabulate
+import h5py
+import cupy as cp  # Added for GPU-accelerated array operations
+
+# Import and initialize NVIDIA Warp for GPU acceleration
+import warp as wp
+
+wp.init()
+DEVICE = "cuda"
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
     # Positional arguments
     parser.add_argument("cube_edge", type=int, help="Length of the edge of the cubic grid")
     parser.add_argument("num_steps", type=int, help="Timestep for the simulation")
-    parser.add_argument("backend", type=str, help="Backend for the simulation (jax, warp or neon)")
+    parser.add_argument("compute_backend", type=str, help="Backend for the simulation (jax, warp or neon)")
     parser.add_argument("precision", type=str, help="Precision for the simulation (e.g., fp32/fp32)")
 
     # Optional arguments
     parser.add_argument("--num_devices", type=int, default=0, help="Number of devices for the simulation (default: 0)")
-    parser.add_argument("--velocity_set", type=str, default='D3Q19',
-                        help="Lattice type: D3Q19 or D3Q27 (default: D3Q19)"
-                        )
+    parser.add_argument("--velocity_set", type=str, default="D3Q19", help="Lattice type: D3Q19 or D3Q27 (default: D3Q19)")
 
     return parser.parse_args()
 
 
 def setup_simulation(args):
-    backend = None
-    if args.backend == "jax": backend = ComputeBackend.JAX
-    elif args.backend == "warp": backend = ComputeBackend.WARP
-    elif args.backend == "neon": backend = ComputeBackend.NEON
-    if backend is None:
+    compute_backend = None
+    if args.compute_backend == "jax":
+        compute_backend = ComputeBackend.JAX
+    elif args.compute_backend == "warp":
+        compute_backend = ComputeBackend.WARP
+    elif args.compute_backend == "neon":
+        compute_backend = ComputeBackend.NEON
+    if compute_backend is None:
         raise ValueError("Invalid backend")
 
     precision_policy_map = {
@@ -52,29 +72,31 @@ def setup_simulation(args):
         raise ValueError("Invalid precision")
 
     velocity_set = None
-    if args.velocity_set == 'D3Q19': velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
-    elif args.velocity_set == 'D3Q27': velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, backend=backend)
+    if args.velocity_set == "D3Q19":
+        velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
+    elif args.velocity_set == "D3Q27":
+        velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=compute_backend)
     if velocity_set is None:
         raise ValueError("Invalid velocity set")
 
     xlb.init(
         velocity_set=velocity_set,
-        default_backend=backend,
+        default_backend=compute_backend,
         default_precision_policy=precision_policy,
     )
 
-    return backend, precision_policy
+    return compute_backend, precision_policy
 
 
-def run(backend, precision_policy, grid_shape, num_steps):
+def run(compute_backend, precision_policy, grid_shape, num_steps):
     # Create grid and setup boundary conditions
-    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
+    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
 
     def peel(dim, idx, peel_level, outwards):
         if outwards:
-            xIn =  idx.x <= peel_level or idx.x >= dim.x -1 -peel_level
-            yIn =  idx.y <= peel_level or idx.y >= dim.y -1 -peel_level
-            zIn =  idx.z <= peel_level or idx.z >= dim.z -1 - peel_level
+            xIn = idx.x <= peel_level or idx.x >= dim.x - 1 - peel_level
+            yIn = idx.y <= peel_level or idx.y >= dim.y - 1 - peel_level
+            zIn = idx.z <= peel_level or idx.z >= dim.z - 1 - peel_level
             return xIn or yIn or zIn
         else:
             xIn = idx.x >= peel_level and idx.x <= dim.x - 1 - peel_level
@@ -82,14 +104,11 @@ def run(backend, precision_policy, grid_shape, num_steps):
             zIn = idx.z >= peel_level and idx.z <= dim.z - 1 - peel_level
             return xIn and yIn and zIn
 
-
-    dim = neon.Index_3d(grid_shape[0],
-                        grid_shape[1],
-                        grid_shape[2])
+    dim = neon.Index_3d(grid_shape[0], grid_shape[1], grid_shape[2])
 
     def get_peeled_np(level, width):
         divider = 2**level
-        m = neon.Index_3d(dim.x // divider , dim.y // divider, dim.z // divider)
+        m = neon.Index_3d(dim.x // divider, dim.y // divider, dim.z // divider)
         if level == 0:
             m = dim
 
@@ -113,17 +132,19 @@ def run(backend, precision_policy, grid_shape, num_steps):
     l2 = get_peeled_np(2, 4)
 
     num_levels = 4
-    lastLevel = num_levels -1
+    lastLevel = num_levels - 1
     divider = 2**lastLevel
-    m = neon.Index_3d(dim.x // divider +1, dim.y // divider+1, dim.z // divider+1)
+    m = neon.Index_3d(dim.x // divider + 1, dim.y // divider + 1, dim.z // divider + 1)
     lastLevel = np.ones((m.x, m.y, m.z), dtype=int)
     lastLevel = np.ascontiguousarray(lastLevel, dtype=np.int32)
 
     levels = [l0, l1, l2, lastLevel]
-
-    grid = multires_grid_factory(grid_shape, velocity_set=velocity_set,
-                                 sparsity_pattern_list=levels,
-                                 sparsity_pattern_origins=[ neon.Index_3d(0, 0, 0)]*len(levels),)
+    grid = multires_grid_factory(
+        grid_shape,
+        velocity_set=velocity_set,
+        sparsity_pattern_list=levels,
+        sparsity_pattern_origins=[neon.Index_3d(0, 0, 0)] * len(levels),
+    )
 
     box = grid.bounding_box_indices()
     box_no_edge = grid.bounding_box_indices(remove_edges=True)
@@ -133,8 +154,10 @@ def run(backend, precision_policy, grid_shape, num_steps):
 
     prescribed_vel = 0.1
 
-    boundary_conditions = [EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
-                           EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls)]
+    boundary_conditions = [
+        EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
+        EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls),
+    ]
 
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
@@ -144,7 +167,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     clength = grid_shape[0] - 1
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
-    #omega = 1.0
+    # omega = 1.0
 
     sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
 
@@ -156,23 +179,22 @@ def run(backend, precision_policy, grid_shape, num_steps):
     start_time = time.time()
     for i in range(num_steps):
         sim.step()
-        if i%100 == 0:
+        if i % 1000 == 0:
             print(f"step {i}")
-        #    sim.export_macroscopic("u_lid_driven_cavity_")
+            sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time
     print(f"Timing  {t}")
 
-    sim.export_macroscopic("u_lid_driven_cavity_")
-    return {"time":t, "num_levels":num_levels}
+    # sim.export_macroscopic("u_lid_driven_cavity_")
+    return {"time": t, "num_levels": num_levels}
 
 
 def calculate_mlups(cube_edge, num_steps, elapsed_time, num_levels):
-    num_step_finer = num_steps * 2**(num_levels-1)
+    num_step_finer = num_steps * 2 ** (num_levels - 1)
     total_lattice_updates = cube_edge**3 * num_step_finer
     mlups = (total_lattice_updates / elapsed_time) / 1e6
-    return {"EMLUPS":mlups, "finer_steps":num_step_finer}
-
+    return {"EMLUPS": mlups, "finer_steps": num_step_finer}
 
     # # remove boundary cells
     # rho = rho[:, 1:-1, 1:-1, 1:-1]
@@ -186,13 +208,13 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time, num_levels):
     # from xlb.utils import  save_image
     # save_image(fields["u_magnitude"][:, ny//2, :], timestep=i, prefix="lid_driven_cavity")
 
-def main():
 
+def main():
     args = parse_arguments()
-    backend, precision_policy = setup_simulation(args)
+    compute_backend, precision_policy = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)
-    stats = run(backend, precision_policy, grid_shape, args.num_steps)
-    mlups_stats = calculate_mlups(args.cube_edge, args.num_steps, stats['time'], stats['num_levels'])
+    stats = run(compute_backend, precision_policy, grid_shape, args.num_steps)
+    mlups_stats = calculate_mlups(args.cube_edge, args.num_steps, stats["time"], stats["num_levels"])
 
     print(f"Simulation completed in {stats['time']:.2f} seconds")
     print(f"Number of levels {stats['num_levels']}")

@@ -5,7 +5,7 @@ import warp as wp
 import os
 
 # Print the PYTHONPATH
-pythonpath = os.environ.get('PYTHONPATH', 'PYTHONPATH is not set')
+pythonpath = os.environ.get("PYTHONPATH", "PYTHONPATH is not set")
 print(f"PYTHONPATH: {pythonpath}")
 import neon
 from typing import Any
@@ -103,9 +103,9 @@ class QuadraticEquilibrium(Equilibrium):
         )
         return f
 
-
     def _construct_neon(self):
         import neon
+
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _c = self.velocity_set.c
         _w = self.velocity_set.w
@@ -141,18 +141,18 @@ class QuadraticEquilibrium(Equilibrium):
             return feq
 
         import neon, typing
+
         @neon.Container.factory(name="QuadraticEquilibrium")
         def container(
             rho: Any,
             u: Any,
             f: Any,
         ):
-
-            def quadratic_equilibrium_ll(loader:neon.Loader):
+            def quadratic_equilibrium_ll(loader: neon.Loader):
                 loader.set_grid(rho.get_grid())
-                rho_pn=loader.get_read_handle(rho)
-                u_pn =loader.get_read_handle(u)
-                f_pn=loader.get_write_handle(f)
+                rho_pn = loader.get_read_handle(rho)
+                u_pn = loader.get_read_handle(u)
+                f_pn = loader.get_write_handle(f)
 
                 @wp.func
                 def quadratic_equilibrium_cl(index: typing.Any):
@@ -164,15 +164,17 @@ class QuadraticEquilibrium(Equilibrium):
 
                     # Set the output
                     for l in range(self.velocity_set.q):
-                        #wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
+                        # wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
                         wp.neon_write(f_pn, index, l, feq[l])
+
                 loader.declare_kernel(quadratic_equilibrium_cl)
+
             return quadratic_equilibrium_ll
+
         return functional, container
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, rho, u, f):
-        c = self.neon_container( rho, u, f)
+        c = self.neon_container(rho, u, f)
         c.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
-
         return f

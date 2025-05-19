@@ -19,10 +19,9 @@ class Nse_multires_simulation:
         # Create fields
         self.rho = grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
         self.u = grid.create_field(cardinality=3, dtype=self.precision_policy.store_precision)
-        self.coalescence_factor = grid.create_field(cardinality=velocity_set.q,
-                                                    dtype=self.precision_policy.store_precision)
+        self.coalescence_factor = grid.create_field(cardinality=velocity_set.q, dtype=self.precision_policy.store_precision)
 
-        fname_prefix = 'test'
+        fname_prefix = "test"
 
         for level in range(self.count_levels):
             self.u.fill_run(level, 0.0, 0)
@@ -42,8 +41,6 @@ class Nse_multires_simulation:
         # wp.synchronize()
         # self.u.export_vti(f"u_t2_{fname_prefix}_topology.vti", 'u')
 
-        self.odd_step = None
-        self.even_step = None
         self.iteration_idx = -1
         from xlb.operator.macroscopic import MultiresMacroscopic
 
@@ -61,18 +58,6 @@ class Nse_multires_simulation:
         self.containers = {}
         self.macroscopics = {}
 
-        # for target_level in range(num_levels):
-        #     self.containers[f"{target_level}"] = self.stepper.get_containers(target_level,
-        #                                              self.f_0,
-        #                                              self.f_1,
-        #                                              self.bc_mask,
-        #                                              self.missing_mask,
-        #                                              self.omega,
-        #                                              self.iteration_idx)
-        #     pass
-
-        # for target_level in range(num_levels):
-        #     self.macroscopics[f"{target_level}"] = self.macro.get_containers(target_level, self.f_0, self.f_1, self.bc_mask, self.rho, self.u)
         self.stepper.init_containers()
         self.macro.init_containers()
 
@@ -81,10 +66,11 @@ class Nse_multires_simulation:
         self.macro.launch_container(streamId=0, f_0=self.f_0, bc_mask=self.bc_mask, rho=self.rho, u=self.u)
 
         import warp as wp
+
         wp.synchronize()
         self.u.update_host(0)
         wp.synchronize()
-        self.u.export_vti(f"{fname_prefix}{self.iteration_idx}.vti", 'u')
+        self.u.export_vti(f"{fname_prefix}{self.iteration_idx}.vti", "u")
         print("DONE exporting macroscopic")
 
         return

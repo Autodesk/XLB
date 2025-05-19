@@ -6,6 +6,7 @@ import numpy as np
 
 # add a directory to the PYTHON PATH
 import sys
+
 # sys.path.append('/home/max/repos/neon/warping/neon_warp_testing/neon_py_bindings/py/')
 import neon
 
@@ -15,6 +16,7 @@ from xlb.grid import multires_grid_factory
 from xlb.operator.stepper import MultiresIncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 from xlb.distribute import distribute
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
@@ -26,18 +28,19 @@ def parse_arguments():
 
     # Optional arguments
     parser.add_argument("--num_devices", type=int, default=0, help="Number of devices for the simulation (default: 0)")
-    parser.add_argument("--velocity_set", type=str, default='D3Q19',
-                        help="Lattice type: D3Q19 or D3Q27 (default: D3Q19)"
-                        )
+    parser.add_argument("--velocity_set", type=str, default="D3Q19", help="Lattice type: D3Q19 or D3Q27 (default: D3Q19)")
 
     return parser.parse_args()
 
 
 def setup_simulation(args):
     backend = None
-    if args.backend == "jax": backend = ComputeBackend.JAX
-    elif args.backend == "warp": backend = ComputeBackend.WARP
-    elif args.backend == "neon": backend = ComputeBackend.NEON
+    if args.backend == "jax":
+        backend = ComputeBackend.JAX
+    elif args.backend == "warp":
+        backend = ComputeBackend.WARP
+    elif args.backend == "neon":
+        backend = ComputeBackend.NEON
     if backend is None:
         raise ValueError("Invalid backend")
 
@@ -52,8 +55,10 @@ def setup_simulation(args):
         raise ValueError("Invalid precision")
 
     velocity_set = None
-    if args.velocity_set == 'D3Q19': velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
-    elif args.velocity_set == 'D3Q27': velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, backend=backend)
+    if args.velocity_set == "D3Q19":
+        velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
+    elif args.velocity_set == "D3Q27":
+        velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, backend=backend)
     if velocity_set is None:
         raise ValueError("Invalid velocity set")
 
@@ -72,9 +77,9 @@ def run(backend, precision_policy, grid_shape, num_steps):
 
     def peel(dim, idx, peel_level, outwards):
         if outwards:
-            xIn =  idx.x <= peel_level or idx.x >= dim.x -1 -peel_level
-            yIn =  idx.y <= peel_level or idx.y >= dim.y -1 -peel_level
-            zIn =  idx.z <= peel_level or idx.z >= dim.z -1 - peel_level
+            xIn = idx.x <= peel_level or idx.x >= dim.x - 1 - peel_level
+            yIn = idx.y <= peel_level or idx.y >= dim.y - 1 - peel_level
+            zIn = idx.z <= peel_level or idx.z >= dim.z - 1 - peel_level
             return xIn or yIn or zIn
         else:
             xIn = idx.x >= peel_level and idx.x <= dim.x - 1 - peel_level
@@ -82,38 +87,42 @@ def run(backend, precision_policy, grid_shape, num_steps):
             zIn = idx.z >= peel_level and idx.z <= dim.z - 1 - peel_level
             return xIn and yIn and zIn
 
-
-    dim = neon.Index_3d(grid_shape[0],
-                        grid_shape[1],
-                        grid_shape[2])
+    dim = neon.Index_3d(grid_shape[0], grid_shape[1], grid_shape[2])
     level_zero_mask = np.zeros((dim.x, dim.y, dim.z), dtype=int)
     level_zero_mask = np.ascontiguousarray(level_zero_mask, dtype=np.int32)
     # loop over all the elements in level_zero_mask and set to one any that have x=0 or y=0 or z=0
     for i in range(dim.x):
         for j in range(dim.y):
             for k in range(dim.z):
-                idx = neon.Index_3d(i,j,k)
+                idx = neon.Index_3d(i, j, k)
                 val = 0
-                if peel(dim, idx, dim.x/9, True):
+                if peel(dim, idx, dim.x / 9, True):
                     val = 1
                 level_zero_mask[i, j, k] = val
-
 
     m = neon.Index_3d(dim.x // 2, dim.y // 2, dim.z // 2)
     level_one_mask = np.ones((m.x, m.y, m.z), dtype=int)
     for i in range(m.x):
         for j in range(m.x):
             for k in range(m.x):
-                idx = neon.Index_3d(i,j,k)
+                idx = neon.Index_3d(i, j, k)
                 val = 1
                 level_one_mask[i, j, k] = val
 
     level_one_mask = np.ascontiguousarray(level_one_mask, dtype=np.int32)
 
-    grid = multires_grid_factory(grid_shape, velocity_set=velocity_set,
-                                 sparsity_pattern_list=[ level_zero_mask,level_one_mask ,],
-                                 sparsity_pattern_origins=[ neon.Index_3d(0, 0, 0),
-                                                            neon.Index_3d(0, 0, 0),])
+    grid = multires_grid_factory(
+        grid_shape,
+        velocity_set=velocity_set,
+        sparsity_pattern_list=[
+            level_zero_mask,
+            level_one_mask,
+        ],
+        sparsity_pattern_origins=[
+            neon.Index_3d(0, 0, 0),
+            neon.Index_3d(0, 0, 0),
+        ],
+    )
 
     box = grid.bounding_box_indices()
     box_no_edge = grid.bounding_box_indices(remove_edges=True)
@@ -123,8 +132,10 @@ def run(backend, precision_policy, grid_shape, num_steps):
 
     prescribed_vel = 0.05
 
-    boundary_conditions = [EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
-                           EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls)]
+    boundary_conditions = [
+        EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
+        EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls),
+    ]
 
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
@@ -135,7 +146,6 @@ def run(backend, precision_policy, grid_shape, num_steps):
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
     omega = 1.0
-
 
     # # Initialize fields and run simulation
     # omega = 1.0
@@ -150,7 +160,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     for i in range(num_steps):
         print(f"step {i}")
         sim.step()
-        if i%10 == 0:
+        if i % 10 == 0:
             sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time
@@ -164,7 +174,8 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time):
     mlups = (total_lattice_updates / elapsed_time) / 1e6
     return mlups
 
-def post_process(macro, rho, u, f_0,  i):
+
+def post_process(macro, rho, u, f_0, i):
     # Write the results. We'll use JAX backend for the post-processing
     # import jax.numpy as jnp
     # if not isinstance(f_0, jnp.ndarray):
@@ -172,13 +183,13 @@ def post_process(macro, rho, u, f_0,  i):
     #     f_0 = wp.to_jax(f_0)[..., 0]
     # else:
     #     f_0 = f_0
-    rho, u = macro(f_0, rho, u )
+    rho, u = macro(f_0, rho, u)
     wp.synchronize()
     u.update_host(0)
     rho.update_host(0)
     wp.synchronize()
-    u.export_vti(f"u_lid_driven_cavity_{i}.vti", 'u')
-    rho.export_vti(f"rho_lid_driven_cavity_{i}.vti", 'rho')
+    u.export_vti(f"u_lid_driven_cavity_{i}.vti", "u")
+    rho.export_vti(f"rho_lid_driven_cavity_{i}.vti", "rho")
 
     pass
 
@@ -194,8 +205,8 @@ def post_process(macro, rho, u, f_0,  i):
     # from xlb.utils import  save_image
     # save_image(fields["u_magnitude"][:, ny//2, :], timestep=i, prefix="lid_driven_cavity")
 
-def main():
 
+def main():
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)

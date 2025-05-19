@@ -23,7 +23,12 @@ def parse_arguments():
 
 
 def setup_simulation(args):
-    compute_backend = ComputeBackend.JAX if args.compute_backend == "jax" else ComputeBackend.WARP
+    if args.compute_backend == "jax":
+        compute_backend = ComputeBackend.JAX
+    elif args.compute_backend == "warp":
+        compute_backend = ComputeBackend.WARP
+    elif args.compute_backend == "neon":
+        compute_backend = ComputeBackend.NEON
     precision_policy_map = {
         "fp32/fp32": PrecisionPolicy.FP32FP32,
         "fp64/fp64": PrecisionPolicy.FP64FP64,

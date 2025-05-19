@@ -6,10 +6,12 @@ from xlb import DefaultConfig
 from xlb.compute_backend import ComputeBackend
 import neon
 
-def grid_factory(shape: Tuple[int, ...],
-                 compute_backend: ComputeBackend = None,
-                 velocity_set=None,
-                 ):
+
+def grid_factory(
+    shape: Tuple[int, ...],
+    compute_backend: ComputeBackend = None,
+    velocity_set=None,
+):
     compute_backend = compute_backend or DefaultConfig.default_backend
     if compute_backend == ComputeBackend.WARP:
         from xlb.grid.warp_grid import WarpGrid
@@ -18,8 +20,7 @@ def grid_factory(shape: Tuple[int, ...],
     elif compute_backend == ComputeBackend.NEON:
         from xlb.grid.neon_grid import NeonGrid
 
-        return NeonGrid(shape=shape,
-                        velocity_set=velocity_set)
+        return NeonGrid(shape=shape, velocity_set=velocity_set)
     elif compute_backend == ComputeBackend.JAX:
         from xlb.grid.jax_grid import JaxGrid
 
@@ -27,25 +28,26 @@ def grid_factory(shape: Tuple[int, ...],
 
     raise ValueError(f"Compute backend {compute_backend} is not supported")
 
-def multires_grid_factory(shape: Tuple[int, ...],
-                 compute_backend: ComputeBackend = None,
-                 velocity_set=None,
-                 sparsity_pattern_list: List[np.ndarray] = [],
-                 sparsity_pattern_origins: List[neon.Index_3d]=[],
-                 ):
 
+def multires_grid_factory(
+    shape: Tuple[int, ...],
+    compute_backend: ComputeBackend = None,
+    velocity_set=None,
+    sparsity_pattern_list: List[np.ndarray] = [],
+    sparsity_pattern_origins: List[neon.Index_3d] = [],
+):
     compute_backend = compute_backend or DefaultConfig.default_backend
     if compute_backend == ComputeBackend.WARP:
         from xlb.grid.warp_grid import WarpGrid
+
         raise ValueError(f"Compute backend {compute_backend} is not supported for multires grid")
 
     if compute_backend == ComputeBackend.NEON:
         from xlb.grid.multires_grid import NeonMultiresGrid
 
-        return NeonMultiresGrid(shape=shape,
-                                velocity_set=velocity_set,
-                                sparsity_pattern_list = sparsity_pattern_list,
-                                sparsity_pattern_origins=  sparsity_pattern_origins)
+        return NeonMultiresGrid(
+            shape=shape, velocity_set=velocity_set, sparsity_pattern_list=sparsity_pattern_list, sparsity_pattern_origins=sparsity_pattern_origins
+        )
 
     elif compute_backend == ComputeBackend.JAX:
         raise ValueError(f"Compute backend {compute_backend} is not supported for multires grid")
@@ -54,10 +56,11 @@ def multires_grid_factory(shape: Tuple[int, ...],
 
 
 class Grid(ABC):
-    def __init__(self,
-                 shape: Tuple[int, ...],
-                 compute_backend: ComputeBackend,
-                 ):
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        compute_backend: ComputeBackend,
+    ):
         self.shape = shape
         self.dim = len(shape)
         self.compute_backend = compute_backend

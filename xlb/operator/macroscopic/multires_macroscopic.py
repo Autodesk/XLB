@@ -18,7 +18,6 @@ class MultiresMacroscopic(Operator):
         self.first_moment = FirstMoment(*args, **kwargs)
         super().__init__(*args, **kwargs)
 
-
     def _construct_warp(self):
         zero_moment_func = self.zero_moment.warp_functional
         first_moment_func = self.first_moment.warp_functional
@@ -71,10 +70,10 @@ class MultiresMacroscopic(Operator):
             u = first_moment_func(f, rho)
             return rho, u
 
-
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         import neon, typing
+
         @neon.Container.factory("macroscopic")
         def container(
             level: int,
@@ -84,12 +83,13 @@ class MultiresMacroscopic(Operator):
             u_fild: Any,
         ):
             _d = self.velocity_set.d
+
             def macroscopic_ll(loader: neon.Loader):
                 loader.set_mres_grid(f_field.get_grid(), level)
 
-                rho=loader.get_mres_write_handle(rho_field)
-                u =loader.get_mres_write_handle(u_fild)
-                f=loader.get_mres_read_handle(f_field)
+                rho = loader.get_mres_write_handle(rho_field)
+                u = loader.get_mres_write_handle(u_fild)
+                f = loader.get_mres_read_handle(f_field)
                 bc_mask_pn = loader.get_mres_read_handle(bc_mask)
 
                 @wp.func
@@ -98,7 +98,7 @@ class MultiresMacroscopic(Operator):
                     _boundary_id = wp.neon_read(bc_mask_pn, gIdx, 0)
 
                     for l in range(self.velocity_set.q):
-                        _f[l] = wp.neon_read(f, gIdx,l)
+                        _f[l] = wp.neon_read(f, gIdx, l)
 
                     _rho, _u = functional(_f)
 
@@ -117,35 +117,19 @@ class MultiresMacroscopic(Operator):
                         wp.neon_write(u, gIdx, d, _u[d])
 
                 loader.declare_kernel(macroscopic_cl)
+
             return macroscopic_ll
+
         return functional, container
 
-    def get_containers(self, target_level, f_0, f_1, bc_mask, rho, u):
-        _, container = self._construct_neon()
-        evenList = []
-        oddList = []
-        evenList.append(container(target_level, f_0, bc_mask,   rho, u))
-        oddList.append( container(target_level, f_1, bc_mask,  rho, u))
-        return {'even':evenList ,
-                'odd':oddList }
-
-    def get_container(self, target_level, f_0, f_1, bc_mask, rho, u):
-        _, self.container = self._construct_neon()
-        evenList = []
-        oddList = []
-        evenList.append(container(target_level, f_0, bc_mask, rho, u))
-        oddList.append(container(target_level, f_1, bc_mask, rho, u))
-        return {"macro": evenList, "odd": oddList}
-
     def init_containers(self):
-        self.containers=None
+        self.containers = None
         _, self.containers = self._construct_neon()
 
-    def launch_container(self, streamId, f_0,  bc_mask, rho, u):
+    def launch_container(self, streamId, f_0, bc_mask, rho, u):
         grid = f_0.get_grid()
         for target_level in range(grid.num_levels):
-                self.containers(target_level, f_0, bc_mask, rho, u).run(streamId)
-
+            self.containers(target_level, f_0, bc_mask, rho, u).run(streamId)
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, f, rho, u):

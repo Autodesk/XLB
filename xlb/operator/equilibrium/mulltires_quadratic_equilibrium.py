@@ -5,7 +5,7 @@ import warp as wp
 import os
 
 # Print the PYTHONPATH
-pythonpath = os.environ.get('PYTHONPATH', 'PYTHONPATH is not set')
+pythonpath = os.environ.get("PYTHONPATH", "PYTHONPATH is not set")
 print(f"PYTHONPATH: {pythonpath}")
 import neon
 from typing import Any
@@ -23,6 +23,7 @@ class MultiresQuadraticEquilibrium(Equilibrium):
 
     def _construct_neon(self):
         import neon
+
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _c = self.velocity_set.c
         _w = self.velocity_set.w
@@ -58,20 +59,20 @@ class MultiresQuadraticEquilibrium(Equilibrium):
             return feq
 
         import typing
+
         @neon.Container.factory(name="QuadraticEquilibrium")
         def container(
-                level,
+            level,
             rho: Any,
             u: Any,
             f: Any,
         ):
-
-            def quadratic_equilibrium_ll(loader:neon.Loader):
+            def quadratic_equilibrium_ll(loader: neon.Loader):
                 loader.set_mres_grid(rho.get_grid(), level)
 
-                rho_pn=loader.get_mres_read_handle(rho)
-                u_pn =loader.get_mres_read_handle(u)
-                f_pn=loader.get_mres_write_handle(f)
+                rho_pn = loader.get_mres_read_handle(rho)
+                u_pn = loader.get_mres_read_handle(u)
+                f_pn = loader.get_mres_write_handle(f)
 
                 @wp.func
                 def quadratic_equilibrium_cl(index: typing.Any):
@@ -87,13 +88,16 @@ class MultiresQuadraticEquilibrium(Equilibrium):
                     # Set the output
                     for l in range(self.velocity_set.q):
                         wp.neon_write(f_pn, index, l, feq[l])
+
                 loader.declare_kernel(quadratic_equilibrium_cl)
+
             return quadratic_equilibrium_ll
+
         return functional, container
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, level, rho, u, f, stream):
-        c = self.neon_container( level, rho, u, f)
+        c = self.neon_container(level, rho, u, f)
         c.run(stream, container_runtime=neon.Container.ContainerRuntime.neon)
 
         return f

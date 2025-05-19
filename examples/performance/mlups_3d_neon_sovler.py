@@ -8,7 +8,8 @@ import numpy as np
 
 # add a directory to the PYTHON PATH
 import sys
-sys.path.append('/home/max/repos/neon/warping/neon_warp_testing/neon_py_bindings/py/')
+
+sys.path.append("/home/max/repos/neon/warping/neon_warp_testing/neon_py_bindings/py/")
 import neon
 
 from xlb.compute_backend import ComputeBackend
@@ -17,6 +18,7 @@ from xlb.grid import grid_factory
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 from xlb.distribute import distribute
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
@@ -28,18 +30,19 @@ def parse_arguments():
 
     # Optional arguments
     parser.add_argument("--num_devices", type=int, default=0, help="Number of devices for the simulation (default: 0)")
-    parser.add_argument("--velocity_set", type=str, default='D3Q19',
-                        help="Lattice type: D3Q19 or D3Q27 (default: D3Q19)"
-                        )
+    parser.add_argument("--velocity_set", type=str, default="D3Q19", help="Lattice type: D3Q19 or D3Q27 (default: D3Q19)")
 
     return parser.parse_args()
 
 
 def setup_simulation(args):
     backend = None
-    if args.backend == "jax": backend = ComputeBackend.JAX
-    elif args.backend == "warp": backend = ComputeBackend.WARP
-    elif args.backend == "neon": backend = ComputeBackend.NEON
+    if args.backend == "jax":
+        backend = ComputeBackend.JAX
+    elif args.backend == "warp":
+        backend = ComputeBackend.WARP
+    elif args.backend == "neon":
+        backend = ComputeBackend.NEON
     if backend is None:
         raise ValueError("Invalid backend")
 
@@ -54,8 +57,10 @@ def setup_simulation(args):
         raise ValueError("Invalid precision")
 
     velocity_set = None
-    if args.velocity_set == 'D3Q19': velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
-    elif args.velocity_set == 'D3Q27': velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, backend=backend)
+    if args.velocity_set == "D3Q19":
+        velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
+    elif args.velocity_set == "D3Q27":
+        velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, backend=backend)
     if velocity_set is None:
         raise ValueError("Invalid velocity set")
 
@@ -68,7 +73,7 @@ def setup_simulation(args):
     return backend, precision_policy
 
 
-def run( backend, precision_policy, grid_shape, num_steps):
+def run(backend, precision_policy, grid_shape, num_steps):
     # Create grid and setup boundary conditions
     velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, backend=backend)
     grid = grid_factory(grid_shape, velocity_set=velocity_set)
@@ -99,7 +104,7 @@ def run( backend, precision_policy, grid_shape, num_steps):
 
     for i in range(num_steps):
         sim.step()
-        if i%500 == 0:
+        if i % 500 == 0:
             sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time
@@ -113,7 +118,8 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time):
     mlups = (total_lattice_updates / elapsed_time) / 1e6
     return mlups
 
-def post_process(macro, rho, u, f_0,  i):
+
+def post_process(macro, rho, u, f_0, i):
     # Write the results. We'll use JAX backend for the post-processing
     # import jax.numpy as jnp
     # if not isinstance(f_0, jnp.ndarray):
@@ -121,13 +127,13 @@ def post_process(macro, rho, u, f_0,  i):
     #     f_0 = wp.to_jax(f_0)[..., 0]
     # else:
     #     f_0 = f_0
-    rho, u = macro(f_0, rho, u )
+    rho, u = macro(f_0, rho, u)
     wp.synchronize()
     u.update_host(0)
     rho.update_host(0)
     wp.synchronize()
-    u.export_vti(f"u_lid_driven_cavity_{i}.vti", 'u')
-    rho.export_vti(f"rho_lid_driven_cavity_{i}.vti", 'rho')
+    u.export_vti(f"u_lid_driven_cavity_{i}.vti", "u")
+    rho.export_vti(f"rho_lid_driven_cavity_{i}.vti", "rho")
 
     pass
 
@@ -143,8 +149,8 @@ def post_process(macro, rho, u, f_0,  i):
     # from xlb.utils import  save_image
     # save_image(fields["u_magnitude"][:, ny//2, :], timestep=i, prefix="lid_driven_cavity")
 
-def main():
 
+def main():
     args = parse_arguments()
     backend, precision_policy = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)

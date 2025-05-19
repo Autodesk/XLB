@@ -73,9 +73,7 @@ class Operator:
                 error = e
                 traceback_str = traceback.format_exc()
                 continue  # This skips to the next candidate if binding fails
-        method_candidates = [
-            (key, method) for key, method in self._backends.items() if key[1] == self.compute_backend
-        ]
+        method_candidates = [(key, method) for key, method in self._backends.items() if key[1] == self.compute_backend]
         raise Exception(f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}\n {traceback_str}")
 
     @property

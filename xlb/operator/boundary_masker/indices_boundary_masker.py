@@ -295,15 +295,16 @@ class IndicesBoundaryMasker(Operator):
         wp.synchronize()
 
         import neon, typing
+
         @neon.Container.factory("")
         def container(
-                bc_mask_warp: typing.Any,
-                missing_mask_warp: typing.Any,
-                bc_mask_field: typing.Any,
-                missing_mask_field: typing.Any,
+            bc_mask_warp: typing.Any,
+            missing_mask_warp: typing.Any,
+            bc_mask_field: typing.Any,
+            missing_mask_field: typing.Any,
         ):
             def loading_step(loader: neon.Loader):
-                loader.set_mres_grid(bc_mask.get_grid(), 0)
+                loader.set_mres_grid(bc_mask.get_grid(), level=0)
 
                 bc_mask_hdl = loader.get_mres_write_handle(bc_mask_field)
                 missing_mask_hdl = loader.get_mres_write_handle(missing_mask_field)
@@ -315,23 +316,12 @@ class IndicesBoundaryMasker(Operator):
                     gy = wp.neon_get_y(cIdx)
                     gz = wp.neon_get_z(cIdx)
                     # TODO@Max - XLB is flattening the y dimension in 3D, while neon uses the z dimension
-                    local_mask = bc_mask_warp[
-                        0,
-                        gx,
-                        gz,
-                        gy]
+                    local_mask = bc_mask_warp[0, gx, gz, gy]
                     wp.neon_write(bc_mask_hdl, gridIdx, 0, local_mask)
 
                     for q in range(self.velocity_set.q):
-                        is_missing = wp.uint8( missing_mask_warp[
-                            q,
-                            wp.neon_get_x(cIdx),
-                            wp.neon_get_z(cIdx),
-                            wp.neon_get_y(cIdx)])
-                        wp.neon_write(missing_mask_hdl,
-                                      gridIdx,
-                                      q,
-                                      is_missing)
+                        is_missing = wp.uint8(missing_mask_warp[q, wp.neon_get_x(cIdx), wp.neon_get_z(cIdx), wp.neon_get_y(cIdx)])
+                        wp.neon_write(missing_mask_hdl, gridIdx, q, is_missing)
 
                 loader.declare_kernel(masker)
 
