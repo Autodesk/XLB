@@ -521,7 +521,14 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
 
 
-
+                    # do non mres post-streaming corrections
+                    _f_post_stream = apply_bc(
+                        index, timestep,
+                        _boundary_id,
+                        _missing_mask,
+                        f_0_pn, f_1_pn,
+                        _f_post_collision, _f_post_stream, True
+                    )
 
 
 

@@ -156,19 +156,19 @@ class Nse_multires_simulation:
             #     timestep=0,
             # )
 
-            print(f"RECURTION Level {level}, stream_coarse_step_C")
-
-            self.stepper.add_to_app(
-                app=app,
-                op_name="stream_coarse_step_C",
-                mres_level=level,
-                f_0=self.f_1,
-                f_1=self.f_0,
-                bc_mask=self.bc_mask,
-                missing_mask=self.missing_mask,
-                omega=self.omega,
-                timestep=0,
-            )
+            # print(f"RECURTION Level {level}, stream_coarse_step_C")
+            #
+            # self.stepper.add_to_app(
+            #     app=app,
+            #     op_name="stream_coarse_step_C",
+            #     mres_level=level,
+            #     f_0=self.f_1,
+            #     f_1=self.f_0,
+            #     bc_mask=self.bc_mask,
+            #     missing_mask=self.missing_mask,
+            #     omega=self.omega,
+            #     timestep=0,
+            # )
             # if(level == 1):
             #     wp.synchronize()
             #     self.f_0.update_host(0)
