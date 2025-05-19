@@ -50,12 +50,14 @@ class MomentumTransfer(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def jax_implementation(self, f, bc_mask, missing_mask):
+    def jax_implementation(self, f_0, f_1, bc_mask, missing_mask):
         """
         Parameters
         ----------
-        f : jax.numpy.ndarray
+        f_0 : jax.numpy.ndarray
             The post-collision distribution function at each node in the grid.
+        f_1 : jax.numpy.ndarray
+            The buffer field the same size as f_0 (only given as input for consistency with the WARP backened API.)
         bc_mask : jax.numpy.ndarray
             A grid field with 0 everywhere except for boundary nodes which are designated
             by their respective boundary id's.
@@ -69,7 +71,7 @@ class MomentumTransfer(Operator):
             The force exerted on the solid geometry at each boundary node.
         """
         # Give the input post-collision populations, streaming once and apply the BC the find post-stream values.
-        f_post_collision = f
+        f_post_collision = f_0
         f_post_stream = self.stream(f_post_collision)
         f_post_stream = self.no_slip_bc_instance(f_post_collision, f_post_stream, bc_mask, missing_mask)
 
@@ -79,11 +81,13 @@ class MomentumTransfer(Operator):
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
 
         # the following will return force as a grid-based field with zero everywhere except for boundary nodes.
+        is_edge = jnp.logical_and(boundary, ~missing_mask[0])
         opp = self.velocity_set.opp_indices
         phi = f_post_collision[opp] + f_post_stream
-        phi = jnp.where(jnp.logical_and(boundary, missing_mask), phi, 0.0)
+        phi = jnp.where(jnp.logical_and(missing_mask, is_edge), phi, 0.0)
         force = jnp.tensordot(self.velocity_set.c[:, opp], phi, axes=(-1, 0))
-        return force
+        force_net = jnp.sum(force, axis=(i + 1 for i in range(self.velocity_set.d)))
+        return force_net
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
