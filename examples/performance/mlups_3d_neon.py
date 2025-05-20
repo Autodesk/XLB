@@ -6,12 +6,6 @@ import time
 import warp as wp
 import numpy as np
 
-# add a directory to the PYTHON PATH
-import sys
-
-sys.path.append("/home/max/repos/neon/warping/neon_warp_testing/neon_py_bindings/py/")
-import neon
-
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
 from xlb.grid import grid_factory
@@ -97,7 +91,7 @@ def run(macro, compute_backend, precision_policy, grid_shape, num_steps):
     start_time = time.time()
 
     for i in range(num_steps):
-        f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, omega, i)
+        f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, omega, 0)
         f_0, f_1 = f_1, f_0
 
         # if i % 2 == 0 or i == num_steps - 1:

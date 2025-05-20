@@ -157,8 +157,8 @@ class IndicesBoundaryMasker(Operator):
 
         return None, kernel
 
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+    # a helper for this operator
+    def _prepare_warp_kernel_inputs(self, bclist, bc_mask):
         # Pre-allocate arrays with maximum possible size
         max_size = sum(len(bc.indices[0]) if isinstance(bc.indices, list) else bc.indices.shape[1] for bc in bclist if bc.indices is not None)
         indices = np.zeros((3, max_size), dtype=np.int32)
@@ -195,19 +195,26 @@ class IndicesBoundaryMasker(Operator):
             bc.__dict__.pop("indices", None)
 
         # Trim arrays to actual size
-        indices = indices[:, :current_index]
-        id_numbers = id_numbers[:current_index]
-        is_interior = is_interior[:current_index]
+        total_index = current_index
+        indices = indices[:, :total_index]
+        id_numbers = id_numbers[:total_index]
+        is_interior = is_interior[:total_index]
 
         # Convert to Warp arrays
         wp_indices = wp.array(indices, dtype=wp.int32)
         wp_id_numbers = wp.array(id_numbers, dtype=wp.uint8)
         wp_is_interior = wp.array(is_interior, dtype=wp.bool)
+        return total_index, wp_indices, wp_id_numbers, wp_is_interior
+
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+        # prepare warp kernel inputs
+        total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_warp_kernel_inputs(bclist, bc_mask)
 
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
-            dim=current_index,
+            dim=total_index,
             inputs=[
                 wp_indices,
                 wp_id_numbers,
@@ -225,65 +232,21 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+        import neon, typing
+
         # Pre-allocate arrays with maximum possible size
         velocity_set = xlb_grid._get_velocity_set()
         missing_mask_warp = xlb_grid._create_warp_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
         bc_mask_warp = xlb_grid._create_warp_field(cardinality=1, dtype=Precision.UINT8)
         _, warp_kernel = self._construct_warp()
 
-        max_size = sum(len(bc.indices[0]) if isinstance(bc.indices, list) else bc.indices.shape[1] for bc in bclist if bc.indices is not None)
-        indices = np.zeros((3, max_size), dtype=np.int32)
-        id_numbers = np.zeros(max_size, dtype=np.uint8)
-        is_interior = np.zeros(max_size, dtype=bool)
-
-        current_index = 0
-        for bc in bclist:
-            assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC using keyword "indices"!'
-            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
-
-            bc_indices = np.asarray(bc.indices)
-            num_indices = bc_indices.shape[1]
-
-            # Ensure indices are 3D
-            if bc_indices.shape[0] == 2:
-                bc_indices = np.vstack([bc_indices, np.zeros(num_indices, dtype=int)])
-
-            # Add indices to the pre-allocated array
-            indices[:, current_index : current_index + num_indices] = bc_indices
-
-            # Set id numbers
-            id_numbers[current_index : current_index + num_indices] = bc.id
-
-            # Set is_interior flags
-            if bc.needs_padding:
-                is_interior[current_index : current_index + num_indices] = self.are_indices_in_interior(bc_indices, bc_mask_warp[0].shape)
-            else:
-                is_interior[current_index : current_index + num_indices] = False
-
-            current_index += num_indices
-
-            # Remove indices from BC objects
-            bc.__dict__.pop("indices", None)
-
-        # Trim arrays to actual size
-        indices = indices[:, :current_index]
-        id_numbers = id_numbers[:current_index]
-        is_interior = is_interior[:current_index]
-
-        # Convert to Warp arrays
-        wp_indices = wp.array(indices, dtype=wp.int32)
-        wp_id_numbers = wp.array(id_numbers, dtype=wp.uint8)
-        wp_is_interior = wp.array(is_interior, dtype=wp.bool)
-
-        if start_index is None:
-            start_index = wp.vec3i(0, 0, 0)
-        else:
-            start_index = wp.vec3i(*start_index)
+        # prepare warp kernel inputs
+        total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_warp_kernel_inputs(bclist, bc_mask)
 
         # Launch the warp kernel
         wp.launch(
             warp_kernel,
-            dim=current_index,
+            dim=total_index,
             inputs=[
                 wp_indices,
                 wp_id_numbers,
@@ -294,8 +257,6 @@ class IndicesBoundaryMasker(Operator):
         )
         wp.synchronize()
 
-        import neon, typing
-
         @neon.Container.factory("")
         def container(
             bc_mask_warp: typing.Any,
@@ -304,10 +265,15 @@ class IndicesBoundaryMasker(Operator):
             missing_mask_field: typing.Any,
         ):
             def loading_step(loader: neon.Loader):
-                loader.set_mres_grid(bc_mask.get_grid(), level=0)
-
-                bc_mask_hdl = loader.get_mres_write_handle(bc_mask_field)
-                missing_mask_hdl = loader.get_mres_write_handle(missing_mask_field)
+                grid_name = bc_mask_field.get_grid().get_name()
+                if grid_name == "mGrid":
+                    loader.set_mres_grid(bc_mask_field.get_grid(), level=0)
+                    bc_mask_hdl = loader.get_mres_write_handle(bc_mask_field)
+                    missing_mask_hdl = loader.get_mres_write_handle(missing_mask_field)
+                else:
+                    loader.set_grid(bc_mask_field.get_grid())
+                    bc_mask_hdl = loader.get_write_handle(bc_mask_field)
+                    missing_mask_hdl = loader.get_write_handle(missing_mask_field)
 
                 @wp.func
                 def masker(gridIdx: typing.Any):
