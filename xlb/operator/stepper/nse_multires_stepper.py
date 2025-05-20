@@ -388,6 +388,150 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
             return ll_collide_coarse
 
+        @neon.Container.factory(name="stream_coarse_step_ABC")
+        def stream_coarse_step_ABC(
+                level: int,
+                f_0_fd: Any,
+                f_1_fd: Any,
+                bc_mask_fd: Any,
+                missing_mask_fd: Any,
+                omega: Any,
+                timestep: int,
+        ):
+            num_levels = f_0_fd.get_grid().get_num_levels()
+
+            # if level != 0:
+            #     # throw an exception
+            #     raise Exception("Only the finest level is supported for now")
+
+            # module op to define odd of even iteration
+            # od_or_even = wp.module("odd_or_even", "even")
+
+            def ll_stream_coarse(loader: neon.Loader):
+                loader.set_mres_grid(bc_mask_fd.get_grid(), level)
+
+                f_0_pn = loader.get_mres_read_handle(f_0_fd)
+                f_1_pn = loader.get_mres_write_handle(f_1_fd)
+
+                bc_mask_pn = loader.get_mres_read_handle(bc_mask_fd)
+                missing_mask_pn = loader.get_mres_read_handle(missing_mask_fd)
+
+                _c = self.velocity_set.c
+
+                coalescence_factor_fd = omega
+                coalescence_factor_pn = loader.get_mres_read_handle(coalescence_factor_fd)
+
+
+                @wp.func
+                def cl_stream_coarse(index: typing.Any):
+                    _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
+                    if _boundary_id == wp.uint8(255):
+                        return
+
+                    are_we_a_halo_cell = wp.neon_has_child(f_0_pn, index)
+                    if are_we_a_halo_cell:
+                        # HERE: we are a halo cell so we just exit
+                        return
+
+                    # do stream normally
+                    _missing_mask = _missing_mask_vec()
+                    _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn,
+                                                                                 f_1_pn,
+                                                                                 missing_mask_pn,
+                                                                                 index)
+                    _f_post_collision = _f0_thread
+                    _f_post_stream = self.stream.neon_functional(f_0_pn, index)
+
+                    for l in range(self.velocity_set.q):
+                        if l == 9:
+                            # HERE, we skip the center direction
+                            continue
+
+                        pull_direction = wp.neon_ngh_idx(wp.int8(-_c[0, l]),
+                                                         wp.int8(-_c[1, l]),
+                                                         wp.int8(-_c[2, l]))
+
+                        has_ngh_at_same_level = wp.bool(False)
+                        accumulated = wp.neon_read_ngh(f_0_pn, index, pull_direction, l, self.compute_dtype(0),
+                                                       has_ngh_at_same_level)
+
+                        # if (!pin.hasChildren(cell, dir)) {
+                        if not wp.neon_has_finer_ngh(f_0_pn, index, pull_direction):
+                            # NO finer ngh. in the pull direction (opposite of l)
+                            if not has_ngh_at_same_level:
+                                # NO ngh. at the same level
+                                # COULD we have a ngh. at the courser level?
+                                if wp.neon_has_parent(f_0_pn, index):
+                                    # YES halo cell on top of us
+                                    has_a_courser_ngh = wp.bool(False)
+                                    exploded_pop = wp.neon_lbm_read_coarser_ngh(f_0_pn, index, pull_direction, l,
+                                                                                self.compute_dtype(0),
+                                                                                has_a_courser_ngh)
+                                    if has_a_courser_ngh:
+                                        # Full state:
+                                        # NO finer ngh. in the pull direction (opposite of l)
+                                        # NO ngh. at the same level
+                                        # YES ghost cell on top of us
+                                        # YES courser ngh.
+                                        # -> **Explosion**
+                                        # wp.neon_write(f_1_pn, index, l, exploded_pop)
+                                        _f_post_stream[l] = exploded_pop
+                        else:
+                            # HERE -> I have a finer ngh. in direction pull (opposite l)
+                            # Then I have to read from the halo on top of my finer ngh.
+                            if has_ngh_at_same_level:
+                                # if l == 10:
+                                #     wp.print(accumulated)
+                                #     glob = wp.neon_global_idx(f_1_pn, index)
+                                #     wp.neon_cuda_info()
+                                #     wp.neon_print(glob)
+                                #     wp.neon_level(f_1_pn)
+                                # accumulated = _w[l]
+                                # Full State
+                                # YES finer ngh. in the pull direction (opposite of l)
+                                # YES ngh. at the same level
+                                # -> **Coalescence**
+                                coalescence_factor = wp.neon_read(coalescence_factor_pn, index, l)
+                                accumulated = accumulated * coalescence_factor
+                                #wp.neon_write(f_1_pn, index, l, accumulated)
+                                _f_post_stream[l] = accumulated
+                            else:
+                                wp.print("ERRRRRRORRRRRRRRRRRRRR")
+
+
+
+
+
+
+                    # do non mres post-streaming corrections
+                    _f_post_stream = apply_bc(
+                        index, timestep,
+                        _boundary_id,
+                        _missing_mask,
+                        f_0_pn, f_1_pn,
+                        _f_post_collision, _f_post_stream, True
+                    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    for l in range(self.velocity_set.q):
+                        wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
+                    # wp.print("stream_coarse")
+
+                loader.declare_kernel(cl_stream_coarse)
+
+            return ll_stream_coarse
+
         @neon.Container.factory(name="stream_coarse_step_A")
         def stream_coarse_step_A(
             level: int,
@@ -582,6 +726,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         return None, {
             # "single_step_finest": single_step_finest,
             "collide_coarse": collide_coarse,
+            "stream_coarse_step_ABC": stream_coarse_step_ABC,
             "stream_coarse_step_A": stream_coarse_step_A,
             "stream_coarse_step_B": stream_coarse_step_B,
             "stream_coarse_step_C": stream_coarse_step_C,
