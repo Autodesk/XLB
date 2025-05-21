@@ -101,25 +101,27 @@ def run(backend, precision_policy, grid_shape, num_steps):
                 for k in range(m.z):
                     idx = neon.Index_3d(i, j, k)
                     val = 0
-                    if peel(m, idx, m.x / width, True):
+                    if peel(m, idx, width, True):
                         val = 1
                     mask[i, j, k] = val
         return mask
 
-    levels = []
 
-    l0 = get_peeled_np(0, 17)
-    l1 = get_peeled_np(1, 7)
-    l2 = get_peeled_np(2, 4)
+    def get_levels(num_levels):
+        levels = []
+        for i in range(num_levels-1):
+            l = get_peeled_np(i, 8)
+            levels.append(l)
+        lastLevel = num_levels - 1
+        divider = 2 ** lastLevel
+        m = neon.Index_3d(dim.x // divider + 1, dim.y // divider + 1, dim.z // divider + 1)
+        lastLevel = np.ones((m.x, m.y, m.z), dtype=int)
+        lastLevel = np.ascontiguousarray(lastLevel, dtype=np.int32)
+        levels.append(lastLevel)
+        return levels
 
-    num_levels = 4
-    lastLevel = num_levels -1
-    divider = 2**lastLevel
-    m = neon.Index_3d(dim.x // divider +1, dim.y // divider+1, dim.z // divider+1)
-    lastLevel = np.ones((m.x, m.y, m.z), dtype=int)
-    lastLevel = np.ascontiguousarray(lastLevel, dtype=np.int32)
-
-    levels = [l0, l1, l2, lastLevel]
+    num_levels = 5
+    levels = get_levels(num_levels)
 
     grid = multires_grid_factory(grid_shape, velocity_set=velocity_set,
                                  sparsity_pattern_list=levels,
