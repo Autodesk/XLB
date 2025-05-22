@@ -3,11 +3,6 @@ import argparse
 import time
 import warp as wp
 import numpy as np
-
-# add a directory to the PYTHON PATH
-import sys
-
-# sys.path.append('/home/max/repos/neon/warping/neon_warp_testing/neon_py_bindings/py/')
 import neon
 
 from xlb.compute_backend import ComputeBackend
@@ -15,25 +10,6 @@ from xlb.precision_policy import PrecisionPolicy
 from xlb.grid import multires_grid_factory
 from xlb.operator.stepper import MultiresIncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
-from xlb.distribute import distribute
-
-
-import time
-import numpy as np
-import vtk
-from vtk.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
-from pathlib import Path
-import open3d as o3d
-from tabulate import tabulate
-import h5py
-import cupy as cp  # Added for GPU-accelerated array operations
-
-# Import and initialize NVIDIA Warp for GPU acceleration
-import warp as wp
-
-wp.init()
-DEVICE = "cuda"
-
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
@@ -88,10 +64,25 @@ def setup_simulation(args):
     return compute_backend, precision_policy
 
 
-def run(compute_backend, precision_policy, grid_shape, num_steps):
-    # Create grid and setup boundary conditions
-    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
+# def construct_indices_per_level(grid_shape_finest, indices_finest, active_voxels_mask_per_level, level_origins):
+#     # TODO: HS: This is not the efficient way of doing this. I need to write a Warp operator for this purpose
+#     num_levels = len(active_voxels_mask_per_level)
+#     indices_list = []
+#     for level in range(num_levels):
+#         refinement = 2**level
+#         grid_shape = tuple(x // refinement for x in grid_shape_finest)
+#         mask = np.zeros(grid_shape, dtype=bool)
+#         ox, oy, oz = level_origins[level]
+#         Lx, Ly, Lz = active_voxels_mask_per_level[level].shape
+#         mask[ox : ox + Lx, oy : oy + Ly, oz : oz + Lz] = active_voxels_mask_per_level[level]
+#         indices_per_level = (np.array(indices_finest) // refinement)[:, ::refinement]
+#         mask_per_level = mask[tuple(indices_per_level)]
+#         active_bc_indices_per_level = indices_per_level[:, mask_per_level].tolist()
+#         indices_list.append(active_bc_indices_per_level)
+#     return indices_list
 
+
+def problem1(grid_shape, velocity_set):
     def peel(dim, idx, peel_level, outwards):
         if outwards:
             xIn = idx.x <= peel_level or idx.x >= dim.x - 1 - peel_level
@@ -125,7 +116,6 @@ def run(compute_backend, precision_policy, grid_shape, num_steps):
                     mask[i, j, k] = val
         return mask
 
-
     def get_levels(num_levels):
         levels = []
         for i in range(num_levels-1):
@@ -139,7 +129,7 @@ def run(compute_backend, precision_policy, grid_shape, num_steps):
         levels.append(lastLevel)
         return levels
 
-    num_levels = 5
+    num_levels = 4
     levels = get_levels(num_levels)
 
     grid = multires_grid_factory(grid_shape, velocity_set=velocity_set,
@@ -151,9 +141,57 @@ def run(compute_backend, precision_policy, grid_shape, num_steps):
     lid = box_no_edge["top"]
     walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
     walls = np.unique(np.array(walls), axis=-1).tolist()
+    # convert bc indices to a list of list, where the first entry of the list corresponds to the finest level
+    lid = [lid, [], [], []]
+    walls = [walls, [], [], []]
+    return grid, lid, walls
+
+
+def problem2(grid_shape, velocity_set):
+    # Example 2: Coarsest at the edges (2 level only)
+    num_levels = 2
+    level_1 = np.ones((grid_shape[0] // 2, grid_shape[1] // 2, grid_shape[2] // 2), dtype=int)
+    finestLevel = np.ones((40, 40, 40), dtype=int)
+    finestLevel = np.ascontiguousarray(finestLevel, dtype=np.int32)
+    levels = [finestLevel, level_1]
+    level_origins = [(44, 44, 44), (0, 0, 0)]
+
+    # Create the multires grid
+    grid = multires_grid_factory(
+        grid_shape,
+        velocity_set=velocity_set,
+        sparsity_pattern_list=levels,
+        sparsity_pattern_origins=[neon.Index_3d(*level_origins[lvl]) for lvl in range(num_levels)],
+    )
+
+    box = grid.bounding_box_indices(shape=grid.level_to_shape(1))
+    box_no_edge = grid.bounding_box_indices(shape=grid.level_to_shape(1), remove_edges=True)
+    lid = box_no_edge["top"]
+    walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
+    walls = np.unique(np.array(walls), axis=-1).tolist()
+    # convert bc indices to a list of list, where the first entry of the list corresponds to the finest level
+    lid = [[], lid]
+    walls = [[], walls]
+    return grid, lid, walls
+
+
+def run(compute_backend, precision_policy, grid_shape, num_steps):
+    # Create grid and setup boundary conditions
+    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
+
+    # Convert indices to list of indices per level
+    # TODO: overlaps emerge if bc indices are orignally specified at the finest grid and they exist at the coarser levels
+    # levels_mask = [lvl.astype(bool) for lvl in levels]
+    # lid = construct_indices_per_level(grid_shape, lid, levels_mask, level_origins)
+    # walls = construct_indices_per_level(grid_shape, walls, levels_mask, level_origins)
+
+    # Example 1: fine to coarse
+    grid, lid, walls = problem1(grid_shape, velocity_set)
+
+    # Example 2: Coarse to fine:
+    # grid, lid, walls = problem2(grid_shape, velocity_set)
 
     prescribed_vel = 0.1
-
     boundary_conditions = [
         EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
         EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls),
@@ -162,12 +200,12 @@ def run(compute_backend, precision_policy, grid_shape, num_steps):
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-    Re = 5000.0
+    # Re = 5000.0
 
-    clength = grid_shape[0] - 1
-    visc = prescribed_vel * clength / Re
-    omega = 1.0 / (3.0 * visc + 0.5)
-    # omega = 1.0
+    # clength = grid_shape[0] - 1
+    # visc = prescribed_vel * clength / Re
+    # omega = 1.0 / (3.0 * visc + 0.5)
+    omega = 1.0
 
     sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
 
@@ -187,6 +225,7 @@ def run(compute_backend, precision_policy, grid_shape, num_steps):
     print(f"Timing  {t}")
 
     # sim.export_macroscopic("u_lid_driven_cavity_")
+    num_levels = grid.count_levels
     return {"time": t, "num_levels": num_levels}
 
 

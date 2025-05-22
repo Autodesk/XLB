@@ -4,9 +4,6 @@ from jax import jit
 import warp as wp
 import os
 
-# Print the PYTHONPATH
-pythonpath = os.environ.get("PYTHONPATH", "PYTHONPATH is not set")
-print(f"PYTHONPATH: {pythonpath}")
 import neon
 from typing import Any
 

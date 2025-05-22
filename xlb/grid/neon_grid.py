@@ -14,13 +14,13 @@ class NeonGrid(Grid):
         self.bk = None
         self.dim = None
         self.grid = None
-        self.xlb_lattice = velocity_set
+        self.velocity_set = velocity_set
         self.warp_grid = WarpGrid(shape)
 
         super().__init__(shape, ComputeBackend.NEON)
 
     def _get_velocity_set(self):
-        return self.xlb_lattice
+        return self.velocity_set
 
     def _initialize_backend(self):
         # FIXME@max: for now we hardcode the number of devices to 0
@@ -32,19 +32,16 @@ class NeonGrid(Grid):
 
             self.dim = py_neon.Index_3d(self.shape[0], 1, self.shape[1])
             self.neon_stencil = []
-            for c_idx in range(len(self.xlb_lattice._c[0])):
-                xval = self.xlb_lattice._c[0][c_idx]
-                yval = self.xlb_lattice._c[1][c_idx]
+            for q in range(self.velocity_set.q):
+                xval, yval = self.velocity_set._c[:, q]
                 self.neon_stencil.append([xval, 0, yval])
 
         else:
             self.dim = neon.Index_3d(self.shape[0], self.shape[1], self.shape[2])
 
             self.neon_stencil = []
-            for c_idx in range(len(self.xlb_lattice._c[0])):
-                xval = self.xlb_lattice._c[0][c_idx]
-                yval = self.xlb_lattice._c[1][c_idx]
-                zval = self.xlb_lattice._c[2][c_idx]
+            for q in range(self.velocity_set.q):
+                xval, yval, zval = self.velocity_set._c[:, q]
                 self.neon_stencil.append([xval, yval, zval])
 
         self.bk = neon.Backend(runtime=neon.Backend.Runtime.stream, dev_idx_list=dev_idx_list)
@@ -77,7 +74,7 @@ class NeonGrid(Grid):
         if ne_field is None:
             return warp_field
 
-        _d = self.xlb_lattice.d
+        _d = self.velocity_set.d
 
         import typing
 

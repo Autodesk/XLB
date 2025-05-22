@@ -1,11 +1,14 @@
-import numpy as np
-import warp as wp
+from typing import Any
+
 import jax
 import jax.numpy as jnp
+import numpy as np
+import warp as wp
+
 from xlb.compute_backend import ComputeBackend
+from xlb.grid import grid_factory
 from xlb.operator.operator import Operator
 from xlb.operator.stream.stream import Stream
-from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
 
 
@@ -117,7 +120,7 @@ class IndicesBoundaryMasker(Operator):
             id_number: wp.array1d(dtype=wp.uint8),
             is_interior: wp.array1d(dtype=wp.bool),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
         ):
             # Get the index of indices
             ii = wp.tid()
@@ -147,12 +150,12 @@ class IndicesBoundaryMasker(Operator):
                     # These directions will have missing information after streaming
                     if not check_index_bounds(pull_index, shape):
                         # Set the missing mask
-                        missing_mask[l, index[0], index[1], index[2]] = True
+                        missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
 
                     # handling geometries in the interior of the computational domain
                     elif check_index_bounds(pull_index, shape) and is_interior[ii]:
                         # Set the missing mask
-                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
+                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = wp.uint8(True)
                         bc_mask[0, push_index[0], push_index[1], push_index[2]] = id_number[ii]
 
         return None, kernel
@@ -226,57 +229,38 @@ class IndicesBoundaryMasker(Operator):
 
         return bc_mask, missing_mask
 
-    def _construct_neon(self):
-        # All the computation is done at the register step
-        return None, None
-
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
-        import neon, typing
+        import neon
 
         # Pre-allocate arrays with maximum possible size
-        velocity_set = xlb_grid._get_velocity_set()
-        missing_mask_warp = xlb_grid._create_warp_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
-        bc_mask_warp = xlb_grid._create_warp_field(cardinality=1, dtype=Precision.UINT8)
-        _, warp_kernel = self._construct_warp()
+        grid_warp = grid_factory(xlb_grid.shape, compute_backend=ComputeBackend.WARP, velocity_set=self.velocity_set)
+        missing_mask_warp = grid_warp.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
+        bc_mask_warp = grid_warp.create_field(cardinality=1, dtype=Precision.UINT8)
 
-        # prepare warp kernel inputs
-        total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_warp_kernel_inputs(bclist, bc_mask)
-
-        # Launch the warp kernel
-        wp.launch(
-            warp_kernel,
-            dim=total_index,
-            inputs=[
-                wp_indices,
-                wp_id_numbers,
-                wp_is_interior,
-                bc_mask_warp,
-                missing_mask_warp,
-            ],
+        # Use indices masker with the warp backend to build bc_mask_warp and missing_mask_warp before writing in Neon DS.
+        indices_masker_warp = IndicesBoundaryMasker(
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=ComputeBackend.WARP,
         )
+        bc_mask_warp, missing_mask_warp = indices_masker_warp(bclist, bc_mask_warp, missing_mask_warp, start_index, xlb_grid)
         wp.synchronize()
 
         @neon.Container.factory("")
         def container(
-            bc_mask_warp: typing.Any,
-            missing_mask_warp: typing.Any,
-            bc_mask_field: typing.Any,
-            missing_mask_field: typing.Any,
+            bc_mask_warp: Any,
+            missing_mask_warp: Any,
+            bc_mask_field: Any,
+            missing_mask_field: Any,
         ):
             def loading_step(loader: neon.Loader):
-                grid_name = bc_mask_field.get_grid().get_name()
-                if grid_name == "mGrid":
-                    loader.set_mres_grid(bc_mask_field.get_grid(), level=0)
-                    bc_mask_hdl = loader.get_mres_write_handle(bc_mask_field)
-                    missing_mask_hdl = loader.get_mres_write_handle(missing_mask_field)
-                else:
-                    loader.set_grid(bc_mask_field.get_grid())
-                    bc_mask_hdl = loader.get_write_handle(bc_mask_field)
-                    missing_mask_hdl = loader.get_write_handle(missing_mask_field)
+                loader.set_grid(bc_mask_field.get_grid())
+                bc_mask_hdl = loader.get_write_handle(bc_mask_field)
+                missing_mask_hdl = loader.get_write_handle(missing_mask_field)
 
                 @wp.func
-                def masker(gridIdx: typing.Any):
+                def masker(gridIdx: Any):
                     cIdx = wp.neon_global_idx(bc_mask_hdl, gridIdx)
                     gx = wp.neon_get_x(cIdx)
                     gy = wp.neon_get_y(cIdx)
@@ -286,7 +270,7 @@ class IndicesBoundaryMasker(Operator):
                     wp.neon_write(bc_mask_hdl, gridIdx, 0, local_mask)
 
                     for q in range(self.velocity_set.q):
-                        is_missing = wp.uint8(missing_mask_warp[q, wp.neon_get_x(cIdx), wp.neon_get_z(cIdx), wp.neon_get_y(cIdx)])
+                        is_missing = wp.uint8(missing_mask_warp[q, gx, gz, gy])
                         wp.neon_write(missing_mask_hdl, gridIdx, q, is_missing)
 
                 loader.declare_kernel(masker)

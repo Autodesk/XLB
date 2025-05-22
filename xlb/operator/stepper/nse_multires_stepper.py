@@ -20,7 +20,7 @@ from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.collision import ForcedCollision
-from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
+from xlb.operator.boundary_masker import MultiresBoundaryMasker
 from xlb.helper import check_bc_overlaps
 
 
@@ -96,6 +96,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         return f_0, f_1, bc_mask, missing_mask
 
     def prepare_coalescence_count(self, coalescence_factor, bc_mask):
+        lattice_central_index = self.velocity_set.center_index
         num_levels = coalescence_factor.get_grid().get_num_levels()
 
         @neon.Container.factory(name="sum_kernel_by_level")
@@ -163,7 +164,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         return
 
                     for l in range(self.velocity_set.q):
-                        if l == 9:
+                        if l == lattice_central_index:
                             # HERE, we skip the center direction
                             continue
 
@@ -212,9 +213,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
     def _process_boundary_conditions(cls, boundary_conditions, bc_mask, missing_mask, xlb_grid=None):
         """Process boundary conditions and update boundary masks."""
         # Check for boundary condition overlaps
-        check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
+        # TODO! check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
         # Create boundary maskers
-        indices_masker = IndicesBoundaryMasker(
+        mres_masker = MultiresBoundaryMasker(
             velocity_set=DefaultConfig.velocity_set,
             precision_policy=DefaultConfig.default_precision_policy,
             compute_backend=DefaultConfig.default_backend,
@@ -224,7 +225,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         bc_with_indices = [bc for bc in boundary_conditions if bc.indices is not None]
         # Process indices-based boundary conditions
         if bc_with_indices:
-            bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask, xlb_grid=xlb_grid)
+            bc_mask, missing_mask = mres_masker(bc_with_indices, bc_mask, missing_mask, xlb_grid=xlb_grid)
         # Process mesh-based boundary conditions for 3D
         if DefaultConfig.velocity_set.d == 3 and bc_with_vertices:
             # throw an exception because this option is not implemented yet
@@ -249,22 +250,18 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
     def _construct_neon(self):
         # Set local constants
+        lattice_central_index = self.velocity_set.center_index
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
-        _opp_indices = self.velocity_set.opp_indices
-        # _cast_to_store_dtype = self.store_dtype()
 
         # Read the list of bc_to_id created upon instantiation
         bc_to_id = boundary_condition_registry.bc_to_id
-        id_to_bc = boundary_condition_registry.id_to_bc
-        _zero = self.compute_dtype(0)
+
         # Gather IDs of ExtrapolationOutflowBC boundary conditions
         extrapolation_outflow_bc_ids = []
         for bc_name, bc_id in bc_to_id.items():
             if bc_name.startswith("ExtrapolationOutflowBC"):
                 extrapolation_outflow_bc_ids.append(bc_id)
-        # Group active boundary conditions
-        active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
 
         @wp.func
         def apply_bc(
@@ -439,7 +436,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _f_post_stream = self.stream.neon_functional(f_0_pn, index)
 
                     for l in range(self.velocity_set.q):
-                        if l == 9:
+                        if l == lattice_central_index:
                             # HERE, we skip the center direction
                             continue
 
@@ -589,7 +586,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         return
 
                     for l in range(self.velocity_set.q):
-                        if l == 9:
+                        if l == lattice_central_index:
                             # HERE, we skip the center direction
                             continue
 

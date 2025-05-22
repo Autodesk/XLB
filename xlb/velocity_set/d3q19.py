@@ -19,7 +19,6 @@ class D3Q19(VelocitySet):
         c = np.array([ci for ci in itertools.product([0, -1, 1], repeat=3) if np.sum(np.abs(ci)) <= 2]).T
         w = np.zeros(19)
         for i in range(19):
-            print(f"{i} -> c[:, i] = {c[:, i]}")
             if np.sum(np.abs(c[:, i])) == 0:
                 w[i] = 1.0 / 3.0
             elif np.sum(np.abs(c[:, i])) == 1:
