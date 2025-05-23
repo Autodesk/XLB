@@ -330,6 +330,13 @@ class KBC(Collision):
 
         return functional, kernel
 
+    def _construct_neon(self):
+        # Redefine the momentum flux operator for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.momentum_flux = MomentumFlux(compute_backend=ComputeBackend.WARP)
+        functional, _ = self._construct_warp()
+        return functional, None
+
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, feq, fout, rho, u, omega):
         # Launch the warp kernel

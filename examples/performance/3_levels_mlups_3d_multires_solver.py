@@ -61,7 +61,7 @@ def setup_simulation(args):
         default_precision_policy=precision_policy,
     )
 
-    return compute_backend, precision_policy
+    return velocity_set
 
 
 # def construct_indices_per_level(grid_shape_finest, indices_finest, active_voxels_mask_per_level, level_origins):
@@ -175,9 +175,8 @@ def problem2(grid_shape, velocity_set):
     return grid, lid, walls
 
 
-def run(compute_backend, precision_policy, grid_shape, num_steps):
+def run(velocity_set, grid_shape, num_steps):
     # Create grid and setup boundary conditions
-    velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
 
     # Convert indices to list of indices per level
     # TODO: overlaps emerge if bc indices are orignally specified at the finest grid and they exist at the coarser levels
@@ -198,14 +197,13 @@ def run(compute_backend, precision_policy, grid_shape, num_steps):
     ]
 
     # Create stepper
-    stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
+    stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="KBC")
 
-    # Re = 5000.0
-
-    # clength = grid_shape[0] - 1
-    # visc = prescribed_vel * clength / Re
-    # omega = 1.0 / (3.0 * visc + 0.5)
-    omega = 1.0
+    Re = 5000.0
+    clength = grid_shape[0] - 1
+    visc = prescribed_vel * clength / Re
+    omega = 1.0 / (3.0 * visc + 0.5)
+    # omega = 1.0
 
     sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
 
@@ -250,9 +248,9 @@ def calculate_mlups(cube_edge, num_steps, elapsed_time, num_levels):
 
 def main():
     args = parse_arguments()
-    compute_backend, precision_policy = setup_simulation(args)
+    velocity_set = setup_simulation(args)
     grid_shape = (args.cube_edge, args.cube_edge, args.cube_edge)
-    stats = run(compute_backend, precision_policy, grid_shape, args.num_steps)
+    stats = run(velocity_set, grid_shape, args.num_steps)
     mlups_stats = calculate_mlups(args.cube_edge, args.num_steps, stats["time"], stats["num_levels"])
 
     print(f"Simulation completed in {stats['time']:.2f} seconds")
