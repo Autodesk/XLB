@@ -12,8 +12,7 @@ from typing import Tuple, Any
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.equilibrium.equilibrium import Equilibrium
-from xlb.operator.equilibrium import QuadraticEquilibrium
+from xlb.operator.equilibrium import Equilibrium, QuadraticEquilibrium
 from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,

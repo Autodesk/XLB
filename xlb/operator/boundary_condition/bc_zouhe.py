@@ -360,3 +360,15 @@ class ZouHeBC(BoundaryCondition):
             dim=f_pre.shape[1:],
         )
         return f_post
+
+    def _construct_neon(self):
+        # Redefine the quadratic eq operator for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.equilibrium_operator = QuadraticEquilibrium(compute_backend=ComputeBackend.WARP)
+        functional, _ = self._construct_warp()
+        return functional, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # rise exception as this feature is not implemented yet
+        raise NotImplementedError("This feature is not implemented in XLB with the NEON backend yet.")

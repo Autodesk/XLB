@@ -8,7 +8,7 @@ import neon
 from typing import Any
 
 from xlb.compute_backend import ComputeBackend
-from xlb.operator.equilibrium.equilibrium import Equilibrium
+from xlb.operator.equilibrium import Equilibrium
 from xlb.operator import Operator
 
 
