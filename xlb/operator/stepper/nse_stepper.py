@@ -22,7 +22,7 @@ from xlb.operator.boundary_condition.boundary_condition_registry import boundary
 from xlb.operator.collision import ForcedCollision
 from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
 from xlb.helper import check_bc_overlaps
-from xlb.helper.nse_solver import create_nse_fields
+from xlb.helper.nse_fields import create_nse_fields
 
 
 class IncompressibleNavierStokesStepper(Stepper):

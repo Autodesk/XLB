@@ -11,6 +11,7 @@ from xlb.grid import multires_grid_factory
 from xlb.operator.stepper import MultiresIncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, EquilibriumBC
 
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="MLUPS for 3D Lattice Boltzmann Method Simulation (BGK)")
     # Positional arguments
@@ -118,11 +119,11 @@ def problem1(grid_shape, velocity_set):
 
     def get_levels(num_levels):
         levels = []
-        for i in range(num_levels-1):
+        for i in range(num_levels - 1):
             l = get_peeled_np(i, 8)
             levels.append(l)
         lastLevel = num_levels - 1
-        divider = 2 ** lastLevel
+        divider = 2**lastLevel
         m = neon.Index_3d(dim.x // divider + 1, dim.y // divider + 1, dim.z // divider + 1)
         lastLevel = np.ones((m.x, m.y, m.z), dtype=int)
         lastLevel = np.ascontiguousarray(lastLevel, dtype=np.int32)
@@ -132,9 +133,12 @@ def problem1(grid_shape, velocity_set):
     num_levels = 4
     levels = get_levels(num_levels)
 
-    grid = multires_grid_factory(grid_shape, velocity_set=velocity_set,
-                                 sparsity_pattern_list=levels,
-                                 sparsity_pattern_origins=[ neon.Index_3d(0, 0, 0)]*len(levels),)
+    grid = multires_grid_factory(
+        grid_shape,
+        velocity_set=velocity_set,
+        sparsity_pattern_list=levels,
+        sparsity_pattern_origins=[neon.Index_3d(0, 0, 0)] * len(levels),
+    )
 
     box = grid.bounding_box_indices()
     box_no_edge = grid.bounding_box_indices(remove_edges=True)
@@ -205,7 +209,7 @@ def run(velocity_set, grid_shape, num_steps):
     omega = 1.0 / (3.0 * visc + 0.5)
     # omega = 1.0
 
-    sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
+    sim = xlb.helper.MultiResSimulationManager(grid, velocity_set, stepper, omega)
 
     # sim.export_macroscopic("Initial_")
     # sim.step()

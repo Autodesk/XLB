@@ -88,38 +88,16 @@ def run(backend, precision_policy, grid_shape, num_steps):
             return xIn and yIn and zIn
 
     dim = neon.Index_3d(grid_shape[0], grid_shape[1], grid_shape[2])
-    level_zero_mask = np.zeros((dim.x, dim.y, dim.z), dtype=int)
+    level_zero_mask = np.ones((dim.x, dim.y, dim.z), dtype=int)
     level_zero_mask = np.ascontiguousarray(level_zero_mask, dtype=np.int32)
-    # loop over all the elements in level_zero_mask and set to one any that have x=0 or y=0 or z=0
-    for i in range(dim.x):
-        for j in range(dim.y):
-            for k in range(dim.z):
-                idx = neon.Index_3d(i, j, k)
-                val = 0
-                if peel(dim, idx, dim.x / 9, True):
-                    val = 1
-                level_zero_mask[i, j, k] = val
-
-    m = neon.Index_3d(dim.x // 2, dim.y // 2, dim.z // 2)
-    level_one_mask = np.ones((m.x, m.y, m.z), dtype=int)
-    for i in range(m.x):
-        for j in range(m.x):
-            for k in range(m.x):
-                idx = neon.Index_3d(i, j, k)
-                val = 1
-                level_one_mask[i, j, k] = val
-
-    level_one_mask = np.ascontiguousarray(level_one_mask, dtype=np.int32)
 
     grid = multires_grid_factory(
         grid_shape,
         velocity_set=velocity_set,
         sparsity_pattern_list=[
             level_zero_mask,
-            level_one_mask,
         ],
         sparsity_pattern_origins=[
-            neon.Index_3d(0, 0, 0),
             neon.Index_3d(0, 0, 0),
         ],
     )
@@ -140,17 +118,15 @@ def run(backend, precision_policy, grid_shape, num_steps):
     # Create stepper
     stepper = MultiresIncompressibleNavierStokesStepper(grid=grid, boundary_conditions=boundary_conditions, collision_type="BGK")
 
-    Re = 1000.0
-
+    Re = 100.0
     clength = grid_shape[0] - 1
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
-    omega = 1.0
 
     # # Initialize fields and run simulation
     # omega = 1.0
 
-    sim = xlb.helper.Nse_multires_simulation(grid, velocity_set, stepper, omega)
+    sim = xlb.helper.MultiResSimulationManager(grid, velocity_set, stepper, omega)
 
     sim.export_macroscopic("Initial_")
 
@@ -160,7 +136,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     for i in range(num_steps):
         print(f"step {i}")
         sim.step()
-        if i % 10 == 0:
+        if i % 1 == 0:
             sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time

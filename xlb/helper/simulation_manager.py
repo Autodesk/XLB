@@ -1,14 +1,7 @@
-import numpy as np
-
-from xlb import DefaultConfig
-from xlb.grid.multires_grid import NeonMultiresGrid
-from xlb.precision_policy import Precision
-from typing import Tuple, List
 import neon
-import warp as wp
 
 
-class Nse_multires_simulation:
+class MultiResSimulationManager:
     def __init__(self, grid, velocity_set, stepper, omega):
         self.stepper = stepper
         self.grid = stepper.get_grid()

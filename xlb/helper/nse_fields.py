@@ -2,7 +2,6 @@ from xlb import DefaultConfig
 from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
 from typing import Tuple
-import neon
 
 
 def create_nse_fields(
