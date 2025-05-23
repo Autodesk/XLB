@@ -38,7 +38,7 @@ class HelperFunctionsBC(object):
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
             index: wp.vec3i,
         ):
             # Get the boundary id and missing mask

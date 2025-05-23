@@ -110,7 +110,7 @@ class MomentumTransfer(Operator):
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
             force: wp.array(dtype=Any),
         ):
             # Get the global index

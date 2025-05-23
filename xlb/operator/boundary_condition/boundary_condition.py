@@ -94,7 +94,7 @@ class BoundaryCondition(Operator):
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -132,7 +132,7 @@ class BoundaryCondition(Operator):
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
         ):
             # Get the global index
             i, j, k = wp.tid()

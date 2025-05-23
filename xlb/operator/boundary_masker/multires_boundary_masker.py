@@ -18,6 +18,9 @@ class MultiresBoundaryMasker(Operator):
         precision_policy=None,
         compute_backend=None,
     ):
+        if compute_backend in [ComputeBackend.JAX, ComputeBackend.WARP]:
+            raise NotImplementedError(f"Operator {self.__class__.__name} not supported in {compute_backend} backend!")
+
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
@@ -32,14 +35,6 @@ class MultiresBoundaryMasker(Operator):
             precision_policy=precision_policy,
             compute_backend=ComputeBackend.WARP,
         )
-
-    @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
-
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
-        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in WARP!")
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):

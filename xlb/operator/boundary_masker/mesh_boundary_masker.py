@@ -155,7 +155,7 @@ class MeshBoundaryMasker(Operator):
             mesh_id: wp.uint64,
             id_number: wp.int32,
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
         ):
             # get index
             i, j, k = wp.tid()
@@ -180,7 +180,7 @@ class MeshBoundaryMasker(Operator):
                         # We know we have a solid neighbor
                         # Set the boundary id and missing_mask
                         bc_mask[0, index[0], index[1], index[2]] = wp.uint8(id_number)
-                        missing_mask[_opp_indices[l], index[0], index[1], index[2]] = True
+                        missing_mask[_opp_indices[l], index[0], index[1], index[2]] = wp.uint8(True)
 
         return None, kernel
 
