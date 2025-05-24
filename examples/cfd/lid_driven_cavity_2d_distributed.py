@@ -7,8 +7,8 @@ from lid_driven_cavity_2d import LidDrivenCavity2D
 
 
 class LidDrivenCavity2D_distributed(LidDrivenCavity2D):
-    def __init__(self, omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy):
-        super().__init__(omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy)
+    def __init__(self, omega, prescribed_vel, grid_shape, velocity_set, compute_backend, precision_policy):
+        super().__init__(omega, prescribed_vel, grid_shape, velocity_set, compute_backend, precision_policy)
 
     def setup_stepper(self):
         # Create the base stepper
@@ -30,10 +30,12 @@ if __name__ == "__main__":
     # Running the simulation
     grid_size = 512
     grid_shape = (grid_size, grid_size)
-    backend = ComputeBackend.JAX  # Must be JAX for distributed multi-GPU computations. Distributed computations on WARP are not supported yet!
+    compute_backend = (
+        ComputeBackend.JAX
+    )  # Must be JAX for distributed multi-GPU computations. Distributed computations on WARP are not supported yet!
     precision_policy = PrecisionPolicy.FP32FP32
 
-    velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, backend=backend)
+    velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, compute_backend=compute_backend)
 
     # Setting fluid viscosity and relaxation parameter.
     Re = 200.0
@@ -42,5 +44,5 @@ if __name__ == "__main__":
     visc = prescribed_vel * clength / Re
     omega = 1.0 / (3.0 * visc + 0.5)
 
-    simulation = LidDrivenCavity2D_distributed(omega, prescribed_vel, grid_shape, velocity_set, backend, precision_policy)
+    simulation = LidDrivenCavity2D_distributed(omega, prescribed_vel, grid_shape, velocity_set, compute_backend, precision_policy)
     simulation.run(num_steps=50000, post_process_interval=1000)

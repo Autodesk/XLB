@@ -79,6 +79,13 @@ If you use XLB in your research, please cite the following paper:
 
 ## Showcase
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/wind_turbine.gif" alt="Wind Turbine Simulation" width="800">
+</p>
+<p align="center">
+  Simulation of a wind turbine based on the immersed boundary method.
+</p>
+
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/autodesk/xlb/main/assets/airfoil.gif" width="800">

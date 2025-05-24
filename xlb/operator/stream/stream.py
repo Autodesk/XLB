@@ -121,7 +121,7 @@ class Stream(Operator):
         # Construct the funcional to get streamed indices
         @wp.func
         def functional(
-            f:Any,
+            f: Any,
             index: Any,
         ):
             # Pull the distribution function
@@ -132,9 +132,7 @@ class Stream(Operator):
                 # for d in range(self.velocity_set.d):
                 #     pull_index[d] = index[d] - _c[d, l]
 
-                ngh = wp.neon_ngh_idx(wp.int8(-_c[0, l]),
-                                      wp.int8(-_c[1, l]),
-                                      wp.int8(-_c[2, l]))
+                ngh = wp.neon_ngh_idx(wp.int8(-_c[0, l]), wp.int8(-_c[1, l]), wp.int8(-_c[2, l]))
 
                 unused_is_valid = wp.bool(False)
                 _f[l] = wp.neon_read_ngh(f, index, ngh, l, self.compute_dtype(0), unused_is_valid)
@@ -163,4 +161,4 @@ class Stream(Operator):
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, f_0, f_1):
         # rise exception as this feature is not implemented yet
-        raise NotImplementedError("This feature is not implemented in NEON yet.")
+        raise NotImplementedError("This feature is not implemented in XLB with the NEON backend yet.")

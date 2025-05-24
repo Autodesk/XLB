@@ -77,25 +77,27 @@ class KBC(Collision):
 
         # Perform collision
         delta_h = fneq - delta_s
-        gamma = inv_beta - (2.0 - inv_beta) * self.entropic_scalar_product(delta_s, delta_h, feq) / (
-            self.epsilon + self.entropic_scalar_product(delta_h, delta_h, feq)
-        )
+        sp1, sp2 = self.compute_entropic_scalar_products(delta_s, delta_h, feq)
+        gamma = inv_beta - (2.0 - inv_beta) * sp1 / (self.epsilon + sp2)
 
         fout = f - beta * (2.0 * delta_s + gamma[None, ...] * delta_h)
 
         return fout
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def entropic_scalar_product(self, x: jnp.ndarray, y: jnp.ndarray, feq: jnp.ndarray):
+    def compute_entropic_scalar_products(self, delta_s: jnp.ndarray, delta_h: jnp.ndarray, feq: jnp.ndarray):
         """
-        Compute the entropic scalar product of x and y to approximate gamma in KBC.
+        Compute the entropic scalar products to approximate gamma in KBC.
 
         Returns
         -------
         jax.numpy.array
-            Entropic scalar product of x, y, and feq.
+            sp1 and sp2: Entropic scalar products of delta_s, delta_h, and feq.
         """
-        return jnp.sum(x * y / feq, axis=0)
+        temp = delta_h / feq
+        sp1 = jnp.sum(temp * delta_s, axis=0)
+        sp2 = jnp.sum(temp * delta_h, axis=0)
+        return sp1, sp2
 
     @partial(jit, static_argnums=(0,), inline=True)
     def decompose_shear_d3q27_jax(self, fneq):
@@ -247,18 +249,20 @@ class KBC(Collision):
 
             return s
 
-        # Construct functional for computing entropic scalar product
+        # Construct functional for computing entropic scalar products
         @wp.func
-        def entropic_scalar_product(
-            x: Any,
-            y: Any,
+        def compute_entropic_scalar_products(
+            delta_s: Any,
+            delta_h: Any,
             feq: Any,
         ):
-            e = wp.cw_div(wp.cw_mul(x, y), feq)
-            e_sum = self.compute_dtype(0.0)
+            temp = wp.cw_div(delta_h, feq)
+            sp1 = self.compute_dtype(0.0)
+            sp2 = self.compute_dtype(0.0)
             for i in range(self.velocity_set.q):
-                e_sum += e[i]
-            return e_sum
+                sp1 += temp[i] * delta_s[i]
+                sp2 += temp[i] * delta_h[i]
+            return sp1, sp2
 
         # Construct the functional
         @wp.func
@@ -285,9 +289,8 @@ class KBC(Collision):
             # Perform collision
             delta_h = fneq - delta_s
             two = self.compute_dtype(2.0)
-            gamma = _inv_beta - (two - _inv_beta) * entropic_scalar_product(delta_s, delta_h, feq) / (
-                _epsilon + entropic_scalar_product(delta_h, delta_h, feq)
-            )
+            sp1, sp2 = compute_entropic_scalar_products(delta_s, delta_h, feq)
+            gamma = _inv_beta - (two - _inv_beta) * sp1 / (_epsilon + sp2)
             fout = f - _beta * (two * delta_s + gamma * delta_h)
 
             return fout
@@ -326,6 +329,13 @@ class KBC(Collision):
                 fout[l, index[0], index[1], index[2]] = self.store_dtype(_fout[l])
 
         return functional, kernel
+
+    def _construct_neon(self):
+        # Redefine the momentum flux operator for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.momentum_flux = MomentumFlux(compute_backend=ComputeBackend.WARP)
+        functional, _ = self._construct_warp()
+        return functional, None
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, feq, fout, rho, u, omega):

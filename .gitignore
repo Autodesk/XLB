@@ -156,3 +156,7 @@ dist/
 build/
 *.egg-info/
 *.dot
+
+# Ignore h5 and xmf formats
+*.h5
+*.xmf
