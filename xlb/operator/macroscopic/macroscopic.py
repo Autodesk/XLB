@@ -26,14 +26,12 @@ class Macroscopic(Operator):
         return rho, u
 
     def _construct_warp(self):
-        zero_moment_func = self.zero_moment.warp_functional
-        first_moment_func = self.first_moment.warp_functional
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
         def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
+            rho = self.zero_moment.warp_functional(f)
+            u = self.first_moment.warp_functional(f, rho)
             return rho, u
 
         @wp.kernel
@@ -66,19 +64,16 @@ class Macroscopic(Operator):
         return rho, u
 
     def _construct_neon(self):
-        zero_moment_func = self.zero_moment.neon_functional
-        first_moment_func = self.first_moment.neon_functional
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        @wp.func
-        def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
-            return rho, u
-
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
         import neon, typing
+
+        # Redefine the zero and first moment operators for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.zero_moment = ZeroMoment(compute_backend=ComputeBackend.WARP)
+        self.first_moment = FirstMoment(compute_backend=ComputeBackend.WARP)
+        functional, _ = self._construct_warp()
+
+        # Set local vectors
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         @neon.Container.factory("macroscopic")
         def container(
@@ -101,65 +96,6 @@ class Macroscopic(Operator):
                     for l in range(self.velocity_set.q):
                         _f[l] = wp.neon_read(f, gIdx, l)
                     _rho, _u = functional(_f)
-                    wp.neon_write(rho, gIdx, 0, _rho)
-                    for d in range(_d):
-                        wp.neon_write(u, gIdx, d, _u[d])
-
-                loader.declare_kernel(macroscopic_cl)
-
-            return macroscopic_ll
-
-        return functional, container
-
-    def _construct_neon_visual(self):
-        zero_moment_func = self.zero_moment.neon_functional
-        first_moment_func = self.first_moment.neon_functional
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        @wp.func
-        def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
-            return rho, u
-
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        import neon, typing
-
-        @neon.Container.factory("macroscopic")
-        def container(
-            f_field: Any,
-            bc_mask: Any,
-            rho_field: Any,
-            u_fild: Any,
-        ):
-            _d = self.velocity_set.d
-
-            def macroscopic_ll(loader: neon.Loader):
-                loader.set_grid(f_field.get_grid())
-
-                rho = loader.get_read_handle(rho_field)
-                u = loader.get_read_handle(u_fild)
-                f = loader.get_read_handle(f_field)
-                bc_mask_pn = loader.get_read_handle(bc_mask)
-
-                @wp.func
-                def macroscopic_cl(gIdx: typing.Any):
-                    _f = _f_vec()
-                    _boundary_id = wp.neon_read(bc_mask_pn, gIdx, 0)
-
-                    for l in range(self.velocity_set.q):
-                        _f[l] = wp.neon_read(f, gIdx, l)
-                    _rho, _u = functional(_f)
-                    if _boundary_id != wp.uint8(0):
-                        _rho = self.compute_dtype(1.0)
-                        for d in range(_d):
-                            _u[d] = self.compute_dtype(0.0)
-                    if _boundary_id == wp.uint8(255):
-                        _rho = self.compute_dtype(0.0)
-                        for d in range(_d):
-                            _u[d] = self.compute_dtype(0.0)
-
                     wp.neon_write(rho, gIdx, 0, _rho)
                     for d in range(_d):
                         wp.neon_write(u, gIdx, d, _u[d])

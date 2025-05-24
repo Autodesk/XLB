@@ -6,73 +6,26 @@ from typing import Any
 
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from xlb.operator.macroscopic.zero_moment import ZeroMoment
-from xlb.operator.macroscopic.first_moment import FirstMoment
+from xlb.operator.macroscopic import Macroscopic, ZeroMoment, FirstMoment
 
 
-class MultiresMacroscopic(Operator):
-    """A class to compute both zero and first moments of distribution functions (rho, u)."""
+class MultiresMacroscopic(Macroscopic):
+    """A class to compute both zero and first moments of distribution functions (rho, u) on a multi-resolution grid."""
 
     def __init__(self, *args, **kwargs):
-        self.zero_moment = ZeroMoment(*args, **kwargs)
-        self.first_moment = FirstMoment(*args, **kwargs)
         super().__init__(*args, **kwargs)
-
-    def _construct_warp(self):
-        zero_moment_func = self.zero_moment.warp_functional
-        first_moment_func = self.first_moment.warp_functional
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        @wp.func
-        def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
-            return rho, u
-
-        @wp.kernel
-        def kernel(
-            f: wp.array4d(dtype=Any),
-            rho: wp.array4d(dtype=Any),
-            u: wp.array4d(dtype=Any),
-        ):
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)
-
-            _f = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1], index[2]]
-            _rho, _u = functional(_f)
-
-            rho[0, index[0], index[1], index[2]] = self.store_dtype(_rho)
-            for d in range(self.velocity_set.d):
-                u[d, index[0], index[1], index[2]] = self.store_dtype(_u[d])
-
-        return functional, kernel
-
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, rho, u):
-        wp.launch(
-            self.warp_kernel,
-            inputs=[f, rho, u],
-            dim=rho.shape[1:],
-        )
-        return rho, u
+        if self.compute_backend in [ComputeBackend.JAX, ComputeBackend.WARP]:
+            raise NotImplementedError(f"Operator {self.__class__.__name__} not supported in {self.compute_backend} backend.")
 
     def _construct_neon(self):
-        zero_moment_func = self.zero_moment.neon_functional
-        first_moment_func = self.first_moment.neon_functional
-        print(f"VELOCITY SET: {self.velocity_set.q}")
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        @wp.func
-        def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
-            return rho, u
-
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
         import neon, typing
+
+        # Redefine the zero and first moment operators for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.zero_moment = ZeroMoment(compute_backend=ComputeBackend.WARP)
+        self.first_moment = FirstMoment(compute_backend=ComputeBackend.WARP)
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        functional, _ = self._construct_warp()
 
         @neon.Container.factory("macroscopic")
         def container(

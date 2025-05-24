@@ -90,32 +90,13 @@ class EquilibriumBC(BoundaryCondition):
         return functional, kernel
 
     def _construct_neon(self):
-        # Set local constants TODO: This is a hack and should be fixed with warp update
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _rho = self.compute_dtype(self.rho)
-        _u = _u_vec(self.u[0], self.u[1], self.u[2]) if self.velocity_set.d == 3 else _u_vec(self.u[0], self.u[1])
+        # Redefine the equilibrium operators for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.equilibrium_operator = QuadraticEquilibrium(compute_backend=ComputeBackend.WARP)
 
-        # Construct the functional for this BC
-        @wp.func
-        def functional(
-            index: Any,
-            timestep: Any,
-            missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
-        ):
-            # we can use directly the warp_functional method from the equilibrium operator
-            # the Neon implementation is the same as the Warp implementation as all the computation
-            # is done at the register level
-            _f = self.equilibrium_operator.neon_functional(_rho, _u)
-            return _f
-
-        # Use the parent class's kernel and pass the functional
-        kernel = None
-
-        return functional, kernel
+        # Use the warp functional for the NEON backend
+        functional, _ = self._construct_warp()
+        return functional, None
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_launch(self, f_pre, f_post, bc_mask, missing_mask):

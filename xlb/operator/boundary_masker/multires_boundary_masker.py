@@ -19,7 +19,7 @@ class MultiresBoundaryMasker(Operator):
         compute_backend=None,
     ):
         if compute_backend in [ComputeBackend.JAX, ComputeBackend.WARP]:
-            raise NotImplementedError(f"Operator {self.__class__.__name} not supported in {compute_backend} backend!")
+            raise NotImplementedError(f"Operator {self.__class__.__name} not supported in {compute_backend} backend.")
 
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
@@ -56,8 +56,8 @@ class MultiresBoundaryMasker(Operator):
             bclist_level = []
             for bc in bclist:
                 if bc.indices is not None and bc.indices[level]:
-                    bc_copy = copy.deepcopy(bc)
-                    bc_copy.indices = bc_copy.indices[level]
+                    bc_copy = copy.copy(bc)  # shallow copy of the whole object
+                    bc_copy.indices = copy.deepcopy(bc.indices[level])  # deep copy only the modified part
                     bclist_level.append(bc_copy)
 
             # call indices masker for this level

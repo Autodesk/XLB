@@ -18,6 +18,9 @@ class QuadraticEquilibrium(Equilibrium):
     Standard equilibrium model for LBM.
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, rho, u):
@@ -101,43 +104,13 @@ class QuadraticEquilibrium(Equilibrium):
         return f
 
     def _construct_neon(self):
-        import neon
+        import neon, typing
+
+        # Use the warp functional for the NEON backend
+        functional, _ = self._construct_warp()
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _c = self.velocity_set.c
-        _w = self.velocity_set.w
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-
-        # Construct the equilibrium functional
-        @wp.func
-        def functional(
-            rho: Any,
-            u: Any,
-        ):
-            # Allocate the equilibrium
-            feq = _f_vec()
-
-            # Compute the equilibrium
-            for l in range(self.velocity_set.q):
-                # Compute cu
-                cu = self.compute_dtype(0.0)
-                for d in range(self.velocity_set.d):
-                    if _c[d, l] == 1:
-                        cu += u[d]
-                    elif _c[d, l] == -1:
-                        cu -= u[d]
-                cu *= self.compute_dtype(3.0)
-
-                # Compute usqr
-                usqr = self.compute_dtype(1.5) * wp.dot(u, u)
-
-                # Compute feq
-                feq[l] = rho * _w[l] * (self.compute_dtype(1.0) + cu * (self.compute_dtype(1.0) + self.compute_dtype(0.5) * cu) - usqr)
-
-            return feq
-
-        import neon, typing
 
         @neon.Container.factory(name="QuadraticEquilibrium")
         def container(
