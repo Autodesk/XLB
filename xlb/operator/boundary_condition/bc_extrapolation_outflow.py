@@ -54,13 +54,14 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         )
 
         # find and store the normal vector using indices
-        self._get_normal_vec(indices)
+        if compute_backend == ComputeBackend.JAX:
+            self._get_normal_vectors(indices)
 
         # Unpack the two warp functionals needed for this BC!
         if self.compute_backend == ComputeBackend.WARP:
             self.warp_functional, self.update_bc_auxilary_data = self.warp_functional
 
-    def _get_normal_vec(self, indices):
+    def _get_normal_vectors(self, indices):
         # Get the frequency count and most common element directly
         freq_counts = [Counter(coord).most_common(1)[0] for coord in indices]
 
