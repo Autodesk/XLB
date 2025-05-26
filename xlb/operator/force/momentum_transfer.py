@@ -99,10 +99,7 @@ class MomentumTransfer(Operator):
         _no_slip_id = self.no_slip_bc_instance.id
 
         # Find velocity index for 0, 0, 0
-        for l in range(self.velocity_set.q):
-            if _c[0, l] == 0 and _c[1, l] == 0 and _c[2, l] == 0:
-                zero_index = l
-        _zero_index = wp.int32(zero_index)
+        lattice_central_index = self.velocity_set.center_index
 
         # Construct the warp kernel
         @wp.kernel
@@ -130,7 +127,7 @@ class MomentumTransfer(Operator):
             # Determin if boundary is an edge by checking if center is missing
             is_edge = wp.bool(False)
             if _boundary_id == wp.uint8(_no_slip_id):
-                if _missing_mask[_zero_index] == wp.uint8(0):
+                if _missing_mask[lattice_central_index] == wp.uint8(0):
                     is_edge = wp.bool(True)
 
             # If the boundary is an edge then add the momentum transfer

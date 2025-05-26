@@ -109,10 +109,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                 _c = self.velocity_set.c
                 _w = self.velocity_set.w
-                import typing
 
                 @wp.func
-                def cl_collide_coarse(index: typing.Any):
+                def cl_collide_coarse(index: Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id == wp.uint8(255):
                         return
@@ -141,10 +140,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                 _c = self.velocity_set.c
                 _w = self.velocity_set.w
-                import typing
 
                 @wp.func
-                def compute(index: typing.Any):
+                def compute(index: Any):
                     # _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     # if _boundary_id == wp.uint8(255):
                     #     return
@@ -346,7 +344,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 _w = self.velocity_set.w
 
                 @wp.func
-                def device(index: typing.Any):
+                def device(index: Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     """
                     The c++ version starts with the following, which I am not sure is right:
@@ -375,13 +373,13 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                             if level < num_levels - 1:
                                 val = _f_post_collision[l]
                                 wp.neon_mres_lbm_store_op(f_1_pn, index, l, push_direction, val)
-                                wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, val)
+                                # Verified that this is not needed: wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, val)
 
                             wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
                     else:
                         for l in range(self.velocity_set.q):
                             wp.neon_write(f_1_pn, index, l, self.compute_dtype(0))
-                            wp.neon_write(f_0_pn, index, l, self.compute_dtype(0))
+                            # Verified that this is not needed: wp.neon_write(f_0_pn, index, l, self.compute_dtype(0))
 
                 loader.declare_kernel(device)
 
@@ -421,7 +419,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 coalescence_factor_pn = loader.get_mres_read_handle(coalescence_factor_fd)
 
                 @wp.func
-                def cl_stream_coarse(index: typing.Any):
+                def cl_stream_coarse(index: Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id == wp.uint8(255):
                         return
@@ -529,7 +527,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 _c = self.velocity_set.c
 
                 @wp.func
-                def cl_stream_coarse(index: typing.Any):
+                def cl_stream_coarse(index: Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id == wp.uint8(255):
                         return
@@ -577,7 +575,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 _w = self.velocity_set.w
 
                 @wp.func
-                def cl_stream_coarse(index: typing.Any):
+                def cl_stream_coarse(index: Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id == wp.uint8(255):
                         return
