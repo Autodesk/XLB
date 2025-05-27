@@ -274,6 +274,9 @@ class BoundaryCondition(Operator):
                 bc_mask_pn = loader.get_mres_read_handle(bc_mask)
                 missing_mask_pn = loader.get_mres_read_handle(missing_mask)
 
+                # Get the refinement factor for the current level
+                refinement = 2**level
+
                 @wp.func
                 def aux_data_init_cl(index: Any):
                     # read tid data
@@ -282,7 +285,12 @@ class BoundaryCondition(Operator):
                     # Apply the functional
                     if _boundary_id == _id:
                         # prescribed_values is a q-sized vector of type wp.vec
-                        prescribed_values = functional(index)
+                        warp_index = wp.vec3i()
+                        gloabl_index = wp.neon_global_idx(f_0_pn, index)
+                        warp_index[0] = wp.neon_get_x(gloabl_index) // refinement
+                        warp_index[1] = wp.neon_get_y(gloabl_index) // refinement
+                        warp_index[2] = wp.neon_get_z(gloabl_index) // refinement
+                        prescribed_values = functional(warp_index)
 
                     # Write the result for all q directions, but only store up to num_of_aux_data
                     counter = wp.int32(0)

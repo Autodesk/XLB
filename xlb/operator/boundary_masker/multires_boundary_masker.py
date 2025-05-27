@@ -42,7 +42,6 @@ class MultiresBoundaryMasker(Operator):
         assert bc_mask.get_grid().get_name() == "mGrid", f"Operation {self.__class__.__name} is only applicable to multi-resolution cases"
 
         # number of levels
-        # indices_per_level = []
         num_levels = bc_mask.get_grid().get_num_levels()
         for level in range(num_levels):
             # Use the warp backend to create dense fields to be written in multi-res NEON fields
