@@ -13,6 +13,7 @@ def grid_factory(
     velocity_set=None,
 ):
     compute_backend = compute_backend or DefaultConfig.default_backend
+    velocity_set = velocity_set or DefaultConfig.velocity_set
     if compute_backend == ComputeBackend.WARP:
         from xlb.grid.warp_grid import WarpGrid
 
@@ -37,6 +38,7 @@ def multires_grid_factory(
     sparsity_pattern_origins: List[neon.Index_3d] = [],
 ):
     compute_backend = compute_backend or DefaultConfig.default_backend
+    velocity_set = velocity_set or DefaultConfig.velocity_set
     if compute_backend == ComputeBackend.NEON:
         from xlb.grid.multires_grid import NeonMultiresGrid
 

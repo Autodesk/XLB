@@ -209,7 +209,7 @@ def run(velocity_set, grid_shape, num_steps):
     omega = 1.0 / (3.0 * visc + 0.5)
     # omega = 1.0
 
-    sim = xlb.helper.MultiResSimulationManager(grid, velocity_set, stepper, omega)
+    sim = xlb.helper.MultiresSimulationManager(grid, velocity_set, stepper, omega)
 
     # sim.export_macroscopic("Initial_")
     # sim.step()

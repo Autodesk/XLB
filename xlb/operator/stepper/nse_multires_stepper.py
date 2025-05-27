@@ -493,7 +493,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                     for l in range(self.velocity_set.q):
                         wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
-                    # wp.print("stream_coarse")
 
                 loader.declare_kernel(cl_stream_coarse)
 
@@ -663,7 +662,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                 _c = self.velocity_set.c
 
                 @wp.func
-                def cl_stream_coarse(index: typing.Any):
+                def cl_stream_coarse(index: Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id == wp.uint8(255):
                         return

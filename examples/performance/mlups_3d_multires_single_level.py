@@ -126,7 +126,7 @@ def run(backend, precision_policy, grid_shape, num_steps):
     # # Initialize fields and run simulation
     # omega = 1.0
 
-    sim = xlb.helper.MultiResSimulationManager(grid, velocity_set, stepper, omega)
+    sim = xlb.helper.MultiresSimulationManager(grid, velocity_set, stepper, omega)
 
     sim.export_macroscopic("Initial_")
 

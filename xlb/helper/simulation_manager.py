@@ -1,7 +1,7 @@
 import neon
 
 
-class MultiResSimulationManager:
+class MultiresSimulationManager:
     def __init__(self, grid, velocity_set, stepper, omega):
         self.stepper = stepper
         self.grid = stepper.get_grid()
@@ -109,6 +109,7 @@ class MultiResSimulationManager:
             recurtion(level - 1, app)
             recurtion(level - 1, app)
 
+            # Important: swapping of f_0 and f_1 is done here
             print(f"RECURTION Level {level}, stream_coarse_step_ABC")
             self.stepper.add_to_app(
                 app=app,
