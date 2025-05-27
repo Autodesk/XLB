@@ -38,7 +38,7 @@ class HelperFunctionsBC(object):
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
             index: wp.vec3i,
         ):
             # Get the boundary id and missing mask
@@ -56,6 +56,27 @@ class HelperFunctionsBC(object):
                     _missing_mask[l] = wp.uint8(1)
                 else:
                     _missing_mask[l] = wp.uint8(0)
+            return _f_pre, _f_post, _boundary_id, _missing_mask
+
+        @wp.func
+        def neon_get_thread_data(
+            f_pre_pn: Any,
+            f_post_pn: Any,
+            bc_mask_pn: Any,
+            missing_mask_pn: Any,
+            index: Any,
+        ):
+            # Get the boundary id and missing mask
+            _f_pre = _f_vec()
+            _f_post = _f_vec()
+            _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
+            _missing_mask = _missing_mask_vec()
+            for l in range(_q):
+                # q-sized vector of populations
+                _f_pre[l] = compute_dtype(wp.neon_read(f_pre_pn, index, l))
+                _f_post[l] = compute_dtype(wp.neon_read(f_post_pn, index, l))
+                _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
+
             return _f_pre, _f_post, _boundary_id, _missing_mask
 
         @wp.func
@@ -126,3 +147,4 @@ class HelperFunctionsBC(object):
         self.get_normal_vectors = get_normal_vectors
         self.bounceback_nonequilibrium = bounceback_nonequilibrium
         self.regularize_fpop = regularize_fpop
+        self.neon_get_thread_data = neon_get_thread_data

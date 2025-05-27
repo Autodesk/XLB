@@ -86,5 +86,5 @@ class FullwayBounceBackBC(BoundaryCondition):
         return f_post
 
     def _construct_neon(self):
-        functional,  _  = self._construct_warp()
+        functional, _ = self._construct_warp()
         return functional, None

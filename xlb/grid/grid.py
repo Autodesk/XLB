@@ -6,11 +6,14 @@ from xlb import DefaultConfig
 from xlb.compute_backend import ComputeBackend
 import neon
 
-def grid_factory(shape: Tuple[int, ...],
-                 compute_backend: ComputeBackend = None,
-                 velocity_set=None,
-                 ):
+
+def grid_factory(
+    shape: Tuple[int, ...],
+    compute_backend: ComputeBackend = None,
+    velocity_set=None,
+):
     compute_backend = compute_backend or DefaultConfig.default_backend
+    velocity_set = velocity_set or DefaultConfig.velocity_set
     if compute_backend == ComputeBackend.WARP:
         from xlb.grid.warp_grid import WarpGrid
 
@@ -18,8 +21,7 @@ def grid_factory(shape: Tuple[int, ...],
     elif compute_backend == ComputeBackend.NEON:
         from xlb.grid.neon_grid import NeonGrid
 
-        return NeonGrid(shape=shape,
-                        velocity_set=velocity_set)
+        return NeonGrid(shape=shape, velocity_set=velocity_set)
     elif compute_backend == ComputeBackend.JAX:
         from xlb.grid.jax_grid import JaxGrid
 
@@ -27,37 +29,32 @@ def grid_factory(shape: Tuple[int, ...],
 
     raise ValueError(f"Compute backend {compute_backend} is not supported")
 
-def multires_grid_factory(shape: Tuple[int, ...],
-                 compute_backend: ComputeBackend = None,
-                 velocity_set=None,
-                 sparsity_pattern_list: List[np.ndarray] = [],
-                 sparsity_pattern_origins: List[neon.Index_3d]=[],
-                 ):
 
+def multires_grid_factory(
+    shape: Tuple[int, ...],
+    compute_backend: ComputeBackend = None,
+    velocity_set=None,
+    sparsity_pattern_list: List[np.ndarray] = [],
+    sparsity_pattern_origins: List[neon.Index_3d] = [],
+):
     compute_backend = compute_backend or DefaultConfig.default_backend
-    if compute_backend == ComputeBackend.WARP:
-        from xlb.grid.warp_grid import WarpGrid
-        raise ValueError(f"Compute backend {compute_backend} is not supported for multires grid")
-
+    velocity_set = velocity_set or DefaultConfig.velocity_set
     if compute_backend == ComputeBackend.NEON:
         from xlb.grid.multires_grid import NeonMultiresGrid
 
-        return NeonMultiresGrid(shape=shape,
-                                velocity_set=velocity_set,
-                                sparsity_pattern_list = sparsity_pattern_list,
-                                sparsity_pattern_origins=  sparsity_pattern_origins)
-
-    elif compute_backend == ComputeBackend.JAX:
+        return NeonMultiresGrid(
+            shape=shape, velocity_set=velocity_set, sparsity_pattern_list=sparsity_pattern_list, sparsity_pattern_origins=sparsity_pattern_origins
+        )
+    else:
         raise ValueError(f"Compute backend {compute_backend} is not supported for multires grid")
-
-    raise ValueError(f"Compute backend {compute_backend} is not supported for multires grid")
 
 
 class Grid(ABC):
-    def __init__(self,
-                 shape: Tuple[int, ...],
-                 compute_backend: ComputeBackend,
-                 ):
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        compute_backend: ComputeBackend,
+    ):
         self.shape = shape
         self.dim = len(shape)
         self.compute_backend = compute_backend
@@ -70,7 +67,7 @@ class Grid(ABC):
     def get_compute_backend(self):
         return self.compute_backend
 
-    def bounding_box_indices(self, remove_edges=False):
+    def bounding_box_indices(self, shape=None, remove_edges=False):
         """
         This function calculates the indices of the bounding box of a 2D or 3D grid.
         The bounding box is defined as the set of grid points on the outer edge of the grid.
@@ -88,9 +85,13 @@ class Grid(ABC):
         are numpy arrays of indices corresponding to each face.
         """
 
+        # If shape is not give, use self.shape
+        if shape is None:
+            shape = self.shape
+
         # Get the shape of the grid
         origin = np.array([0, 0, 0])
-        bounds = np.array(self.shape)
+        bounds = np.array(shape)
         if remove_edges:
             origin += 1
             bounds -= 1
@@ -99,11 +100,11 @@ class Grid(ABC):
         dim = len(bounds)
 
         # Generate bounding box indices for each face
-        grid = np.indices(self.shape)
+        grid = np.indices(shape)
         boundingBoxIndices = {}
 
         if dim == 2:
-            nx, ny = self.shape
+            nx, ny = shape
             boundingBoxIndices = {
                 "bottom": grid[:, slice_x, 0],
                 "top": grid[:, slice_x, ny - 1],
@@ -111,7 +112,7 @@ class Grid(ABC):
                 "right": grid[:, nx - 1, slice_y],
             }
         elif dim == 3:
-            nx, ny, nz = self.shape
+            nx, ny, nz = shape
             slice_z = slice(origin[2], bounds[2])
             boundingBoxIndices = {
                 "bottom": grid[:, slice_x, slice_y, 0].reshape(3, -1),

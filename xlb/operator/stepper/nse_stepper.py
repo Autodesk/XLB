@@ -22,7 +22,7 @@ from xlb.operator.boundary_condition.boundary_condition_registry import boundary
 from xlb.operator.collision import ForcedCollision
 from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
 from xlb.helper import check_bc_overlaps
-from xlb.helper.nse_solver import create_nse_fields
+from xlb.helper.nse_fields import create_nse_fields
 
 
 class IncompressibleNavierStokesStepper(Stepper):
@@ -35,9 +35,6 @@ class IncompressibleNavierStokesStepper(Stepper):
         force_vector=None,
     ):
         super().__init__(grid, boundary_conditions)
-        self.odd_or_even='even'
-        self.c_even = None
-        self.c_odd = None
 
         # Construct the collision operator
         if collision_type == "BGK":
@@ -92,6 +89,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         if True:
             import xlb.velocity_set
             from xlb.operator.macroscopic import Macroscopic
+
             # macro = Macroscopic(
             #     compute_backend=ComputeBackend.NEON,
             #     precision_policy=self.precision_policy,
@@ -119,11 +117,11 @@ class IncompressibleNavierStokesStepper(Stepper):
         bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
         # Initialize auxiliary data if needed
         f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
-        bc_mask.update_host(0)
-        missing_mask.update_host(0)
+        # bc_mask.update_host(0)
+        # missing_mask.update_host(0)
         wp.synchronize()
-        #bc_mask.export_vti("bc_mask.vti", 'bc_mask')
-        #missing_mask.export_vti("missing_mask.vti", 'missing_mask')
+        # bc_mask.export_vti("bc_mask.vti", 'bc_mask')
+        # missing_mask.export_vti("missing_mask.vti", 'missing_mask')
 
         return f_0, f_1, bc_mask, missing_mask
 
@@ -217,20 +215,16 @@ class IncompressibleNavierStokesStepper(Stepper):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
         _opp_indices = self.velocity_set.opp_indices
+        lattice_central_index = self.velocity_set.center_index
 
         # Read the list of bc_to_id created upon instantiation
         bc_to_id = boundary_condition_registry.bc_to_id
-        id_to_bc = boundary_condition_registry.id_to_bc
 
         # Gather IDs of ExtrapolationOutflowBC boundary conditions
         extrapolation_outflow_bc_ids = []
         for bc_name, bc_id in bc_to_id.items():
             if bc_name.startswith("ExtrapolationOutflowBC"):
                 extrapolation_outflow_bc_ids.append(bc_id)
-        # Group active boundary conditions
-        active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
-
-        _opp_indices = self.velocity_set.opp_indices
 
         @wp.func
         def apply_bc(
@@ -303,12 +297,13 @@ class IncompressibleNavierStokesStepper(Stepper):
             for i in range(wp.static(len(self.boundary_conditions))):
                 if wp.static(self.boundary_conditions[i].needs_aux_recovery):
                     if _boundary_id == wp.static(self.boundary_conditions[i].id):
-                        # Perform the swapping of data
-                        # (i) Recover the values stored in the central index of f_1
-                        f_0[0, index[0], index[1], index[2]] = self.store_dtype(_f1_thread[0])
-                        # (ii) Recover the values stored in the missing directions of f_1
-                        for l in range(1, self.velocity_set.q):
-                            if _missing_mask[l] == wp.uint8(1):
+                        for l in range(self.velocity_set.q):
+                            # Perform the swapping of data
+                            if l == lattice_central_index:
+                                # (i) Recover the values stored in the central index of f_1
+                                f_0[l, index[0], index[1], index[2]] = self.store_dtype(_f1_thread[l])
+                            elif _missing_mask[l] == wp.uint8(1):
+                                # (ii) Recover the values stored in the missing directions of f_1
                                 f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(_f1_thread[_opp_indices[l]])
 
         @wp.kernel
@@ -366,19 +361,17 @@ class IncompressibleNavierStokesStepper(Stepper):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
         _opp_indices = self.velocity_set.opp_indices
-        #_cast_to_store_dtype = self.store_dtype()
+        lattice_central_index = self.velocity_set.center_index
+        # _cast_to_store_dtype = self.store_dtype()
 
         # Read the list of bc_to_id created upon instantiation
         bc_to_id = boundary_condition_registry.bc_to_id
-        id_to_bc = boundary_condition_registry.id_to_bc
 
         # Gather IDs of ExtrapolationOutflowBC boundary conditions
         extrapolation_outflow_bc_ids = []
         for bc_name, bc_id in bc_to_id.items():
             if bc_name.startswith("ExtrapolationOutflowBC"):
                 extrapolation_outflow_bc_ids.append(bc_id)
-        # Group active boundary conditions
-        active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
 
         @wp.func
         def apply_bc(
@@ -430,28 +423,57 @@ class IncompressibleNavierStokesStepper(Stepper):
 
             return _f0_thread, _f1_thread, _missing_mask
 
-        import typing
+        @wp.func
+        def neon_apply_aux_recovery_bc(
+            index: Any,
+            _boundary_id: Any,
+            _missing_mask: Any,
+            f_0_pn: Any,
+            _f1_thread: Any,
+        ):
+            # Note:
+            # In XLB, the BC auxiliary data (e.g. prescribed values of pressure or normal velocity) are stored in (i) central index of f_1 and/or
+            # (ii) missing directions of f_1. Some BCs may or may not need all these available storage space. This function checks whether
+            # the BC needs recovery of auxiliary data and then recovers the information for the next iteration (due to buffer swapping) by
+            # writting the thread values of f_1 (i.e._f1_thread) into f_0.
+
+            # Unroll the loop over boundary conditions
+            for i in range(wp.static(len(self.boundary_conditions))):
+                if wp.static(self.boundary_conditions[i].needs_aux_recovery):
+                    if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                        for l in range(self.velocity_set.q):
+                            # Perform the swapping of data
+                            if l == lattice_central_index:
+                                # (i) Recover the values stored in the central index of f_1
+                                # TODO: Add store dtype
+                                wp.neon_write(f_0_pn, index, l, _f1_thread[l])
+                            elif _missing_mask[l] == wp.uint8(1):
+                                # (ii) Recover the values stored in the missing directions of f_1
+                                # TODO: Add store dtype
+                                wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread[_opp_indices[l]])
+
         @neon.Container.factory(name="nse_stepper")
         def container(
-                f_0_fd: Any,
-                f_1_fd: Any,
-                bc_mask_fd: Any,
-                missing_mask_fd: Any,
-                omega: Any,
-                timestep: int,
+            f_0_fd: Any,
+            f_1_fd: Any,
+            bc_mask_fd: Any,
+            missing_mask_fd: Any,
+            omega: Any,
+            timestep: int,
         ):
             cast_to_store_dtype = self.store_dtype
+
             def nse_stepper_ll(loader: neon.Loader):
                 loader.set_grid(bc_mask_fd.get_grid())
 
-                f_0_pn=(loader.get_read_handle(f_0_fd))
-                bc_mask_pn=loader.get_read_handle(bc_mask_fd)
-                missing_mask_pn=loader.get_read_handle(missing_mask_fd)
+                f_0_pn = loader.get_read_handle(f_0_fd)
+                bc_mask_pn = loader.get_read_handle(bc_mask_fd)
+                missing_mask_pn = loader.get_read_handle(missing_mask_fd)
 
-                f_1_pn =loader.get_write_handle(f_1_fd)
+                f_1_pn = loader.get_write_handle(f_1_fd)
 
                 @wp.func
-                def nse_stepper_cl(index: typing.Any):
+                def nse_stepper_cl(index: Any):
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     if _boundary_id == wp.uint8(255):
                         return
@@ -469,47 +491,25 @@ class IncompressibleNavierStokesStepper(Stepper):
                     _f_post_collision = self.collision.neon_functional(_f_post_stream, _feq, _rho, _u, omega)
 
                     # Apply post-collision boundary conditions
-                    _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False)
+                    _f_post_collision = apply_bc(
+                        index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False
+                    )
+
+                    # Apply auxiliary recovery for boundary conditions (swapping)
+                    neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, _f1_thread)
 
                     # Store the result in f_1
                     for l in range(self.velocity_set.q):
-                        # TODO: Improve this later
-                        if wp.static("GradsApproximationBC" in active_bcs):
-                            if _boundary_id == wp.static(boundary_condition_registry.bc_to_id["GradsApproximationBC"]):
-                                if _missing_mask[l] == wp.uint8(1):
-                                    wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread[_opp_indices[l]])
                         wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
+
                 loader.declare_kernel(nse_stepper_cl)
+
             return nse_stepper_ll
 
         return None, container
 
-    def get_containers(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
-        _, container = self._construct_neon()
-        return {'even': container(f_0, f_1,  bc_mask, missing_mask, omega, 0),
-                'odd': container(f_1, f_0, bc_mask, missing_mask, omega, 1)}
-
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_launch(self, f_0, f_1, bc_mask, missing_mask,  omega, timestep):
-        #if self.c is None:
-        #    self.c = self.neon_container(f_0, f_1, bc_mask, missing_mask, timestep)
-        # c = None
-        # if self.odd_or_even == 'even':
-        #     c = self.c_even
-        # else:
-        #     c = self.c_odd
-        #
-        # if c is None:
-        #     pass
+    def neon_launch(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
         c = self.neon_container(f_0, f_1, bc_mask, missing_mask, omega, timestep)
         c.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
-        #
-        # if self.odd_or_even == 'even':
-        #     c = self.c_even
-        # else:
-        #     c = self.c_odd
-        #
-        # if self.odd_or_even == 'even':
-        #     self.odd_or_even = 'odd'
-
         return f_0, f_1

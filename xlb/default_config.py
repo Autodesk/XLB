@@ -24,13 +24,12 @@ def init(velocity_set, default_backend, default_precision_policy):
         import warp as wp
         import neon
 
-        #wp.config.mode = "release"
-        #wp.config.llvm_cuda = False
-        #wp.config.verbose = True
-        #wp.verbose_warnings = True
+        # wp.config.mode = "release"
+        # wp.config.llvm_cuda = False
+        # wp.config.verbose = True
+        # wp.verbose_warnings = True
 
         wp.init()
-
 
         # It's a good idea to always clear the kernel cache when developing new native or codegen features
         wp.build.clear_kernel_cache()

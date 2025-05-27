@@ -93,7 +93,7 @@ class ZouHeBC(BoundaryCondition):
             # a single non-zero number associated with pressure BC OR
             # a vector of zeros associated with no-slip BC.
             # Accounting for all scenarios here.
-            if self.compute_backend is ComputeBackend.WARP:
+            if self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
                 idx = np.nonzero(prescribed_value)[0]
                 prescribed_value = prescribed_value[idx][0] if idx.size else 0.0
                 prescribed_value = self.precision_policy.store_precision.wp_dtype(prescribed_value)
@@ -116,7 +116,7 @@ class ZouHeBC(BoundaryCondition):
         _prescribed_value = self.prescribed_value
 
         @wp.func
-        def prescribed_profile_warp(index: wp.vec3i):
+        def prescribed_profile_warp(index: Any):
             return wp.vec(_prescribed_value, length=1)
 
         def prescribed_profile_jax():
@@ -125,6 +125,8 @@ class ZouHeBC(BoundaryCondition):
         if self.compute_backend == ComputeBackend.JAX:
             return prescribed_profile_jax
         elif self.compute_backend == ComputeBackend.WARP:
+            return prescribed_profile_warp
+        elif self.compute_backend == ComputeBackend.NEON:
             return prescribed_profile_warp
 
     @partial(jit, static_argnums=(0,), inline=True)
@@ -269,12 +271,12 @@ class ZouHeBC(BoundaryCondition):
         return f_post
 
     def _construct_warp(self):
-        # load helper functions
-        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
+        # load helper functions. Always use warp backend for helper functions as it may also be called by the Neon backend.
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=ComputeBackend.WARP)
+
         # Set local constants
         _d = self.velocity_set.d
-        _q = self.velocity_set.q
-        _opp_indices = self.velocity_set.opp_indices
+        lattice_central_index = self.velocity_set.center_index
 
         @wp.func
         def functional_velocity(
@@ -299,7 +301,7 @@ class ZouHeBC(BoundaryCondition):
             # Find the value of u from the missing directions
             # Since we are only considering normal velocity, we only need to find one value (stored at the center of f_1)
             # Create velocity vector by multiplying the prescribed value with the normal vector
-            prescribed_value = f_1[0, index[0], index[1], index[2]]
+            prescribed_value = decode_lattice_center_value(index, f_1)
             _u = -prescribed_value * normals
 
             for d in range(_d):
@@ -330,7 +332,7 @@ class ZouHeBC(BoundaryCondition):
 
             # Find the value of rho from the missing directions
             # Since we need only one scalar value, we only need to find one value (stored at the center of f_1)
-            _rho = f_1[0, index[0], index[1], index[2]]
+            _rho = decode_lattice_center_value(index, f_1)
 
             # calculate velocity
             fsum = bc_helper.get_bc_fsum(_f, _missing_mask)
@@ -341,6 +343,18 @@ class ZouHeBC(BoundaryCondition):
             feq = self.equilibrium_operator.warp_functional(_rho, _u)
             _f = bc_helper.bounceback_nonequilibrium(_f, feq, _missing_mask)
             return _f
+
+        @wp.func
+        def decode_lattice_center_value(index: Any, f_1: Any):
+            """
+            Decode the encoded values needed for the boundary condition treatment from the center location in f_1.
+            """
+            if wp.static(self.compute_backend == ComputeBackend.WARP):
+                value = f_1[lattice_central_index, index[0], index[1], index[2]]
+            else:
+                # Note: in Neon case, f_1 is a pointer to the field not the actual data.
+                value = wp.neon_read(f_1, index, lattice_central_index)
+            return self.compute_dtype(value)
 
         if self.bc_type == "velocity":
             functional = functional_velocity
@@ -360,3 +374,15 @@ class ZouHeBC(BoundaryCondition):
             dim=f_pre.shape[1:],
         )
         return f_post
+
+    def _construct_neon(self):
+        # Redefine the quadratic eq operator for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.equilibrium_operator = QuadraticEquilibrium(compute_backend=ComputeBackend.WARP)
+        functional, _ = self._construct_warp()
+        return functional, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # rise exception as this feature is not implemented yet
+        raise NotImplementedError("This feature is not implemented in XLB with the NEON backend yet.")

@@ -2,24 +2,22 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.equilibrium import MultiresQuadraticEquilibrium
 
-def initialize_eq(f, grid, velocity_set, precision_policy, backend, rho=None, u=None):
+
+def initialize_eq(f, grid, velocity_set, precision_policy, compute_backend, rho=None, u=None):
     if rho is None:
         rho = grid.create_field(cardinality=1, fill_value=1.0, dtype=precision_policy.compute_precision)
     if u is None:
         u = grid.create_field(cardinality=velocity_set.d, fill_value=0.0, dtype=precision_policy.compute_precision)
     equilibrium = QuadraticEquilibrium()
 
-    if backend == ComputeBackend.JAX:
+    if compute_backend == ComputeBackend.JAX:
         f = equilibrium(rho, u)
-
-    elif backend == ComputeBackend.WARP:
+    elif compute_backend == ComputeBackend.WARP:
         f = equilibrium(rho, u, f)
-
-    elif backend == ComputeBackend.NEON:
+    elif compute_backend == ComputeBackend.NEON:
         f = equilibrium(rho, u, f)
-        pass
     else:
-        raise NotImplementedError(f"Backend {backend} not implemented")
+        raise NotImplementedError(f"Backend {compute_backend} not implemented")
 
     del rho, u
 
@@ -30,9 +28,5 @@ def initialize_multires_eq(f, grid, velocity_set, precision_policy, backend, rho
     equilibrium = MultiresQuadraticEquilibrium()
     for level in range(grid.count_levels):
         print("MultiresQuadraticEquilibrium")
-        equilibrium(level = level,
-                    rho= rho,
-                    u=u,
-                    f=f,
-                    stream= 0)
+        equilibrium(rho=rho, u=u, f=f, level=level, stream=0)
     return f

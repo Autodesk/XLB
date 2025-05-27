@@ -6,75 +6,27 @@ from typing import Any
 
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from xlb.operator.macroscopic.zero_moment import ZeroMoment
-from xlb.operator.macroscopic.first_moment import FirstMoment
+from xlb.operator.macroscopic import Macroscopic, ZeroMoment, FirstMoment
 
 
-class MultiresMacroscopic(Operator):
-    """A class to compute both zero and first moments of distribution functions (rho, u)."""
+class MultiresMacroscopic(Macroscopic):
+    """A class to compute both zero and first moments of distribution functions (rho, u) on a multi-resolution grid."""
 
     def __init__(self, *args, **kwargs):
-        self.zero_moment = ZeroMoment(*args, **kwargs)
-        self.first_moment = FirstMoment(*args, **kwargs)
         super().__init__(*args, **kwargs)
-
-
-    def _construct_warp(self):
-        zero_moment_func = self.zero_moment.warp_functional
-        first_moment_func = self.first_moment.warp_functional
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        @wp.func
-        def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
-            return rho, u
-
-        @wp.kernel
-        def kernel(
-            f: wp.array4d(dtype=Any),
-            rho: wp.array4d(dtype=Any),
-            u: wp.array4d(dtype=Any),
-        ):
-            i, j, k = wp.tid()
-            index = wp.vec3i(i, j, k)
-
-            _f = _f_vec()
-            for l in range(self.velocity_set.q):
-                _f[l] = f[l, index[0], index[1], index[2]]
-            _rho, _u = functional(_f)
-
-            rho[0, index[0], index[1], index[2]] = self.store_dtype(_rho)
-            for d in range(self.velocity_set.d):
-                u[d, index[0], index[1], index[2]] = self.store_dtype(_u[d])
-
-        return functional, kernel
-
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, rho, u):
-        wp.launch(
-            self.warp_kernel,
-            inputs=[f, rho, u],
-            dim=rho.shape[1:],
-        )
-        return rho, u
+        if self.compute_backend in [ComputeBackend.JAX, ComputeBackend.WARP]:
+            raise NotImplementedError(f"Operator {self.__class__.__name__} not supported in {self.compute_backend} backend.")
 
     def _construct_neon(self):
-        zero_moment_func = self.zero_moment.neon_functional
-        first_moment_func = self.first_moment.neon_functional
-        print(f"VELOCITY SET: {self.velocity_set.q}")
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
-        @wp.func
-        def functional(f: _f_vec):
-            rho = zero_moment_func(f)
-            u = first_moment_func(f, rho)
-            return rho, u
-
-
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-
         import neon, typing
+
+        # Redefine the zero and first moment operators for the neon backend
+        # This is because the neon backend relies on the warp functionals for its operations.
+        self.zero_moment = ZeroMoment(compute_backend=ComputeBackend.WARP)
+        self.first_moment = FirstMoment(compute_backend=ComputeBackend.WARP)
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        functional, _ = self._construct_warp()
+
         @neon.Container.factory("macroscopic")
         def container(
             level: int,
@@ -84,12 +36,13 @@ class MultiresMacroscopic(Operator):
             u_fild: Any,
         ):
             _d = self.velocity_set.d
+
             def macroscopic_ll(loader: neon.Loader):
                 loader.set_mres_grid(f_field.get_grid(), level)
 
-                rho=loader.get_mres_write_handle(rho_field)
-                u =loader.get_mres_write_handle(u_fild)
-                f=loader.get_mres_read_handle(f_field)
+                rho = loader.get_mres_write_handle(rho_field)
+                u = loader.get_mres_write_handle(u_fild)
+                f = loader.get_mres_read_handle(f_field)
                 bc_mask_pn = loader.get_mres_read_handle(bc_mask)
 
                 @wp.func
@@ -98,7 +51,7 @@ class MultiresMacroscopic(Operator):
                     _boundary_id = wp.neon_read(bc_mask_pn, gIdx, 0)
 
                     for l in range(self.velocity_set.q):
-                        _f[l] = wp.neon_read(f, gIdx,l)
+                        _f[l] = wp.neon_read(f, gIdx, l)
 
                     _rho, _u = functional(_f)
 
@@ -117,35 +70,19 @@ class MultiresMacroscopic(Operator):
                         wp.neon_write(u, gIdx, d, _u[d])
 
                 loader.declare_kernel(macroscopic_cl)
+
             return macroscopic_ll
+
         return functional, container
 
-    def get_containers(self, target_level, f_0, f_1, bc_mask, rho, u):
-        _, container = self._construct_neon()
-        evenList = []
-        oddList = []
-        evenList.append(container(target_level, f_0, bc_mask,   rho, u))
-        oddList.append( container(target_level, f_1, bc_mask,  rho, u))
-        return {'even':evenList ,
-                'odd':oddList }
-
-    def get_container(self, target_level, f_0, f_1, bc_mask, rho, u):
-        _, self.container = self._construct_neon()
-        evenList = []
-        oddList = []
-        evenList.append(container(target_level, f_0, bc_mask, rho, u))
-        oddList.append(container(target_level, f_1, bc_mask, rho, u))
-        return {"macro": evenList, "odd": oddList}
-
     def init_containers(self):
-        self.containers=None
+        self.containers = None
         _, self.containers = self._construct_neon()
 
-    def launch_container(self, streamId, f_0,  bc_mask, rho, u):
+    def launch_container(self, streamId, f_0, bc_mask, rho, u):
         grid = f_0.get_grid()
         for target_level in range(grid.num_levels):
-                self.containers(target_level, f_0, bc_mask, rho, u).run(streamId)
-
+            self.containers(target_level, f_0, bc_mask, rho, u).run(streamId)
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, f, rho, u):

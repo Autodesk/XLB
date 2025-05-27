@@ -104,3 +104,12 @@ class SecondMoment(Operator):
         # Launch the warp kernel
         wp.launch(self.warp_kernel, inputs=[f, pi], dim=pi.shape[1:])
         return pi
+
+    def _construct_neon(self):
+        functional, _ = self._construct_warp()
+        return functional, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f, rho):
+        # rise exception as this feature is not implemented yet
+        raise NotImplementedError("This feature is not implemented in XLB with the NEON backend yet.")

@@ -17,6 +17,7 @@ from xlb.operator.operator import Operator
 from xlb import DefaultConfig
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.boundary_condition import HelperFunctionsBC
+import neon
 
 
 # Enum for implementation step
@@ -94,7 +95,7 @@ class BoundaryCondition(Operator):
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -132,7 +133,7 @@ class BoundaryCondition(Operator):
             f_0: wp.array4d(dtype=Any),
             f_1: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
+            missing_mask: wp.array4d(dtype=wp.uint8),
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -160,6 +161,71 @@ class BoundaryCondition(Operator):
 
         return aux_data_init_kernel
 
+    def _construct_aux_data_init_container(self, functional):
+        """
+        Constructs the Neon container for encoding auxilary data recovery.
+        """
+
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
+
+        _id = wp.uint8(self.id)
+        _opp_indices = self.velocity_set.opp_indices
+        _num_of_aux_data = self.num_of_aux_data
+
+        # Find velocity index for 0, 0, 0
+        lattice_central_index = self.velocity_set.center_index
+
+        # Construct the Neon container
+        @neon.Container.factory(name="EncodingAuxData_" + str(self.id))
+        def aux_data_init_container(
+            f_0: Any,
+            f_1: Any,
+            bc_mask: Any,
+            missing_mask: Any,
+        ):
+            def aux_data_init_ll(loader: neon.Loader):
+                loader.set_grid(f_0.get_grid())
+
+                f_0_pn = loader.get_read_handle(f_0)
+                f_1_pn = loader.get_write_handle(f_1)
+                bc_mask_pn = loader.get_read_handle(bc_mask)
+                missing_mask_pn = loader.get_read_handle(missing_mask)
+
+                @wp.func
+                def aux_data_init_cl(index: Any):
+                    # read tid data
+                    _, _, _boundary_id, _missing_mask = bc_helper.neon_get_thread_data(f_0_pn, f_1_pn, bc_mask_pn, missing_mask_pn, index)
+
+                    # Apply the functional
+                    if _boundary_id == _id:
+                        # prescribed_values is a q-sized vector of type wp.vec
+                        prescribed_values = functional(index)
+
+                    # Write the result for all q directions, but only store up to num_of_aux_data
+                    counter = wp.int32(0)
+                    for l in range(self.velocity_set.q):
+                        # wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
+                        if l == lattice_central_index:
+                            # The first BC auxiliary data is stored in the zero'th index of f_1 associated with its center.
+                            wp.neon_write(f_1_pn, index, l, self.store_dtype(prescribed_values[l]))
+                            counter += 1
+                        elif _missing_mask[l] == wp.uint8(1):
+                            # The other remaining BC auxiliary data are stored in missing directions of f_1.
+                            # Only store up to num_of_aux_data
+                            wp.neon_write(f_1_pn, index, _opp_indices[l], self.store_dtype(prescribed_values[l]))
+                            counter += 1
+                        if counter > _num_of_aux_data:
+                            # Only store up to num_of_aux_data
+                            return
+
+                # Declare the kernel in the Neon loader
+                loader.declare_kernel(aux_data_init_cl)
+
+            return aux_data_init_ll
+
+        return aux_data_init_container
+
+    # Initialize auxiliary data for the boundary condition.
     def aux_data_init(self, f_0, f_1, bc_mask, missing_mask):
         if self.compute_backend == ComputeBackend.WARP:
             # Launch the warp kernel
@@ -171,5 +237,85 @@ class BoundaryCondition(Operator):
         elif self.compute_backend == ComputeBackend.JAX:
             # We don't use boundary aux encoding/decoding in JAX
             self.prescribed_values = self.profile()
+        elif self.compute_backend == ComputeBackend.NEON:
+            c = self._construct_aux_data_init_container(self.profile)(f_0, f_1, bc_mask, missing_mask)
+            c.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
+        self.is_initialized_with_aux_data = True
+        return f_0, f_1
+
+    def _construct_multires_aux_data_init_container(self, functional):
+        """
+        Constructs the Neon container for encoding auxilary data recovery.
+        """
+
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
+
+        _id = wp.uint8(self.id)
+        _opp_indices = self.velocity_set.opp_indices
+        _num_of_aux_data = self.num_of_aux_data
+
+        # Find velocity index for 0, 0, 0
+        lattice_central_index = self.velocity_set.center_index
+
+        # Construct the Neon container
+        @neon.Container.factory(name="MultiresEncodingAuxData_" + str(self.id))
+        def aux_data_init_container(
+            f_0: Any,
+            f_1: Any,
+            bc_mask: Any,
+            missing_mask: Any,
+            level: Any,
+        ):
+            def aux_data_init_ll(loader: neon.Loader):
+                loader.set_mres_grid(f_0.get_grid(), level)
+
+                f_0_pn = loader.get_mres_read_handle(f_0)
+                f_1_pn = loader.get_mres_write_handle(f_1)
+                bc_mask_pn = loader.get_mres_read_handle(bc_mask)
+                missing_mask_pn = loader.get_mres_read_handle(missing_mask)
+
+                @wp.func
+                def aux_data_init_cl(index: Any):
+                    # read tid data
+                    _, _, _boundary_id, _missing_mask = bc_helper.neon_get_thread_data(f_0_pn, f_1_pn, bc_mask_pn, missing_mask_pn, index)
+
+                    # Apply the functional
+                    if _boundary_id == _id:
+                        # prescribed_values is a q-sized vector of type wp.vec
+                        prescribed_values = functional(index)
+
+                    # Write the result for all q directions, but only store up to num_of_aux_data
+                    counter = wp.int32(0)
+                    for l in range(self.velocity_set.q):
+                        # wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
+                        if l == lattice_central_index:
+                            # The first BC auxiliary data is stored in the zero'th index of f_1 associated with its center.
+                            # TODO: add self.store_dtype
+                            wp.neon_write(f_1_pn, index, l, prescribed_values[l])
+                            counter += 1
+                        elif _missing_mask[l] == wp.uint8(1):
+                            # The other remaining BC auxiliary data are stored in missing directions of f_1.
+                            # Only store up to num_of_aux_data
+                            # TODO: add self.store_dtype
+                            wp.neon_write(f_1_pn, index, _opp_indices[l], prescribed_values[l])
+                            counter += 1
+                        if counter > _num_of_aux_data:
+                            # Only store up to num_of_aux_data
+                            return
+
+                # Declare the kernel in the Neon loader
+                loader.declare_kernel(aux_data_init_cl)
+
+            return aux_data_init_ll
+
+        return aux_data_init_container
+
+    # Initialize auxiliary data for the boundary condition.
+    def multires_aux_data_init(self, f_0, f_1, bc_mask, missing_mask, level, stream):
+        if self.compute_backend in [ComputeBackend.JAX, ComputeBackend.WARP]:
+            raise NotImplementedError(f"Operator {self.__class__.__name__} not supported in {self.compute_backend} backend.")
+        if self.compute_backend == ComputeBackend.NEON:
+            c = self._construct_multires_aux_data_init_container(self.profile)(f_0, f_1, bc_mask, missing_mask, level)
+            c.run(stream, container_runtime=neon.Container.ContainerRuntime.neon)
         self.is_initialized_with_aux_data = True
         return f_0, f_1

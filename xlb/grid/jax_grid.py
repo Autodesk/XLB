@@ -20,7 +20,7 @@ class JaxGrid(Grid):
 
     def _initialize_backend(self):
         self.nDevices = jax.device_count()
-        self.backend = jax.default_backend()
+        self.compute_backend = jax.default_backend()
         self.device_mesh = (
             mesh_utils.create_device_mesh((1, self.nDevices, 1)) if self.dim == 2 else mesh_utils.create_device_mesh((1, self.nDevices, 1, 1))
         )
