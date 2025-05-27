@@ -17,6 +17,7 @@ from xlb.operator.boundary_condition.boundary_condition import (
     BoundaryCondition,
     ImplementationStep,
 )
+from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 
 
 class FullwayBounceBackBC(BoundaryCondition):
@@ -31,6 +32,7 @@ class FullwayBounceBackBC(BoundaryCondition):
         compute_backend: ComputeBackend = None,
         indices=None,
         mesh_vertices=None,
+        voxelization_method: MeshVoxelizationMethod = None,
     ):
         super().__init__(
             ImplementationStep.COLLISION,
@@ -39,6 +41,7 @@ class FullwayBounceBackBC(BoundaryCondition):
             compute_backend,
             indices,
             mesh_vertices,
+            voxelization_method,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)
