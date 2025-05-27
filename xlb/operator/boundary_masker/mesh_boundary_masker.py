@@ -1,8 +1,7 @@
-# Base class for all equilibriums
+# Base class for mesh masker operators
 
 import numpy as np
 import warp as wp
-import jax
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
@@ -27,30 +26,9 @@ class MeshBoundaryMasker(Operator):
         if self.velocity_set.d == 2:
             raise NotImplementedError("This Operator is not implemented in 2D!")
 
-        # Also using Warp kernels for JAX implementation
-        if self.compute_backend == ComputeBackend.JAX:
-            self.warp_functional, self.warp_kernel = self._construct_warp()
-
-    @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(
-        self,
-        bc,
-        bc_mask,
-        missing_mask,
-    ):
-        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
-        # Use Warp backend even for this particular operation.
-        wp.init()
-        bc_mask = wp.from_jax(bc_mask)
-        missing_mask = wp.from_jax(missing_mask)
-        bc_mask, missing_mask = self.warp_implementation(bc, bc_mask, missing_mask)
-        return wp.to_jax(bc_mask), wp.to_jax(missing_mask)
-
-    def _construct_warp(self):
         # Make constants for warp
-        _c_float = self.velocity_set.c_float
-        _q = wp.constant(self.velocity_set.q)
-        _opp_indices = self.velocity_set.opp_indices
+        _c = self.velocity_set.c
+        _q = self.velocity_set.q
 
         @wp.func
         def index_to_position(index: wp.vec3i):
@@ -58,6 +36,33 @@ class MeshBoundaryMasker(Operator):
             ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
             pos = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
             return pos
+
+        @wp.func
+        def is_in_bounds(index: wp.vec3i, domain_shape: wp.vec3i):
+            return (
+                index[0] >= 0
+                and index[0] < domain_shape[0]
+                and index[1] >= 0
+                and index[1] < domain_shape[1]
+                and index[2] >= 0
+                and index[2] < domain_shape[2]
+            )
+
+        @wp.func
+        def out_of_bound_pull_index(
+            lattice_dir: wp.int32,
+            index: wp.vec3i,
+            domain_shape: wp.vec3i,
+        ):
+            # Get the index of the streaming direction
+            pull_index = wp.vec3i()
+            for d in range(self.velocity_set.d):
+                pull_index[d] = index[d] - _c[d, lattice_dir]
+
+            # check if pull index is out of bound
+            # These directions will have missing information after streaming
+            missing = not is_in_bounds(pull_index, domain_shape)
+            return missing
 
         # Function to precompute useful values per triangle, assuming spacing is (1,1,1)
         # inputs: verts: triangle vertices, normal: triangle unit normal
@@ -78,6 +83,7 @@ class MeshBoundaryMasker(Operator):
             dist_edge = wp.mat33f(0.0)
 
             for axis0 in range(0, 3):
+                axis1 = (axis0 + 1) % 3
                 axis2 = (axis0 + 2) % 3
 
                 sgn = 1.0
@@ -85,21 +91,18 @@ class MeshBoundaryMasker(Operator):
                     sgn = -1.0
 
                 for i in range(0, 3):
-                    normal_edge0[i][axis0] = -1.0 * sgn * edges[i][axis0]
-                    normal_edge1[i][axis0] = sgn * edges[i][axis0]
+                    normal_edge0[i, axis0] = -1.0 * sgn * edges[i, axis1]
+                    normal_edge1[i, axis0] = sgn * edges[i, axis0]
 
-                    dist_edge[i][axis0] = (
-                        -1.0 * (normal_edge0[i][axis0] * verts[i][axis0] + normal_edge1[i][axis0] * verts[i][axis0])
-                        + wp.max(0.0, normal_edge0[i][axis0])
-                        + wp.max(0.0, normal_edge1[i][axis0])
+                    dist_edge[i, axis0] = (
+                        -1.0 * (normal_edge0[i, axis0] * verts[i, axis0] + normal_edge1[i, axis0] * verts[i, axis1])
+                        + wp.max(0.0, normal_edge0[i, axis0])
+                        + wp.max(0.0, normal_edge1[i, axis0])
                     )
 
             return dist1, dist2, normal_edge0, normal_edge1, dist_edge
 
         # Check whether this triangle intersects the unit cube at position low
-        #  inputs: low: position of the cube, normal: triangle unit normal, dist1, dist2, normal_edge0, normal_edge1, dist_edge: precomputed values
-        #  outputs: True if intersection, False otherwise
-        #  reference: Fast parallel surface and solid voxelization on GPUs, M. Schwarz, H-P. Siedel, https://dl.acm.org/doi/10.1145/1882261.1866201
         @wp.func
         def triangle_box_intersect(
             low: wp.vec3f,
@@ -116,7 +119,7 @@ class MeshBoundaryMasker(Operator):
                 for ax0 in range(0, 3):
                     ax1 = (ax0 + 1) % 3
                     for i in range(0, 3):
-                        intersect = intersect and (normal_edge0[i][ax0] * low[ax0] + normal_edge1[i][ax0] * low[ax1] + dist_edge[i][ax0] >= 0.0)
+                        intersect = intersect and (normal_edge0[i, ax0] * low[ax0] + normal_edge1[i, ax0] * low[ax1] + dist_edge[i, ax0] >= 0.0)
 
                 return intersect
             else:
@@ -147,12 +150,8 @@ class MeshBoundaryMasker(Operator):
 
             return False
 
-        # Construct the warp kernel
-        # Do voxelization mesh query (warp.mesh_query_aabb) to find solid voxels
-        #  - this gives an approximate 1 voxel thick surface around mesh
         @wp.kernel
-        def kernel(
-            mesh_id: wp.uint64,
+        def resolve_out_of_bound_kernel(
             id_number: wp.int32,
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
@@ -163,31 +162,43 @@ class MeshBoundaryMasker(Operator):
             # Get local indices
             index = wp.vec3i(i, j, k)
 
-            # position of the point
-            pos_bc_cell = index_to_position(index)
-            half = wp.vec3(0.5, 0.5, 0.5)
+            # domain shape to check for out of bounds
+            domain_shape = wp.vec3i(bc_mask.shape[1], bc_mask.shape[2], bc_mask.shape[3])
 
-            if mesh_voxel_intersect(mesh_id=mesh_id, low=pos_bc_cell - half):
-                # Make solid voxel
-                bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
-            else:
-                # Find the fractional distance to the mesh in each direction
+            # Find the fractional distance to the mesh in each direction
+            if bc_mask[0, index[0], index[1], index[2]] == wp.uint8(id_number):
                 for l in range(1, _q):
-                    _dir = wp.vec3f(_c_float[0, l], _c_float[1, l], _c_float[2, l])
+                    # Ensuring out of bound pull indices are properly considered in the missing_mask
+                    if out_of_bound_pull_index(l, index, domain_shape):
+                        missing_mask[l, index[0], index[1], index[2]] = True
 
-                    # Check to see if this neighbor is solid - this is super inefficient TODO: make it way better
-                    if mesh_voxel_intersect(mesh_id=mesh_id, low=pos_bc_cell + _dir - half):
-                        # We know we have a solid neighbor
-                        # Set the boundary id and missing_mask
-                        bc_mask[0, index[0], index[1], index[2]] = wp.uint8(id_number)
-                        missing_mask[_opp_indices[l], index[0], index[1], index[2]] = True
+        # Construct some helper warp functions
+        if self.compute_backend == ComputeBackend.WARP:
+            self.index_to_position = index_to_position
+            self.is_in_bounds = is_in_bounds
+            self.out_of_bound_pull_index = out_of_bound_pull_index
+            self.mesh_voxel_intersect = mesh_voxel_intersect
+            self.resolve_out_of_bound_kernel = resolve_out_of_bound_kernel
 
-        return None, kernel
-
-    @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(
+    @Operator.register_backend(ComputeBackend.JAX)
+    def jax_implementation(
         self,
         bc,
+        bc_mask,
+        missing_mask,
+    ):
+        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
+        # Use Warp backend even for this particular operation.
+        wp.init()
+        bc_mask = wp.from_jax(bc_mask)
+        missing_mask = wp.from_jax(missing_mask)
+        bc_mask, missing_mask = self.warp_implementation(bc, bc_mask, missing_mask)
+        return wp.to_jax(bc_mask), wp.to_jax(missing_mask)
+
+    def warp_implementation_base(
+        self,
+        bc,
+        distances,
         bc_mask,
         missing_mask,
     ):
@@ -196,11 +207,9 @@ class MeshBoundaryMasker(Operator):
         assert bc.mesh_vertices.shape[1] == self.velocity_set.d, (
             "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
         )
-        mesh_vertices = bc.mesh_vertices
-        id_number = bc.id
 
-        # Check mesh extents against domain dimensions
         domain_shape = bc_mask.shape[1:]  # (nx, ny, nz)
+        mesh_vertices = bc.mesh_vertices
         mesh_min = np.min(mesh_vertices, axis=0)
         mesh_max = np.max(mesh_vertices, axis=0)
 
@@ -212,25 +221,31 @@ class MeshBoundaryMasker(Operator):
         # We are done with bc.mesh_vertices. Remove them from BC objects
         bc.__dict__.pop("mesh_vertices", None)
 
-        # Ensure this masker is called only for BCs that need implicit distance to the mesh
-        assert not bc.needs_mesh_distance, 'Please use "MeshDistanceBoundaryMasker" if this BC needs mesh distance!'
-
         mesh_indices = np.arange(mesh_vertices.shape[0])
         mesh = wp.Mesh(
             points=wp.array(mesh_vertices, dtype=wp.vec3),
-            indices=wp.array(mesh_indices, dtype=int),
+            indices=wp.array(mesh_indices, dtype=wp.int32),
         )
+        mesh_id = wp.uint64(mesh.id)
+        bc_id = bc.id
 
-        # Launch the warp kernel
+        # Launch the appropriate warp kernel
+        kernel_list = self.warp_kernel
+        if bc.needs_mesh_distance:
+            wp.launch(
+                kernel_list[1],
+                inputs=[mesh_id, bc_id, distances, bc_mask, missing_mask],
+                dim=bc_mask.shape[1:],
+            )
+        else:
+            wp.launch(
+                kernel_list[0],
+                inputs=[mesh_id, bc_id, bc_mask, missing_mask],
+                dim=bc_mask.shape[1:],
+            )
         wp.launch(
-            self.warp_kernel,
-            inputs=[
-                mesh.id,
-                id_number,
-                bc_mask,
-                missing_mask,
-            ],
+            self.resolve_out_of_bound_kernel,
+            inputs=[bc_id, bc_mask, missing_mask],
             dim=bc_mask.shape[1:],
         )
-
-        return bc_mask, missing_mask
+        return distances, bc_mask, missing_mask

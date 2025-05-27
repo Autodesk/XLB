@@ -17,7 +17,14 @@ from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.collision import ForcedCollision
-from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
+from xlb.operator.boundary_masker import (
+    IndicesBoundaryMasker,
+    MeshVoxelizationMethod,
+    MeshMaskerAABB,
+    MeshMaskerRay,
+    MeshMaskerWinding,
+    MeshMaskerAABBFill,
+)
 from xlb.helper import check_bc_overlaps
 from xlb.helper.nse_solver import create_nse_fields
 
@@ -70,7 +77,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Initialize distribution functions if initializer is provided
         if initializer is not None:
-            f_0 = initializer(self.grid, self.velocity_set, self.precision_policy, self.compute_backend)
+            f_0 = initializer(f_0)
         else:
             from xlb.helper.initializers import initialize_eq
 
@@ -82,49 +89,79 @@ class IncompressibleNavierStokesStepper(Stepper):
         else:
             wp.copy(f_1, f_0)
 
+        # Important note: XLB uses f_1 buffer (center index and missing directions) to store auxiliary data for boundary conditions.
+
         # Process boundary conditions and update masks
-        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask)
+        f_1, bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, f_1, bc_mask, missing_mask)
+
         # Initialize auxiliary data if needed
-        f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
+        f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_1, bc_mask, missing_mask)
 
         return f_0, f_1, bc_mask, missing_mask
 
     @classmethod
-    def _process_boundary_conditions(cls, boundary_conditions, bc_mask, missing_mask):
+    def _process_boundary_conditions(cls, boundary_conditions, f_1, bc_mask, missing_mask):
         """Process boundary conditions and update boundary masks."""
+
         # Check for boundary condition overlaps
         check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
+
         # Create boundary maskers
         indices_masker = IndicesBoundaryMasker(
             velocity_set=DefaultConfig.velocity_set,
             precision_policy=DefaultConfig.default_precision_policy,
             compute_backend=DefaultConfig.default_backend,
         )
+
         # Split boundary conditions by type
         bc_with_vertices = [bc for bc in boundary_conditions if bc.mesh_vertices is not None]
         bc_with_indices = [bc for bc in boundary_conditions if bc.indices is not None]
+
         # Process indices-based boundary conditions
         if bc_with_indices:
             bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask)
+
         # Process mesh-based boundary conditions for 3D
         if DefaultConfig.velocity_set.d == 3 and bc_with_vertices:
-            mesh_masker = MeshBoundaryMasker(
-                velocity_set=DefaultConfig.velocity_set,
-                precision_policy=DefaultConfig.default_precision_policy,
-                compute_backend=DefaultConfig.default_backend,
-            )
             for bc in bc_with_vertices:
-                bc_mask, missing_mask = mesh_masker(bc, bc_mask, missing_mask)
+                if bc.voxelization_method is MeshVoxelizationMethod.AABB:
+                    mesh_masker = MeshMaskerAABB(
+                        velocity_set=DefaultConfig.velocity_set,
+                        precision_policy=DefaultConfig.default_precision_policy,
+                        compute_backend=DefaultConfig.default_backend,
+                    )
+                elif bc.voxelization_method is MeshVoxelizationMethod.RAY:
+                    mesh_masker = MeshMaskerRay(
+                        velocity_set=DefaultConfig.velocity_set,
+                        precision_policy=DefaultConfig.default_precision_policy,
+                        compute_backend=DefaultConfig.default_backend,
+                    )
+                elif bc.voxelization_method is MeshVoxelizationMethod.WINDING:
+                    mesh_masker = MeshMaskerWinding(
+                        velocity_set=DefaultConfig.velocity_set,
+                        precision_policy=DefaultConfig.default_precision_policy,
+                        compute_backend=DefaultConfig.default_backend,
+                    )
+                elif bc.voxelization_method is MeshVoxelizationMethod.AABB_FILL:
+                    mesh_masker = MeshMaskerAABBFill(
+                        velocity_set=DefaultConfig.velocity_set,
+                        precision_policy=DefaultConfig.default_precision_policy,
+                        compute_backend=DefaultConfig.default_backend,
+                    )
+                else:
+                    raise ValueError(f"Unsupported voxelization method: {bc.voxelization_method}")
+                # Apply the mesh masker to the boundary condition
+                f_1, bc_mask, missing_mask = mesh_masker(bc, f_1, bc_mask, missing_mask)
 
-        return bc_mask, missing_mask
+        return f_1, bc_mask, missing_mask
 
     @staticmethod
-    def _initialize_auxiliary_data(boundary_conditions, f_0, f_1, bc_mask, missing_mask):
+    def _initialize_auxiliary_data(boundary_conditions, f_1, bc_mask, missing_mask):
         """Initialize auxiliary data for boundary conditions that require it."""
         for bc in boundary_conditions:
             if bc.needs_aux_init and not bc.is_initialized_with_aux_data:
-                f_0, f_1 = bc.aux_data_init(f_0, f_1, bc_mask, missing_mask)
-        return f_0, f_1
+                f_1 = bc.aux_data_init(f_1, bc_mask, missing_mask)
+        return f_1
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
@@ -160,7 +197,7 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:
-            f_post_collision = bc.update_bc_auxilary_data(f_post_stream, f_post_collision, bc_mask, missing_mask)
+            f_post_collision = bc.assemble_dynamic_data(f_post_stream, f_post_collision, bc_mask, missing_mask)
             if bc.implementation_step == ImplementationStep.COLLISION:
                 f_post_collision = bc(
                     f_post_stream,
@@ -182,15 +219,12 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Read the list of bc_to_id created upon instantiation
         bc_to_id = boundary_condition_registry.bc_to_id
-        id_to_bc = boundary_condition_registry.id_to_bc
 
         # Gather IDs of ExtrapolationOutflowBC boundary conditions
         extrapolation_outflow_bc_ids = []
         for bc_name, bc_id in bc_to_id.items():
             if bc_name.startswith("ExtrapolationOutflowBC"):
                 extrapolation_outflow_bc_ids.append(bc_id)
-        # Group active boundary conditions
-        active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
 
         _opp_indices = self.velocity_set.opp_indices
 
@@ -198,8 +232,9 @@ class IncompressibleNavierStokesStepper(Stepper):
         def apply_bc(
             index: Any,
             timestep: Any,
+            bc_mask: Any,
             _boundary_id: Any,
-            missing_mask: Any,
+            _missing_mask: Any,
             f_0: Any,
             f_1: Any,
             f_pre: Any,
@@ -213,15 +248,15 @@ class IncompressibleNavierStokesStepper(Stepper):
                 if is_post_streaming:
                     if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.STREAMING):
                         if _boundary_id == wp.static(self.boundary_conditions[i].id):
-                            f_result = wp.static(self.boundary_conditions[i].warp_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                            f_result = wp.static(self.boundary_conditions[i].warp_functional)(index, timestep, _missing_mask, f_0, f_1, f_pre, f_post)
                 else:
                     if wp.static(self.boundary_conditions[i].implementation_step == ImplementationStep.COLLISION):
                         if _boundary_id == wp.static(self.boundary_conditions[i].id):
-                            f_result = wp.static(self.boundary_conditions[i].warp_functional)(index, timestep, missing_mask, f_0, f_1, f_pre, f_post)
+                            f_result = wp.static(self.boundary_conditions[i].warp_functional)(index, timestep, _missing_mask, f_0, f_1, f_pre, f_post)
                     if wp.static(self.boundary_conditions[i].id in extrapolation_outflow_bc_ids):
                         if _boundary_id == wp.static(self.boundary_conditions[i].id):
-                            f_result = wp.static(self.boundary_conditions[i].update_bc_auxilary_data)(
-                                index, timestep, missing_mask, f_0, f_1, f_pre, f_post
+                            f_result = wp.static(self.boundary_conditions[i].assemble_dynamic_data)(
+                                index, timestep, _missing_mask, f_0, f_1, f_pre, f_post
                             )
             return f_result
 
@@ -296,14 +331,14 @@ class IncompressibleNavierStokesStepper(Stepper):
             _f_post_collision = _f0_thread
 
             # Apply post-streaming boundary conditions
-            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
+            _f_post_stream = apply_bc(index, timestep, bc_mask, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
 
             _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
             _feq = self.equilibrium.warp_functional(_rho, _u)
             _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, _rho, _u, omega)
 
             # Apply post-collision boundary conditions
-            _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
+            _f_post_collision = apply_bc(index, timestep, bc_mask, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
 
             # Apply auxiliary recovery for boundary conditions (swapping)
             apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0, _f1_thread)

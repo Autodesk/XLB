@@ -19,6 +19,7 @@ from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,
     BoundaryCondition,
 )
+from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 
 
 class ExtrapolationOutflowBC(BoundaryCondition):
@@ -42,6 +43,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         compute_backend: ComputeBackend = None,
         indices=None,
         mesh_vertices=None,
+        voxelization_method: MeshVoxelizationMethod = None,
     ):
         # Call the parent constructor
         super().__init__(
@@ -51,6 +53,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             compute_backend,
             indices,
             mesh_vertices,
+            voxelization_method,
         )
 
         # find and store the normal vector using indices
@@ -58,7 +61,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         # Unpack the two warp functionals needed for this BC!
         if self.compute_backend == ComputeBackend.WARP:
-            self.warp_functional, self.update_bc_auxilary_data = self.warp_functional
+            self.warp_functional, self.assemble_dynamic_data = self.warp_functional
 
     def _get_normal_vec(self, indices):
         # Get the frequency count and most common element directly
@@ -89,9 +92,10 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return jnp.roll(fld, (vec[0], vec[1], vec[2]), axis=(1, 2, 3))
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def update_bc_auxilary_data(self, f_pre, f_post, bc_mask, missing_mask):
+    def assemble_dynamic_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
-        Update the auxilary distribution functions for the boundary condition.
+        Prepare time-dependent dynamic data for imposing the boundary condition in the next iteration after streaming.
+        We use directions that leave the domain for storing this prepared data.
         Since this function is called post-collisiotn: f_pre = f_post_stream and f_post = f_post_collision
         """
         sound_speed = 1.0 / jnp.sqrt(3.0)
@@ -102,7 +106,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         # Roll boundary mask in the opposite of the normal vector to mask its next immediate neighbour
         neighbour = self._roll(boundary, -self.normal)
 
-        # gather post-streaming values associated with previous time-step to construct the auxilary data for BC
+        # gather post-streaming values associated with previous time-step to construct the required data for BC
         fpop = jnp.where(boundary, f_pre, f_post)
         fpop_neighbour = jnp.where(neighbour, f_pre, f_post)
 
@@ -168,7 +172,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return _f
 
         @wp.func
-        def update_bc_auxilary_data(
+        def assemble_dynamic_data(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -177,9 +181,9 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             _f_pre: Any,
             _f_post: Any,
         ):
-            # Update the auxilary data for this BC using the neighbour's populations stored in f_aux and
-            # f_pre (post-streaming values of the current voxel). We use directions that leave the domain
-            # for storing this prepared data.
+            # Prepare time-dependent dynamic data for imposing the boundary condition in the next iteration after streaming.
+            # We use directions that leave the domain for storing this prepared data.
+            # Since this function is called post-collisiotn: f_pre = f_post_stream and f_post = f_post_collision
             _f = _f_post
             nv = get_normal_vectors(missing_mask)
             for l in range(self.velocity_set.q):
@@ -196,7 +200,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         kernel = self._construct_kernel(functional)
 
-        return (functional, update_bc_auxilary_data), kernel
+        return (functional, assemble_dynamic_data), kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, _f_pre, _f_post, bc_mask, missing_mask):
