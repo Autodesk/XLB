@@ -260,24 +260,18 @@ class IncompressibleNavierStokesStepper(Stepper):
         @wp.func
         def get_thread_data(
             f0_buffer: wp.array4d(dtype=Any),
-            f1_buffer: wp.array4d(dtype=Any),
             missing_mask: wp.array4d(dtype=Any),
             index: Any,
         ):
             # Read thread data for populations
             _f0_thread = _f_vec()
-            _f1_thread = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of pre-streaming populations
                 _f0_thread[l] = self.compute_dtype(f0_buffer[l, index[0], index[1], index[2]])
-                _f1_thread[l] = self.compute_dtype(f1_buffer[l, index[0], index[1], index[2]])
-                if missing_mask[l, index[0], index[1], index[2]]:
-                    _missing_mask[l] = wp.uint8(1)
-                else:
-                    _missing_mask[l] = wp.uint8(0)
+                _missing_mask[l] = missing_mask[l, index[0], index[1], index[2]]
 
-            return _f0_thread, _f1_thread, _missing_mask
+            return _f0_thread, _missing_mask
 
         @wp.func
         def apply_aux_recovery_bc(
@@ -285,13 +279,13 @@ class IncompressibleNavierStokesStepper(Stepper):
             _boundary_id: Any,
             _missing_mask: Any,
             f_0: Any,
-            _f1_thread: Any,
+            f_1: Any,
         ):
             # Note:
             # In XLB, the BC auxiliary data (e.g. prescribed values of pressure or normal velocity) are stored in (i) central index of f_1 and/or
             # (ii) missing directions of f_1. Some BCs may or may not need all these available storage space. This function checks whether
             # the BC needs recovery of auxiliary data and then recovers the information for the next iteration (due to buffer swapping) by
-            # writting the thread values of f_1 (i.e._f1_thread) into f_0.
+            # writting the values of f_1 into f_0.
 
             # Unroll the loop over boundary conditions
             for i in range(wp.static(len(self.boundary_conditions))):
@@ -301,10 +295,12 @@ class IncompressibleNavierStokesStepper(Stepper):
                             # Perform the swapping of data
                             if l == lattice_central_index:
                                 # (i) Recover the values stored in the central index of f_1
-                                f_0[l, index[0], index[1], index[2]] = self.store_dtype(_f1_thread[l])
+                                f_0[l, index[0], index[1], index[2]] = self.store_dtype(f_1[l, index[0], index[1], index[2]])
                             elif _missing_mask[l] == wp.uint8(1):
                                 # (ii) Recover the values stored in the missing directions of f_1
-                                f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(_f1_thread[_opp_indices[l]])
+                                f_0[_opp_indices[l], index[0], index[1], index[2]] = self.store_dtype(
+                                    f_1[_opp_indices[l], index[0], index[1], index[2]]
+                                )
 
         @wp.kernel
         def kernel(
@@ -325,7 +321,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             # Apply streaming
             _f_post_stream = self.stream.warp_functional(f_0, index)
 
-            _f0_thread, _f1_thread, _missing_mask = get_thread_data(f_0, f_1, missing_mask, index)
+            _f0_thread, _missing_mask = get_thread_data(f_0, missing_mask, index)
             _f_post_collision = _f0_thread
 
             # Apply post-streaming boundary conditions
@@ -339,7 +335,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
 
             # Apply auxiliary recovery for boundary conditions (swapping)
-            apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0, _f1_thread)
+            apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0, f_1)
 
             # Store the result in f_1
             for l in range(self.velocity_set.q):
@@ -407,21 +403,18 @@ class IncompressibleNavierStokesStepper(Stepper):
         @wp.func
         def neon_get_thread_data(
             f0_pn: Any,
-            f1_pn: Any,
             missing_mask_pn: Any,
             index: Any,
         ):
             # Read thread data for populations
             _f0_thread = _f_vec()
-            _f1_thread = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of pre-streaming populations
                 _f0_thread[l] = self.compute_dtype(wp.neon_read(f0_pn, index, l))
-                _f1_thread[l] = self.compute_dtype(wp.neon_read(f1_pn, index, l))
                 _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
 
-            return _f0_thread, _f1_thread, _missing_mask
+            return _f0_thread, _missing_mask
 
         @wp.func
         def neon_apply_aux_recovery_bc(
@@ -429,13 +422,13 @@ class IncompressibleNavierStokesStepper(Stepper):
             _boundary_id: Any,
             _missing_mask: Any,
             f_0_pn: Any,
-            _f1_thread: Any,
+            f_1_pn: Any,
         ):
             # Note:
             # In XLB, the BC auxiliary data (e.g. prescribed values of pressure or normal velocity) are stored in (i) central index of f_1 and/or
             # (ii) missing directions of f_1. Some BCs may or may not need all these available storage space. This function checks whether
             # the BC needs recovery of auxiliary data and then recovers the information for the next iteration (due to buffer swapping) by
-            # writting the thread values of f_1 (i.e._f1_thread) into f_0.
+            # writting the values of f_1 into f_0.
 
             # Unroll the loop over boundary conditions
             for i in range(wp.static(len(self.boundary_conditions))):
@@ -446,11 +439,13 @@ class IncompressibleNavierStokesStepper(Stepper):
                             if l == lattice_central_index:
                                 # (i) Recover the values stored in the central index of f_1
                                 # TODO: Add store dtype
-                                wp.neon_write(f_0_pn, index, l, _f1_thread[l])
+                                _f1_thread = wp.neon_read(f_1_pn, index, l)
+                                wp.neon_write(f_0_pn, index, l, _f1_thread)
                             elif _missing_mask[l] == wp.uint8(1):
                                 # (ii) Recover the values stored in the missing directions of f_1
                                 # TODO: Add store dtype
-                                wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread[_opp_indices[l]])
+                                _f1_thread = wp.neon_read(f_1_pn, index, _opp_indices[l])
+                                wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread)
 
         @neon.Container.factory(name="nse_stepper")
         def container(
@@ -480,7 +475,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                     # Apply streaming
                     _f_post_stream = self.stream.neon_functional(f_0_pn, index)
 
-                    _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                    _f0_thread, _missing_mask = neon_get_thread_data(f_0_pn, missing_mask_pn, index)
                     _f_post_collision = _f0_thread
 
                     # Apply post-streaming boundary conditions
@@ -496,7 +491,7 @@ class IncompressibleNavierStokesStepper(Stepper):
                     )
 
                     # Apply auxiliary recovery for boundary conditions (swapping)
-                    neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, _f1_thread)
+                    neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, f_1_pn)
 
                     # Store the result in f_1
                     for l in range(self.velocity_set.q):

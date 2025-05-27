@@ -298,21 +298,18 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         @wp.func
         def neon_get_thread_data(
             f0_pn: Any,
-            f1_pn: Any,
             missing_mask_pn: Any,
             index: Any,
         ):
             # Read thread data for populations
             _f0_thread = _f_vec()
-            _f1_thread = _f_vec()
             _missing_mask = _missing_mask_vec()
             for l in range(self.velocity_set.q):
                 # q-sized vector of pre-streaming populations
                 _f0_thread[l] = self.compute_dtype(wp.neon_read(f0_pn, index, l))
-                _f1_thread[l] = self.compute_dtype(wp.neon_read(f1_pn, index, l))
                 _missing_mask[l] = wp.neon_read(missing_mask_pn, index, l)
 
-            return _f0_thread, _f1_thread, _missing_mask
+            return _f0_thread, _missing_mask
 
         @wp.func
         def neon_apply_aux_recovery_bc(
@@ -320,13 +317,13 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
             _boundary_id: Any,
             _missing_mask: Any,
             f_0_pn: Any,
-            _f1_thread: Any,
+            f_1_pn: Any,
         ):
             # Note:
             # In XLB, the BC auxiliary data (e.g. prescribed values of pressure or normal velocity) are stored in (i) central index of f_1 and/or
             # (ii) missing directions of f_1. Some BCs may or may not need all these available storage space. This function checks whether
             # the BC needs recovery of auxiliary data and then recovers the information for the next iteration (due to buffer swapping) by
-            # writting the thread values of f_1 (i.e._f1_thread) into f_0.
+            # writting the values of f_1 into f_0.
 
             # Unroll the loop over boundary conditions
             for i in range(wp.static(len(self.boundary_conditions))):
@@ -337,11 +334,13 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                             if l == lattice_central_index:
                                 # (i) Recover the values stored in the central index of f_1
                                 # TODO: Add store dtype
-                                wp.neon_write(f_0_pn, index, l, _f1_thread[l])
+                                _f1_thread = wp.neon_read(f_1_pn, index, l)
+                                wp.neon_write(f_0_pn, index, l, _f1_thread)
                             elif _missing_mask[l] == wp.uint8(1):
                                 # (ii) Recover the values stored in the missing directions of f_1
                                 # TODO: Add store dtype
-                                wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread[_opp_indices[l]])
+                                _f1_thread = wp.neon_read(f_1_pn, index, _opp_indices[l])
+                                wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread)
 
         @neon.Container.factory(name="collide_coarse")
         def collide_coarse(
@@ -379,14 +378,14 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     """
                     The c++ version starts with the following, which I am not sure is right:
                         if (type(cell, 0) == CellType::bulk ) {
-                    CB type cells should do collide too  
+                    BC type cells should do collide too
                     """
                     if _boundary_id == wp.uint8(255):
                         return
 
                     if not wp.neon_has_child(f_0_pn, index):
                         # Read thread data for populations, these are post streaming
-                        _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                        _f0_thread, _missing_mask = neon_get_thread_data(f_0_pn, missing_mask_pn, index)
                         _f_post_stream = _f0_thread
 
                         _rho, _u = self.macroscopic.neon_functional(_f_post_stream)
@@ -398,6 +397,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                             index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False
                         )
 
+                        # Apply auxiliary recovery for boundary conditions (swapping) before overwriting f_1
+                        neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, f_1_pn)
+
                         # Accumulate the post-collision populations in f_0
                         for l in range(self.velocity_set.q):
                             push_direction = wp.neon_ngh_idx(wp.int8(_c[0, l]), wp.int8(_c[1, l]), wp.int8(_c[2, l]))
@@ -405,9 +407,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                                 val = _f_post_collision[l]
                                 wp.neon_mres_lbm_store_op(f_1_pn, index, l, push_direction, val)
                                 # Verified that this is not needed: wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, val)
-
-                            # Apply auxiliary recovery for boundary conditions (swapping) before overwriting f_1
-                            neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, _f1_thread)
 
                             wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
                     else:
@@ -465,7 +464,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                     # do stream normally
                     _missing_mask = _missing_mask_vec()
-                    _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                    _f0_thread, _missing_mask = neon_get_thread_data(f_0_pn, missing_mask_pn, index)
                     _f_post_collision = _f0_thread
                     _f_post_stream = self.stream.neon_functional(f_0_pn, index)
 
@@ -526,7 +525,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_collision, _f_post_stream, True)
 
                     # Apply auxiliary recovery for boundary conditions (swapping) before overwriting f_1
-                    neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, _f1_thread)
+                    neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, f_1_pn)
 
                     for l in range(self.velocity_set.q):
                         wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
@@ -575,7 +574,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                     # do stream normally
                     _missing_mask = _missing_mask_vec()
-                    _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                    _f0_thread, _missing_mask = neon_get_thread_data(f_0_pn, missing_mask_pn, index)
                     _f_post_collision = _f0_thread
                     _f_post_stream = self.stream.neon_functional(f_0_pn, index)
 
@@ -712,7 +711,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                     _missing_mask = _missing_mask_vec()
                     _boundary_id = wp.neon_read(bc_mask_pn, index, 0)
                     # do stream normally
-                    _f0_thread, _f1_thread, _missing_mask = neon_get_thread_data(f_0_pn, f_1_pn, missing_mask_pn, index)
+                    _f0_thread, _missing_mask = neon_get_thread_data(f_0_pn, missing_mask_pn, index)
+                    _f1_thread, _missing_mask = neon_get_thread_data(f_1_pn, missing_mask_pn, index)
                     _f_post_collision = _f0_thread
                     _f_post_stream = _f1_thread
 
