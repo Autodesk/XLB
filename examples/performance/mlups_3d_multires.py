@@ -29,14 +29,10 @@ def parse_arguments():
 
 def setup_simulation(args):
     compute_backend = None
-    if args.compute_backend == "jax":
-        compute_backend = ComputeBackend.JAX
-    elif args.compute_backend == "warp":
-        compute_backend = ComputeBackend.WARP
-    elif args.compute_backend == "neon":
+    if args.compute_backend == "neon":
         compute_backend = ComputeBackend.NEON
-    if compute_backend is None:
-        raise ValueError("Invalid backend")
+    else:
+        raise ValueError("Invalid compute backend specified. Use 'neon' which supports multi-resolution!")
 
     precision_policy_map = {
         "fp32/fp32": PrecisionPolicy.FP32FP32,
@@ -219,9 +215,9 @@ def run(velocity_set, grid_shape, num_steps):
     start_time = time.time()
     for i in range(num_steps):
         sim.step()
-        if i % 1000 == 0:
-            print(f"step {i}")
-            sim.export_macroscopic("u_lid_driven_cavity_")
+        # if i % 1000 == 0:
+        #     print(f"step {i}")
+        #     sim.export_macroscopic("u_lid_driven_cavity_")
     wp.synchronize()
     t = time.time() - start_time
     print(f"Timing  {t}")

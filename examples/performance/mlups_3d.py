@@ -29,6 +29,8 @@ def setup_simulation(args):
         compute_backend = ComputeBackend.WARP
     elif args.compute_backend == "neon":
         compute_backend = ComputeBackend.NEON
+    else:
+        raise ValueError("Invalid compute backend specified. Use 'jax', 'warp', or 'neon'.")
     precision_policy_map = {
         "fp32/fp32": PrecisionPolicy.FP32FP32,
         "fp64/fp64": PrecisionPolicy.FP64FP64,

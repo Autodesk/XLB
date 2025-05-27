@@ -63,7 +63,7 @@ class MultiresBoundaryMasker(Operator):
             # call indices masker for this level
             bc_mask_warp, missing_mask_warp = self.indices_masker(bclist_level, bc_mask_warp, missing_mask_warp, start_index, xlb_grid)
 
-            @neon.Container.factory("")
+            @neon.Container.factory(name="MultiresBoundaryMasker")
             def container(
                 bc_mask_warp: typing.Any,
                 missing_mask_warp: typing.Any,
