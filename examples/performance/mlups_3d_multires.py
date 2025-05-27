@@ -189,15 +189,15 @@ def run(velocity_set, grid_shape, num_steps):
     # walls = construct_indices_per_level(grid_shape, walls, levels_mask, level_origins)
 
     # Example 1: fine to coarse
-    grid, lid, walls = problem1(grid_shape, velocity_set)
+    # grid, lid, walls = problem1(grid_shape, velocity_set)
 
     # Example 2: Coarse to fine:
-    # grid, lid, walls = problem2(grid_shape, velocity_set)
+    grid, lid, walls = problem2(grid_shape, velocity_set)
 
     prescribed_vel = 0.1
     boundary_conditions = [
         EquilibriumBC(rho=1.0, u=(prescribed_vel, 0.0, 0.0), indices=lid),
-        EquilibriumBC(rho=1.0, u=(0.0, 0.0, 0.0), indices=walls),
+        FullwayBounceBackBC(indices=walls),
     ]
 
     # Create stepper

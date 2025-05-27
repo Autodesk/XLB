@@ -243,7 +243,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         """Initialize auxiliary data for boundary conditions that require it."""
         for bc in boundary_conditions:
             if bc.needs_aux_init and not bc.is_initialized_with_aux_data:
-                f_0, f_1 = bc.aux_data_init(f_0, f_1, bc_mask, missing_mask)
+                for level in range(bc_mask.get_grid().get_num_levels()):
+                    # Initialize auxiliary data for each level
+                    f_0, f_1 = bc.multires_aux_data_init(f_0, f_1, bc_mask, missing_mask, level=level, stream=0)
         return f_0, f_1
 
     def _construct_neon(self):
@@ -251,6 +253,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         lattice_central_index = self.velocity_set.center_index
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
+        _opp_indices = self.velocity_set.opp_indices
 
         # Read the list of bc_to_id created upon instantiation
         bc_to_id = boundary_condition_registry.bc_to_id
@@ -311,7 +314,34 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
             return _f0_thread, _f1_thread, _missing_mask
 
-        import typing
+        @wp.func
+        def neon_apply_aux_recovery_bc(
+            index: Any,
+            _boundary_id: Any,
+            _missing_mask: Any,
+            f_0_pn: Any,
+            _f1_thread: Any,
+        ):
+            # Note:
+            # In XLB, the BC auxiliary data (e.g. prescribed values of pressure or normal velocity) are stored in (i) central index of f_1 and/or
+            # (ii) missing directions of f_1. Some BCs may or may not need all these available storage space. This function checks whether
+            # the BC needs recovery of auxiliary data and then recovers the information for the next iteration (due to buffer swapping) by
+            # writting the thread values of f_1 (i.e._f1_thread) into f_0.
+
+            # Unroll the loop over boundary conditions
+            for i in range(wp.static(len(self.boundary_conditions))):
+                if wp.static(self.boundary_conditions[i].needs_aux_recovery):
+                    if _boundary_id == wp.static(self.boundary_conditions[i].id):
+                        for l in range(self.velocity_set.q):
+                            # Perform the swapping of data
+                            if l == lattice_central_index:
+                                # (i) Recover the values stored in the central index of f_1
+                                # TODO: Add store dtype
+                                wp.neon_write(f_0_pn, index, l, _f1_thread[l])
+                            elif _missing_mask[l] == wp.uint8(1):
+                                # (ii) Recover the values stored in the missing directions of f_1
+                                # TODO: Add store dtype
+                                wp.neon_write(f_0_pn, index, _opp_indices[l], _f1_thread[_opp_indices[l]])
 
         @neon.Container.factory(name="collide_coarse")
         def collide_coarse(
@@ -368,12 +398,16 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                             index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_stream, _f_post_collision, False
                         )
 
+                        # Accumulate the post-collision populations in f_0
                         for l in range(self.velocity_set.q):
                             push_direction = wp.neon_ngh_idx(wp.int8(_c[0, l]), wp.int8(_c[1, l]), wp.int8(_c[2, l]))
                             if level < num_levels - 1:
                                 val = _f_post_collision[l]
                                 wp.neon_mres_lbm_store_op(f_1_pn, index, l, push_direction, val)
                                 # Verified that this is not needed: wp.neon_mres_lbm_store_op(f_0_pn, index, l, push_direction, val)
+
+                            # Apply auxiliary recovery for boundary conditions (swapping) before overwriting f_1
+                            neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, _f1_thread)
 
                             wp.neon_write(f_1_pn, index, l, _f_post_collision[l])
                     else:
@@ -490,6 +524,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
                     # do non mres post-streaming corrections
                     _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0_pn, f_1_pn, _f_post_collision, _f_post_stream, True)
+
+                    # Apply auxiliary recovery for boundary conditions (swapping) before overwriting f_1
+                    neon_apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0_pn, _f1_thread)
 
                     for l in range(self.velocity_set.q):
                         wp.neon_write(f_1_pn, index, l, _f_post_stream[l])
