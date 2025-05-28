@@ -75,77 +75,33 @@ sphere = [sphere, []]
 
 # Define Boundary Conditions
 def bc_profile():
-    H_y = float(ny - 1)  # Height in y direction
-    H_z = float(nz - 1)  # Height in z direction
+    assert compute_backend == ComputeBackend.NEON
 
-    if compute_backend == ComputeBackend.JAX:
+    # Note nx, ny, nz are the dimensions of the grid at the finest level
+    H_y = float(ny // 2 - 1)  # Height in y direction
+    H_z = float(nz // 2 - 1)  # Height in z direction
 
-        def bc_profile_jax():
-            y = jnp.arange(ny)
-            z = jnp.arange(nz)
-            Y, Z = jnp.meshgrid(y, z, indexing="ij")
+    @wp.func
+    def bc_profile_warp(index: wp.vec3i):
+        # Poiseuille flow profile: parabolic velocity distribution
+        y = wp.float32(index[1])
+        z = wp.float32(index[2])
 
-            # Calculate normalized distance from center
-            y_center = Y - (H_y / 2.0)
-            z_center = Z - (H_z / 2.0)
-            r_squared = (2.0 * y_center / H_y) ** 2.0 + (2.0 * z_center / H_z) ** 2.0
+        # Calculate normalized distance from center
+        y_center = y - (H_y / 2.0)
+        z_center = z - (H_z / 2.0)
+        r_squared = (2.0 * y_center / H_y) ** 2.0 + (2.0 * z_center / H_z) ** 2.0
 
-            # Parabolic profile for x velocity, zero for y and z
-            u_x = u_max * jnp.maximum(0.0, 1.0 - r_squared)
-            u_y = jnp.zeros_like(u_x)
-            u_z = jnp.zeros_like(u_x)
-
-            return jnp.stack([u_x, u_y, u_z])
-
-        return bc_profile_jax
-
-    elif compute_backend == ComputeBackend.WARP:
-
-        @wp.func
-        def bc_profile_warp(index: wp.vec3i):
-            # Poiseuille flow profile: parabolic velocity distribution
-            y = wp.float32(index[1])
-            z = wp.float32(index[2])
-
-            # Calculate normalized distance from center
-            y_center = y - (H_y / 2.0)
-            z_center = z - (H_z / 2.0)
-            r_squared = (2.0 * y_center / H_y) ** 2.0 + (2.0 * z_center / H_z) ** 2.0
-
-            # Parabolic profile: u = u_max * (1 - r²)
-            return wp.vec(u_max * wp.max(0.0, 1.0 - r_squared), length=1)
-
-    elif compute_backend == ComputeBackend.NEON:
-        raise NotImplementedError("BC profile not implemented yet!")
-        # wp.func
-        # def bc_profile_warp(index: Any):
-        #     # Get the refinement level for the current index
-        #     refinement = 2 ** grid.get_level(index)
-        #     cIdx = wp.neon_global_idx(bc_mask_hdl, index)
-        #     # get local indices by dividing the global indices (associated with the finest level) by 2^level
-        #     lx = wp.neon_get_x(cIdx) // refinement
-        #     ly = wp.neon_get_y(cIdx) // refinement
-        #     lz = wp.neon_get_z(cIdx) // refinement
-
-        #     # Poiseuille flow profile: parabolic velocity distribution
-        #     y = wp.float32(index[1])
-        #     z = wp.float32(index[2])
-
-        #     # Calculate normalized distance from center
-        #     y_center = y - (H_y / 2.0)
-        #     z_center = z - (H_z / 2.0)
-        #     r_squared = (2.0 * y_center / H_y) ** 2.0 + (2.0 * z_center / H_z) ** 2.0
-
-        #     # Parabolic profile: u = u_max * (1 - r²)
-        #     return wp.vec(u_max * wp.max(0.0, 1.0 - r_squared), length=1)
+        # Parabolic profile: u = u_max * (1 - r²)
+        return wp.vec(u_max * wp.max(0.0, 1.0 - r_squared), length=1)
 
     return bc_profile_warp
 
 
 # Initialize Boundary Conditions
-# bc_left = RegularizedBC("velocity", profile=bc_profile(), indices=inlet)
+bc_left = RegularizedBC("velocity", profile=bc_profile(), indices=inlet)
 # Alternatively, use a prescribed velocity profile
-bc_left = RegularizedBC("velocity", prescribed_value=(u_max, 0.0, 0.0), indices=inlet)
+# bc_left = RegularizedBC("velocity", prescribed_value=(u_max, 0.0, 0.0), indices=inlet)
 bc_walls = FullwayBounceBackBC(indices=walls)  # TODO: issues with halfway bounce back only here!
 # bc_outlet = ExtrapolationOutflowBC(indices=outlet)
 bc_outlet = DoNothingBC(indices=outlet)

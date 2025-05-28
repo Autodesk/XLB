@@ -34,7 +34,7 @@ class HelperFunctionsBC(object):
         momentum_flux = MomentumFlux(velocity_set, precision_policy, compute_backend)
 
         @wp.func
-        def get_thread_data(
+        def get_bc_thread_data(
             f_pre: wp.array4d(dtype=Any),
             f_post: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
@@ -59,7 +59,7 @@ class HelperFunctionsBC(object):
             return _f_pre, _f_post, _boundary_id, _missing_mask
 
         @wp.func
-        def neon_get_thread_data(
+        def neon_get_bc_thread_data(
             f_pre_pn: Any,
             f_post_pn: Any,
             bc_mask_pn: Any,
@@ -142,9 +142,9 @@ class HelperFunctionsBC(object):
                 fpop[l] = feq[l] + fpop1
             return fpop
 
-        self.get_thread_data = get_thread_data
+        self.get_bc_thread_data = get_bc_thread_data
         self.get_bc_fsum = get_bc_fsum
         self.get_normal_vectors = get_normal_vectors
         self.bounceback_nonequilibrium = bounceback_nonequilibrium
         self.regularize_fpop = regularize_fpop
-        self.neon_get_thread_data = neon_get_thread_data
+        self.neon_get_bc_thread_data = neon_get_bc_thread_data

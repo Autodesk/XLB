@@ -116,7 +116,7 @@ class ZouHeBC(BoundaryCondition):
         _prescribed_value = self.prescribed_value
 
         @wp.func
-        def prescribed_profile_warp(index: Any):
+        def prescribed_profile_warp(index: wp.vec3i):
             return wp.vec(_prescribed_value, length=1)
 
         def prescribed_profile_jax():

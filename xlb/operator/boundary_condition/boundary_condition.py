@@ -102,7 +102,7 @@ class BoundaryCondition(Operator):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_pre, _f_post, _boundary_id, _missing_mask = bc_helper.get_thread_data(f_pre, f_post, bc_mask, missing_mask, index)
+            _f_pre, _f_post, _boundary_id, _missing_mask = bc_helper.get_bc_thread_data(f_pre, f_post, bc_mask, missing_mask, index)
 
             # Apply the boundary condition
             if _boundary_id == _id:
@@ -140,7 +140,7 @@ class BoundaryCondition(Operator):
             index = wp.vec3i(i, j, k)
 
             # read tid data
-            _f_0, _f_1, _boundary_id, _missing_mask = bc_helper.get_thread_data(f_0, f_1, bc_mask, missing_mask, index)
+            _, _, _boundary_id, _missing_mask = bc_helper.get_bc_thread_data(f_0, f_1, bc_mask, missing_mask, index)
 
             # Apply the functional
             if _boundary_id == _id:
@@ -194,7 +194,7 @@ class BoundaryCondition(Operator):
                 @wp.func
                 def aux_data_init_cl(index: Any):
                     # read tid data
-                    _, _, _boundary_id, _missing_mask = bc_helper.neon_get_thread_data(f_0_pn, f_1_pn, bc_mask_pn, missing_mask_pn, index)
+                    _, _, _boundary_id, _missing_mask = bc_helper.neon_get_bc_thread_data(f_0_pn, f_1_pn, bc_mask_pn, missing_mask_pn, index)
 
                     # Apply the functional
                     if _boundary_id == _id:
@@ -274,15 +274,23 @@ class BoundaryCondition(Operator):
                 bc_mask_pn = loader.get_mres_read_handle(bc_mask)
                 missing_mask_pn = loader.get_mres_read_handle(missing_mask)
 
+                # Get the refinement factor for the current level
+                refinement = 2**level
+
                 @wp.func
                 def aux_data_init_cl(index: Any):
                     # read tid data
-                    _, _, _boundary_id, _missing_mask = bc_helper.neon_get_thread_data(f_0_pn, f_1_pn, bc_mask_pn, missing_mask_pn, index)
+                    _, _, _boundary_id, _missing_mask = bc_helper.neon_get_bc_thread_data(f_0_pn, f_1_pn, bc_mask_pn, missing_mask_pn, index)
 
                     # Apply the functional
                     if _boundary_id == _id:
                         # prescribed_values is a q-sized vector of type wp.vec
-                        prescribed_values = functional(index)
+                        warp_index = wp.vec3i()
+                        gloabl_index = wp.neon_global_idx(f_0_pn, index)
+                        warp_index[0] = wp.neon_get_x(gloabl_index) // refinement
+                        warp_index[1] = wp.neon_get_y(gloabl_index) // refinement
+                        warp_index[2] = wp.neon_get_z(gloabl_index) // refinement
+                        prescribed_values = functional(warp_index)
 
                     # Write the result for all q directions, but only store up to num_of_aux_data
                     counter = wp.int32(0)
