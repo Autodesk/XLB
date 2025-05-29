@@ -1,4 +1,5 @@
 import neon
+import warp as wp
 
 
 class MultiresSimulationManager:
@@ -52,13 +53,10 @@ class MultiresSimulationManager:
         self.macroscopics = {}
 
         self.stepper.init_containers()
-        self.macro.init_containers()
 
     def export_macroscopic(self, fname_prefix):
         print(f"exporting macroscopic: #levels {self.grid.count_levels}")
-        self.macro.launch_container(streamId=0, f_0=self.f_0, bc_mask=self.bc_mask, rho=self.rho, u=self.u)
-
-        import warp as wp
+        self.macro(self.f_0, self.bc_mask, self.rho, self.u, streamId=0)
 
         wp.synchronize()
         self.u.update_host(0)

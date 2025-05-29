@@ -75,18 +75,11 @@ class MultiresMacroscopic(Macroscopic):
 
         return functional, container
 
-    def init_containers(self):
-        self.containers = None
-        _, self.containers = self._construct_neon()
-
-    def launch_container(self, streamId, f_0, bc_mask, rho, u):
-        grid = f_0.get_grid()
-        for target_level in range(grid.num_levels):
-            self.containers(target_level, f_0, bc_mask, rho, u).run(streamId)
-
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, f, rho, u):
-        c = self.neon_container(f, rho, u)
-        c.run(0)
+    def neon_implementation(self, f, bc_mask, rho, u, streamId=0):
+        grid = f.get_grid()
+        for level in range(grid.num_levels):
+            c = self.neon_container(level, f, bc_mask, rho, u)
+            c.run(streamId)
         wp.synchronize()
         return rho, u
