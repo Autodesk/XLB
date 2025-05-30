@@ -110,5 +110,4 @@ class Macroscopic(Operator):
     def neon_implementation(self, f, rho, u):
         c = self.neon_container(f, rho, u)
         c.run(0)
-        wp.synchronize()
         return rho, u

@@ -26,7 +26,5 @@ def initialize_eq(f, grid, velocity_set, precision_policy, compute_backend, rho=
 
 def initialize_multires_eq(f, grid, velocity_set, precision_policy, backend, rho, u):
     equilibrium = MultiresQuadraticEquilibrium()
-    for level in range(grid.count_levels):
-        print("MultiresQuadraticEquilibrium")
-        equilibrium(rho=rho, u=u, f=f, level=level, stream=0)
+    equilibrium(rho, u, f, stream=0)
     return f

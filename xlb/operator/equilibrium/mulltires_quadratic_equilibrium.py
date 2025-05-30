@@ -60,8 +60,9 @@ class MultiresQuadraticEquilibrium(QuadraticEquilibrium):
         return functional, container
 
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, rho, u, f, level, stream):
-        c = self.neon_container(rho, u, f, level)
-        c.run(stream, container_runtime=neon.Container.ContainerRuntime.neon)
-
+    def neon_implementation(self, rho, u, f, stream=0):
+        grid = f.get_grid()
+        for level in range(grid.num_levels):
+            c = self.neon_container(rho, u, f, level)
+            c.run(stream, container_runtime=neon.Container.ContainerRuntime.neon)
         return f
