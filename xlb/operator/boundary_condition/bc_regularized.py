@@ -7,7 +7,7 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
-from typing import Any, Union, Tuple
+from typing import Any, Union, Tuple, Callable
 import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -16,6 +16,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition import ZouHeBC, HelperFunctionsBC
 from xlb.operator.macroscopic import SecondMoment as MomentumFlux
+from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 
 
 class RegularizedBC(ZouHeBC):
@@ -43,13 +44,14 @@ class RegularizedBC(ZouHeBC):
     def __init__(
         self,
         bc_type,
-        profile=None,
+        profile: Callable = None,
         prescribed_value: Union[float, Tuple[float, ...], np.ndarray] = None,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
         mesh_vertices=None,
+        voxelization_method: MeshVoxelizationMethod = None,
     ):
         # Call the parent constructor
         super().__init__(
@@ -61,6 +63,7 @@ class RegularizedBC(ZouHeBC):
             compute_backend,
             indices,
             mesh_vertices,
+            voxelization_method,
         )
         self.momentum_flux = MomentumFlux()
 
@@ -150,7 +153,7 @@ class RegularizedBC(ZouHeBC):
             # Find the value of u from the missing directions
             # Since we are only considering normal velocity, we only need to find one value (stored at the center of f_1)
             # Create velocity vector by multiplying the prescribed value with the normal vector
-            prescribed_value = f_1[0, index[0], index[1], index[2]]
+            prescribed_value = self.compute_dtype(f_1[0, index[0], index[1], index[2]])
             _u = -prescribed_value * normals
 
             # calculate rho

@@ -16,6 +16,7 @@ from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,
     BoundaryCondition,
 )
+from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 
 
 class DoNothingBC(BoundaryCondition):
@@ -31,6 +32,7 @@ class DoNothingBC(BoundaryCondition):
         compute_backend: ComputeBackend = None,
         indices=None,
         mesh_vertices=None,
+        voxelization_method: MeshVoxelizationMethod = None,
     ):
         super().__init__(
             ImplementationStep.STREAMING,
@@ -39,6 +41,7 @@ class DoNothingBC(BoundaryCondition):
             compute_backend,
             indices,
             mesh_vertices,
+            voxelization_method,
         )
 
     @Operator.register_backend(ComputeBackend.JAX)

@@ -69,7 +69,9 @@ class IndicesBoundaryMasker(Operator):
         domain_shape = bc_mask[0].shape
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
-            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
+            assert bc.mesh_vertices is None, (
+                f"Please use operators based on MeshBoundaryMasker if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
+            )
             id_number = bc.id
             bc_indices = np.array(bc.indices)
             local_indices = bc_indices - np.array(start_index)[:, np.newaxis]
@@ -106,9 +108,8 @@ class IndicesBoundaryMasker(Operator):
         _q = wp.constant(self.velocity_set.q)
 
         @wp.func
-        def check_index_bounds(index: wp.vec3i, shape: wp.vec3i):
-            is_in_bounds = index[0] >= 0 and index[0] < shape[0] and index[1] >= 0 and index[1] < shape[1] and index[2] >= 0 and index[2] < shape[2]
-            return is_in_bounds
+        def is_in_bounds(index: wp.vec3i, shape: wp.vec3i):
+            return index[0] >= 0 and index[0] < shape[0] and index[1] >= 0 and index[1] < shape[1] and index[2] >= 0 and index[2] < shape[2]
 
         # Construct the warp 3D kernel
         @wp.kernel
@@ -130,7 +131,7 @@ class IndicesBoundaryMasker(Operator):
 
             # Check if index is in bounds
             shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
-            if check_index_bounds(index, shape):
+            if is_in_bounds(index, shape):
                 # Stream indices
                 for l in range(_q):
                     # Get the index of the streaming direction
@@ -145,12 +146,12 @@ class IndicesBoundaryMasker(Operator):
 
                     # check if pull index is out of bound
                     # These directions will have missing information after streaming
-                    if not check_index_bounds(pull_index, shape):
+                    if not is_in_bounds(pull_index, shape):
                         # Set the missing mask
                         missing_mask[l, index[0], index[1], index[2]] = True
 
                     # handling geometries in the interior of the computational domain
-                    elif check_index_bounds(pull_index, shape) and is_interior[ii]:
+                    elif is_in_bounds(pull_index, shape) and is_interior[ii]:
                         # Set the missing mask
                         missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
                         bc_mask[0, push_index[0], push_index[1], push_index[2]] = id_number[ii]
@@ -168,8 +169,9 @@ class IndicesBoundaryMasker(Operator):
         current_index = 0
         for bc in bclist:
             assert bc.indices is not None, f'Please specify indices associated with the {bc.__class__.__name__} BC using keyword "indices"!'
-            assert bc.mesh_vertices is None, f"Please use MeshBoundaryMasker operator if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
-
+            assert bc.mesh_vertices is None, (
+                f"Please use operators based on MeshBoundaryMasker if {bc.__class__.__name__} is imposed on a mesh (e.g. STL)!"
+            )
             bc_indices = np.asarray(bc.indices)
             num_indices = bc_indices.shape[1]
 
