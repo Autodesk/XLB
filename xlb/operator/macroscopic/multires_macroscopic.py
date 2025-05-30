@@ -81,5 +81,4 @@ class MultiresMacroscopic(Macroscopic):
         for level in range(grid.num_levels):
             c = self.neon_container(level, f, bc_mask, rho, u)
             c.run(streamId)
-        wp.synchronize()
         return rho, u

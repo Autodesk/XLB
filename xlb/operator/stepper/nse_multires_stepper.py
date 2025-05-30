@@ -14,8 +14,8 @@ from xlb.precision_policy import Precision
 from xlb.operator import Operator
 from xlb.operator.stream import Stream
 from xlb.operator.collision import BGK, KBC
-from xlb.operator.equilibrium import QuadraticEquilibrium
-from xlb.operator.macroscopic import Macroscopic
+from xlb.operator.equilibrium import MultiresQuadraticEquilibrium
+from xlb.operator.macroscopic import MultiresMacroscopic
 from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
@@ -46,8 +46,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
 
         # Construct the operators
         self.stream = Stream(self.velocity_set, self.precision_policy, self.compute_backend)
-        self.equilibrium = QuadraticEquilibrium(self.velocity_set, self.precision_policy, self.compute_backend)
-        self.macroscopic = Macroscopic(self.velocity_set, self.precision_policy, self.compute_backend)
+        self.equilibrium = MultiresQuadraticEquilibrium(self.velocity_set, self.precision_policy, self.compute_backend)
+        self.macroscopic = MultiresMacroscopic(self.velocity_set, self.precision_policy, self.compute_backend)
 
     def prepare_fields(self, rho, u, initializer=None):
         """Prepare the fields required for the stepper.
@@ -735,15 +735,11 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
             "stream_coarse_step_C": stream_coarse_step_C,
         }
 
-    def init_containers(self):
-        self.containers = None
-        _, self.containers = self._construct_neon()
-
     def launch_container(self, streamId, op_name, mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep):
-        self.containers[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep).run(0)
+        self.neon_container[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep).run(0)
 
     def add_to_app(self, app, op_name, mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep):
-        app.append(self.containers[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep))
+        app.append(self.neon_container[op_name](mres_level, f_0, f_1, bc_mask, missing_mask, omega, timestep))
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_launch(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):

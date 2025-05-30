@@ -108,15 +108,13 @@ bc_outlet = DoNothingBC(indices=outlet)
 bc_sphere = HalfwayBounceBackBC(indices=sphere)
 boundary_conditions = [bc_walls, bc_left, bc_outlet, bc_sphere]
 
-# Setup Stepper
-stepper = MultiresIncompressibleNavierStokesStepper(
+# Define a multi-resolution simulation manager
+sim = xlb.helper.MultiresSimulationManager(
+    omega=omega,
     grid=grid,
     boundary_conditions=boundary_conditions,
     collision_type="BGK",
 )
-
-# Define a multi-resolution simulation manager
-sim = xlb.helper.MultiresSimulationManager(grid, velocity_set, stepper, omega)
 
 # -------------------------- Simulation Loop --------------------------
 
