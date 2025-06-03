@@ -7,3 +7,4 @@ from .utils import (
     voxelize_stl,
     axangle2mat,
 )
+from .mesher import make_cuboid_mesh
