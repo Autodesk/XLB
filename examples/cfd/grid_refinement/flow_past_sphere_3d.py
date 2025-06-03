@@ -28,7 +28,7 @@ xlb.init(
 
 # Create the multires grid
 nx, ny, nz = grid_shape
-sphere_origin = (nx // 6, ny // 2 + 1, nz // 2)  # +1 added to make a slight assymmetric offset in y direction for vortex street to emerge.
+sphere_origin = (nx // 6, ny // 2, nz // 2)
 sphere_radius = ny // 12
 inner_box_shape = (12 * sphere_radius, 6 * sphere_radius, 6 * sphere_radius)
 num_levels = 2

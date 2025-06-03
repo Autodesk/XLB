@@ -55,15 +55,21 @@ class MultiresBoundaryMasker(Operator):
             bc_mask_warp = grid_dense.create_field(cardinality=1, dtype=Precision.UINT8)
 
             # create a new bclist for this level only
-            bclist_level = []
+            bc_with_indices = []
             for bc in bclist:
                 if bc.indices is not None and bc.indices[level]:
                     bc_copy = copy.copy(bc)  # shallow copy of the whole object
                     bc_copy.indices = copy.deepcopy(bc.indices[level])  # deep copy only the modified part
-                    bclist_level.append(bc_copy)
+                    bc_with_indices.append(bc_copy)
+                elif bc.mesh_vertices is not None:
+                    bc_copy = copy.copy(bc)  # shallow copy of the whole object
+                    bc_copy.mesh_vertices = copy.deepcopy(bc.mesh_vertices)
 
-            # call indices masker for this level
-            bc_mask_warp, missing_mask_warp = self.indices_masker(bclist_level, bc_mask_warp, missing_mask_warp, start_index, xlb_grid)
+                    # call mesh masker for this bc at this level
+                    bc_mask_warp, missing_mask_warp = self.mesh_masker(bc_copy, bc_mask_warp, missing_mask_warp)
+
+            # call indices masker for all BC's with indices at this level
+            bc_mask_warp, missing_mask_warp = self.indices_masker(bc_with_indices, bc_mask_warp, missing_mask_warp, start_index)
 
             @neon.Container.factory(name="MultiresBoundaryMasker")
             def container(
