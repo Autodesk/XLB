@@ -114,7 +114,7 @@ class IncompressibleNavierStokesStepper(Stepper):
             # u.export_vti("u_f1_init.vti", 'u')
             # rho.export_vti("rho_f1_init.vti", 'rho')
         # Process boundary conditions and update masks
-        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
+        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask)
         # Initialize auxiliary data if needed
         f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
         # bc_mask.update_host(0)
@@ -126,7 +126,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         return f_0, f_1, bc_mask, missing_mask
 
     @classmethod
-    def _process_boundary_conditions(cls, boundary_conditions, bc_mask, missing_mask, xlb_grid=None):
+    def _process_boundary_conditions(cls, boundary_conditions, bc_mask, missing_mask):
         """Process boundary conditions and update boundary masks."""
         # Check for boundary condition overlaps
         check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
@@ -141,7 +141,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         bc_with_indices = [bc for bc in boundary_conditions if bc.indices is not None]
         # Process indices-based boundary conditions
         if bc_with_indices:
-            bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask, xlb_grid=xlb_grid)
+            bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask)
         # Process mesh-based boundary conditions for 3D
         if DefaultConfig.velocity_set.d == 3 and bc_with_vertices:
             mesh_masker = MeshBoundaryMasker(

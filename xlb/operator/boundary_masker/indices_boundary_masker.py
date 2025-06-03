@@ -210,7 +210,7 @@ class IndicesBoundaryMasker(Operator):
         return total_index, wp_indices, wp_id_numbers, wp_is_interior
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         # prepare warp kernel inputs
         total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_warp_kernel_inputs(bclist, bc_mask)
 
@@ -230,14 +230,15 @@ class IndicesBoundaryMasker(Operator):
         return bc_mask, missing_mask
 
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         import neon
 
         # Make constants
         _d = self.velocity_set.d
 
         # Pre-allocate arrays with maximum possible size
-        grid_warp = grid_factory(xlb_grid.shape, compute_backend=ComputeBackend.WARP, velocity_set=self.velocity_set)
+        grid_shape = bc_mask.shape[1:]  # (nx, ny) for 2D or (nx, ny, nz) for 3D
+        grid_warp = grid_factory(grid_shape, compute_backend=ComputeBackend.WARP, velocity_set=self.velocity_set)
         missing_mask_warp = grid_warp.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
         bc_mask_warp = grid_warp.create_field(cardinality=1, dtype=Precision.UINT8)
 
@@ -247,7 +248,7 @@ class IndicesBoundaryMasker(Operator):
             precision_policy=self.precision_policy,
             compute_backend=ComputeBackend.WARP,
         )
-        bc_mask_warp, missing_mask_warp = indices_masker_warp(bclist, bc_mask_warp, missing_mask_warp, start_index, xlb_grid)
+        bc_mask_warp, missing_mask_warp = indices_masker_warp(bclist, bc_mask_warp, missing_mask_warp, start_index)
         wp.synchronize()
 
         @neon.Container.factory("")
