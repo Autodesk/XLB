@@ -38,14 +38,10 @@ def pad_to_cube(arr):
     shape = arr.shape
     max_dim = max(shape)
     pad_width = []
-    shift = []
     for dim in shape:
         total_pad = max_dim - dim
-        before = total_pad // 2
-        after = total_pad - before
-        pad_width.append((before, after))
-        shift.append(before)
-    return np.pad(arr, pad_width, mode="constant", constant_values=0), shift
+        pad_width.append((0, total_pad))
+    return np.pad(arr, pad_width, mode="constant", constant_values=0)
 
 
 level_0 = np.ones(inner_box_shape, dtype=int)
@@ -55,23 +51,21 @@ level_1 = np.ones((nx // 2, ny // 2, nz // 2), dtype=int)
 # TODO: with rectangular cuboid for the inner box, there are some issues with the
 #       multires_grid_factory. The inner box should be a cube for now!
 # For now we hack this by padding the level_0 and level_1 to be cubes
-level_0, shift_0 = pad_to_cube(level_0)
-level_1, shift_1 = pad_to_cube(level_1)
+level_0 = pad_to_cube(level_0)
+level_1 = pad_to_cube(level_1)
 
 # Ensure level_0 is contiguous int32
 level_0 = np.ascontiguousarray(level_0, dtype=np.int32)
 
 # Create the multiresolution grid
 levels = [level_0, level_1]
-shifts = [shift_0, shift_1]
 level_origins = [(sphere_origin[0] - 2 * sphere_radius, ny // 2 - inner_box_shape[1] // 2, nz // 2 - inner_box_shape[2] // 2), (0, 0, 0)]
-new_level_origins = [tuple(max(0, a - b) for a, b in zip(origin, shift)) for origin, shift in zip(level_origins, shifts)]
 
 grid = multires_grid_factory(
     grid_shape,
     velocity_set=velocity_set,
     sparsity_pattern_list=[level_0, level_1],
-    sparsity_pattern_origins=[neon.Index_3d(*new_level_origins[lvl]) for lvl in range(num_levels)],
+    sparsity_pattern_origins=[neon.Index_3d(*level_origins[lvl]) for lvl in range(num_levels)],
 )
 
 # Define Boundary Indices
@@ -134,7 +128,7 @@ bc_sphere = HalfwayBounceBackBC(indices=sphere)
 boundary_conditions = [bc_walls, bc_left, bc_outlet, bc_sphere]
 
 
-# configure the simulation relaxation time
+# Configure the simulation relaxation time
 visc = 2.0 * u_max * sphere_radius / Re
 omega = 1.0 / (3.0 * visc + 0.5)
 
