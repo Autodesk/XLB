@@ -21,9 +21,9 @@ def generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part):
     # Domain multipliers for each refinement level
     # First entry should be full domain size
     domainMultiplier = [
-        [15 // 2, 15 // 2, 7 // 2, 7 // 2, 7 // 2, 7 // 2],  # -x, x, -y, y, -z, z
-        [6 // 2, 8 // 2, 5 // 2, 5 // 2, 5 // 2, 5 // 2],  # -x, x, -y, y, -z, z
-        # [4, 6, 4, 4, 4, 4],
+        # [15, 15, 7, 7, 7, 7],  # -x, x, -y, y, -z, z
+        [6, 8, 5, 5, 5, 5],  # -x, x, -y, y, -z, z
+        [4, 6, 4, 4, 4, 4],
         # [2, 4, 2, 2, 2, 2],
         # [1, 2, 1, 1, 1, 1],
         # [0.4, 1, 0.4, 0.4, 0.4, 0.4],
@@ -63,7 +63,7 @@ def generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part):
     # Apply translation and save out temp stl
     mesh.translate(shift)
     mesh.compute_vertex_normals()
-    mesh_vertices = np.asarray(mesh.vertices)
+    mesh_vertices = np.asarray(mesh.vertices) / voxel_size
     o3d.io.write_triangle_mesh("temp.stl", mesh)
 
     # Mesh base don temp stl
@@ -121,7 +121,7 @@ compute_backend = ComputeBackend.NEON
 precision_policy = PrecisionPolicy.FP32FP32
 velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
 u_max = 0.04
-num_steps = 1
+num_steps = 1000
 post_process_interval = 100
 
 # Initialize XLB
@@ -185,9 +185,9 @@ def bc_profile():
 
 
 # Convert bc indices to a list of list (first entry corresponds to the finest level)
-inlet = [[] for _ in range(num_levels)] + [inlet]
-outlet = [[] for _ in range(num_levels)] + [outlet]
-walls = [[] for _ in range(num_levels)] + [walls]
+inlet = [[] for _ in range(num_levels - 1)] + [inlet]
+outlet = [[] for _ in range(num_levels - 1)] + [outlet]
+walls = [[] for _ in range(num_levels - 1)] + [walls]
 
 # Initialize Boundary Conditions
 bc_left = RegularizedBC("velocity", profile=bc_profile(), indices=inlet)

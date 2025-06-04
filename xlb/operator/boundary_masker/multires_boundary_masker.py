@@ -63,7 +63,7 @@ class MultiresBoundaryMasker(Operator):
                     bc_with_indices.append(bc_copy)
                 elif bc.mesh_vertices is not None:
                     bc_copy = copy.copy(bc)  # shallow copy of the whole object
-                    bc_copy.mesh_vertices = copy.deepcopy(bc.mesh_vertices)
+                    bc_copy.mesh_vertices = copy.deepcopy(bc.mesh_vertices) / refinement
 
                     # call mesh masker for this bc at this level
                     bc_mask_warp, missing_mask_warp = self.mesh_masker(bc_copy, bc_mask_warp, missing_mask_warp)
