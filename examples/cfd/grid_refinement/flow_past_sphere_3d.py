@@ -2,24 +2,22 @@ import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
 from xlb.grid import multires_grid_factory
-from xlb.operator.stepper import MultiresIncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition import FullwayBounceBackBC, HalfwayBounceBackBC, RegularizedBC, ExtrapolationOutflowBC, DoNothingBC, ZouHeBC
 import neon
 import warp as wp
 import numpy as np
-import jax.numpy as jnp
 import time
 
 # -------------------------- Simulation Setup --------------------------
 
-omega = 1.6
-grid_shape = (256 // 2, 256 // 2, 256 // 2)
+Re = 500.0
+grid_shape = (512 // 2, 128 // 2, 128 // 2)
 compute_backend = ComputeBackend.NEON
 precision_policy = PrecisionPolicy.FP32FP32
 velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
 u_max = 0.04
-num_steps = 2000
-post_process_interval = 100
+num_steps = 10000
+post_process_interval = 1000
 
 # Initialize XLB
 xlb.init(
@@ -29,18 +27,39 @@ xlb.init(
 )
 
 # Create the multires grid
+nx, ny, nz = grid_shape
+sphere_origin = (nx // 6, ny // 2, nz // 2)
+sphere_radius = ny // 12
+inner_box_shape = (12 * sphere_radius, 6 * sphere_radius, 6 * sphere_radius)
+num_levels = 2
+
+
+def pad_to_cube(arr):
+    shape = arr.shape
+    max_dim = max(shape)
+    pad_width = []
+    for dim in shape:
+        total_pad = max_dim - dim
+        pad_width.append((0, total_pad))
+    return np.pad(arr, pad_width, mode="constant", constant_values=0)
+
+
+level_0 = np.ones(inner_box_shape, dtype=int)
+level_1 = np.ones((nx // 2, ny // 2, nz // 2), dtype=int)
+
+# Pad both levels to cubes
 # TODO: with rectangular cuboid for the inner box, there are some issues with the
 #       multires_grid_factory. The inner box should be a cube for now!
-nx, ny, nz = grid_shape
-sphere_origin = (nx // 2, ny // 2, nz // 2)
-sphere_radius = ny // 12
-inner_box_shape = (6 * sphere_radius, 6 * sphere_radius, 6 * sphere_radius)
-num_levels = 2
-level_1 = np.ones((nx // 2, ny // 2, nz // 2), dtype=int)
-level_0 = np.ones(inner_box_shape, dtype=int)
+# For now we hack this by padding the level_0 and level_1 to be cubes
+level_0 = pad_to_cube(level_0)
+level_1 = pad_to_cube(level_1)
+
+# Ensure level_0 is contiguous int32
 level_0 = np.ascontiguousarray(level_0, dtype=np.int32)
+
+# Create the multiresolution grid
 levels = [level_0, level_1]
-level_origins = [((nx - inner_box_shape[0]) // 2, (ny - inner_box_shape[1]) // 2, (nz - inner_box_shape[2]) // 2), (0, 0, 0)]
+level_origins = [(sphere_origin[0] - 2 * sphere_radius, ny // 2 - inner_box_shape[1] // 2, nz // 2 - inner_box_shape[2] // 2), (0, 0, 0)]
 
 grid = multires_grid_factory(
     grid_shape,
@@ -107,6 +126,11 @@ bc_walls = FullwayBounceBackBC(indices=walls)  # TODO: issues with halfway bounc
 bc_outlet = DoNothingBC(indices=outlet)
 bc_sphere = HalfwayBounceBackBC(indices=sphere)
 boundary_conditions = [bc_walls, bc_left, bc_outlet, bc_sphere]
+
+
+# Configure the simulation relaxation time
+visc = 2.0 * u_max * sphere_radius / Re
+omega = 1.0 / (3.0 * visc + 0.5)
 
 # Define a multi-resolution simulation manager
 sim = xlb.helper.MultiresSimulationManager(

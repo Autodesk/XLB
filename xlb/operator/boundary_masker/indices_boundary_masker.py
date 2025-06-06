@@ -210,7 +210,7 @@ class IndicesBoundaryMasker(Operator):
         return total_index, wp_indices, wp_id_numbers, wp_is_interior
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+    def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         # prepare warp kernel inputs
         total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_warp_kernel_inputs(bclist, bc_mask)
 
@@ -230,11 +230,15 @@ class IndicesBoundaryMasker(Operator):
         return bc_mask, missing_mask
 
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         import neon
 
+        # Make constants
+        _d = self.velocity_set.d
+
         # Pre-allocate arrays with maximum possible size
-        grid_warp = grid_factory(xlb_grid.shape, compute_backend=ComputeBackend.WARP, velocity_set=self.velocity_set)
+        grid_shape = bc_mask.shape[1:]  # (nx, ny) for 2D or (nx, ny, nz) for 3D
+        grid_warp = grid_factory(grid_shape, compute_backend=ComputeBackend.WARP, velocity_set=self.velocity_set)
         missing_mask_warp = grid_warp.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
         bc_mask_warp = grid_warp.create_field(cardinality=1, dtype=Precision.UINT8)
 
@@ -244,7 +248,7 @@ class IndicesBoundaryMasker(Operator):
             precision_policy=self.precision_policy,
             compute_backend=ComputeBackend.WARP,
         )
-        bc_mask_warp, missing_mask_warp = indices_masker_warp(bclist, bc_mask_warp, missing_mask_warp, start_index, xlb_grid)
+        bc_mask_warp, missing_mask_warp = indices_masker_warp(bclist, bc_mask_warp, missing_mask_warp, start_index)
         wp.synchronize()
 
         @neon.Container.factory("")
@@ -265,12 +269,16 @@ class IndicesBoundaryMasker(Operator):
                     gx = wp.neon_get_x(cIdx)
                     gy = wp.neon_get_y(cIdx)
                     gz = wp.neon_get_z(cIdx)
-                    # TODO@Max - XLB is flattening the y dimension in 3D, while neon uses the z dimension
-                    local_mask = bc_mask_warp[0, gx, gz, gy]
+
+                    # TODO@Max - XLB is flattening the z dimension in 3D, while neon uses the y dimension
+                    if _d == 2:
+                        gy, gz = gz, gy
+
+                    local_mask = bc_mask_warp[0, gx, gy, gz]
                     wp.neon_write(bc_mask_hdl, gridIdx, 0, local_mask)
 
                     for q in range(self.velocity_set.q):
-                        is_missing = wp.uint8(missing_mask_warp[q, gx, gz, gy])
+                        is_missing = wp.uint8(missing_mask_warp[q, gx, gy, gz])
                         wp.neon_write(missing_mask_hdl, gridIdx, q, is_missing)
 
                 loader.declare_kernel(masker)

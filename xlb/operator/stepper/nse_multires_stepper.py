@@ -218,23 +218,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
             precision_policy=DefaultConfig.default_precision_policy,
             compute_backend=DefaultConfig.default_backend,
         )
-        # Split boundary conditions by type
-        bc_with_vertices = [bc for bc in boundary_conditions if bc.mesh_vertices is not None]
-        bc_with_indices = [bc for bc in boundary_conditions if bc.indices is not None]
-        # Process indices-based boundary conditions
-        if bc_with_indices:
-            bc_mask, missing_mask = mres_masker(bc_with_indices, bc_mask, missing_mask, xlb_grid=xlb_grid)
-        # Process mesh-based boundary conditions for 3D
-        if DefaultConfig.velocity_set.d == 3 and bc_with_vertices:
-            # throw an exception because this option is not implemented yet
-            raise Exception("Mesh-based boundary conditions are not implemented yet")
-            # mesh_masker = MeshBoundaryMasker(
-            #     velocity_set=DefaultConfig.velocity_set,
-            #     precision_policy=DefaultConfig.default_precision_policy,
-            #     compute_backend=DefaultConfig.default_backend,
-            # )
-            # for bc in bc_with_vertices:
-            #     bc_mask, missing_mask = mesh_masker(bc, bc_mask, missing_mask)
+
+        # Process all boundary conditions, either defined by indices or mesh_vertices
+        bc_mask, missing_mask = mres_masker(boundary_conditions, bc_mask, missing_mask, xlb_grid=xlb_grid)
 
         return bc_mask, missing_mask
 

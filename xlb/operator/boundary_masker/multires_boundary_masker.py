@@ -41,6 +41,9 @@ class MultiresBoundaryMasker(Operator):
         # Ensure that this operator is called on multires grids
         assert bc_mask.get_grid().get_name() == "mGrid", f"Operation {self.__class__.__name} is only applicable to multi-resolution cases"
 
+        # Make constants
+        _d = self.velocity_set.d
+
         # number of levels
         num_levels = bc_mask.get_grid().get_num_levels()
         for level in range(num_levels):
@@ -52,15 +55,21 @@ class MultiresBoundaryMasker(Operator):
             bc_mask_warp = grid_dense.create_field(cardinality=1, dtype=Precision.UINT8)
 
             # create a new bclist for this level only
-            bclist_level = []
+            bc_with_indices = []
             for bc in bclist:
                 if bc.indices is not None and bc.indices[level]:
                     bc_copy = copy.copy(bc)  # shallow copy of the whole object
                     bc_copy.indices = copy.deepcopy(bc.indices[level])  # deep copy only the modified part
-                    bclist_level.append(bc_copy)
+                    bc_with_indices.append(bc_copy)
+                elif bc.mesh_vertices is not None:
+                    bc_copy = copy.copy(bc)  # shallow copy of the whole object
+                    bc_copy.mesh_vertices = copy.deepcopy(bc.mesh_vertices) / refinement
 
-            # call indices masker for this level
-            bc_mask_warp, missing_mask_warp = self.indices_masker(bclist_level, bc_mask_warp, missing_mask_warp, start_index, xlb_grid)
+                    # call mesh masker for this bc at this level
+                    bc_mask_warp, missing_mask_warp = self.mesh_masker(bc_copy, bc_mask_warp, missing_mask_warp)
+
+            # call indices masker for all BC's with indices at this level
+            bc_mask_warp, missing_mask_warp = self.indices_masker(bc_with_indices, bc_mask_warp, missing_mask_warp, start_index)
 
             @neon.Container.factory(name="MultiresBoundaryMasker")
             def container(
@@ -81,12 +90,16 @@ class MultiresBoundaryMasker(Operator):
                         lx = wp.neon_get_x(cIdx) // refinement
                         ly = wp.neon_get_y(cIdx) // refinement
                         lz = wp.neon_get_z(cIdx) // refinement
-                        # TODO@Max - XLB is flattening the y dimension in 3D, while neon uses the z dimension
-                        local_mask = bc_mask_warp[0, lx, lz, ly]
+
+                        # TODO@Max - XLB is flattening the z dimension in 3D, while neon uses the y dimension
+                        if _d == 2:
+                            ly, lz = lz, ly
+
+                        local_mask = bc_mask_warp[0, lx, ly, lz]
                         wp.neon_write(bc_mask_hdl, gridIdx, 0, local_mask)
 
                         for q in range(self.velocity_set.q):
-                            is_missing = wp.uint8(missing_mask_warp[q, lx, lz, ly])
+                            is_missing = wp.uint8(missing_mask_warp[q, lx, ly, lz])
                             wp.neon_write(missing_mask_hdl, gridIdx, q, is_missing)
 
                     loader.declare_kernel(masker)
