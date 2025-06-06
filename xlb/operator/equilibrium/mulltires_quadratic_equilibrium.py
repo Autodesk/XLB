@@ -8,8 +8,10 @@ from xlb.operator import Operator
 
 class MultiresQuadraticEquilibrium(QuadraticEquilibrium):
     """
-    Quadratic equilibrium of Boltzmann equation using hermite polynomials.
-    Standard equilibrium model for LBM.
+    Quadratic equilibrium of Boltzmann equation using hermite polynomials for multires grids.
+
+    This class computes the equilibrium distribution function on multi-resolution grids,
+    with proper handling of refined regions and boundary conditions.
     """
 
     def __init__(self, *args, **kwargs):
@@ -21,48 +23,71 @@ class MultiresQuadraticEquilibrium(QuadraticEquilibrium):
         # Use the warp functional for the NEON backend
         functional, _ = self._construct_warp()
 
-        # Set local constants TODO: This is a hack and should be fixed with warp update
+        # Define vector types for cleaner code
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
-        @neon.Container.factory(name="QuadraticEquilibrium")
+        @neon.Container.factory(name="MultiresQuadraticEquilibrium")
         def container(
             rho: Any,
             u: Any,
             f: Any,
-            level,
+            level: int,
         ):
-            def quadratic_equilibrium_ll(loader: neon.Loader):
+            def equilibrium_computation(loader: neon.Loader):
                 loader.set_mres_grid(rho.get_grid(), level)
 
-                rho_pn = loader.get_mres_read_handle(rho)
-                u_pn = loader.get_mres_read_handle(u)
-                f_pn = loader.get_mres_write_handle(f)
+                # Get field handles
+                rho_handle = loader.get_mres_read_handle(rho)
+                u_handle = loader.get_mres_read_handle(u)
+                f_handle = loader.get_mres_write_handle(f)
 
                 @wp.func
-                def quadratic_equilibrium_cl(index: Any):
+                def equilibrium_kernel(index: Any):
+                    # Read macroscopic properties
+                    _rho = wp.neon_read(rho_handle, index, 0)
                     _u = _u_vec()
                     for d in range(self.velocity_set.d):
-                        _u[d] = wp.neon_read(u_pn, index, d)
-                    _rho = wp.neon_read(rho_pn, index, 0)
+                        _u[d] = wp.neon_read(u_handle, index, d)
+
+                    # Compute equilibrium distribution
                     feq = functional(_rho, _u)
 
-                    if wp.neon_has_child(f_pn, index):
+                    # Handle refined cells (set to zero if this cell has children)
+                    has_child = wp.neon_has_child(f_handle, index)
+                    if has_child:
+                        feq = _f_vec()  # Initialize to zero
                         for l in range(self.velocity_set.q):
                             feq[l] = self.compute_dtype(0.0)
-                    # Set the output
+
+                    # Write results to output field
                     for l in range(self.velocity_set.q):
-                        wp.neon_write(f_pn, index, l, feq[l])
+                        wp.neon_write(f_handle, index, l, feq[l])
 
-                loader.declare_kernel(quadratic_equilibrium_cl)
+                loader.declare_kernel(equilibrium_kernel)
 
-            return quadratic_equilibrium_ll
+            return equilibrium_computation
 
         return functional, container
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, rho, u, f, stream=0):
+        """
+        Execute equilibrium computation for all levels in the multires grid.
+
+        Args:
+            rho: Density field
+            u: Velocity field
+            f: Distribution function field (output)
+            stream: Stream ID for execution
+
+        Returns:
+            Updated distribution function field
+        """
         grid = f.get_grid()
+
         for level in range(grid.num_levels):
-            c = self.neon_container(rho, u, f, level)
-            c.run(stream, container_runtime=neon.Container.ContainerRuntime.neon)
+            computation = self.neon_container(rho, u, f, level)
+            computation.run(stream, container_runtime=neon.Container.ContainerRuntime.neon)
+
         return f

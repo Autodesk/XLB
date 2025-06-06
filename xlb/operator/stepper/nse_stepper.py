@@ -2,7 +2,6 @@
 
 from functools import partial
 
-from docutils.nodes import container
 from jax import jit
 import warp as wp
 import neon
@@ -10,7 +9,6 @@ from typing import Any
 
 from xlb import DefaultConfig
 from xlb.compute_backend import ComputeBackend
-from xlb.precision_policy import Precision
 from xlb.operator import Operator
 from xlb.operator.stream import Stream
 from xlb.operator.collision import BGK, KBC
