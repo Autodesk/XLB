@@ -142,36 +142,46 @@ def problem1(grid_shape, velocity_set):
     walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
     walls = np.unique(np.array(walls), axis=-1).tolist()
     # convert bc indices to a list of list, where the first entry of the list corresponds to the finest level
-    lid = [lid, [], [], []]
-    walls = [walls, [], [], []]
+    lid = [lid] + [[] for _ in range(num_levels - 1)]
+    walls = [walls] + [[] for _ in range(num_levels - 1)]
     return grid, lid, walls
 
 
 def problem2(grid_shape, velocity_set):
     # Example 2: Coarsest at the edges (2 level only)
-    num_levels = 2
-    level_1 = np.ones((grid_shape[0] // 2, grid_shape[1] // 2, grid_shape[2] // 2), dtype=int)
-    finestLevel = np.ones((40, 40, 40), dtype=int)
-    finestLevel = np.ascontiguousarray(finestLevel, dtype=np.int32)
-    levels = [finestLevel, level_1]
-    level_origins = [(44, 44, 44), (0, 0, 0)]
+    num_levels = 4
+    level_origins = []
+    level_list = []
+    for lvl in range(num_levels):
+        divider = 2**lvl
+        growth = 1.5**lvl
+        shape = grid_shape[0] // divider, grid_shape[1] // divider, grid_shape[2] // divider
+        if lvl == num_levels - 1:
+            level = np.ascontiguousarray(np.ones(shape, dtype=int), dtype=np.int32)
+            box_origin = (0, 0, 0)  # The coarsest level has no origin offset
+        else:
+            box_size = tuple([int(shape[i] // 4 * growth) for i in range(3)])
+            box_origin = tuple([shape[i] // 2 - box_size[i] // 2 for i in range(3)])
+            level = np.ascontiguousarray(np.ones(box_size, dtype=int), dtype=np.int32)
+        level_list.append(level)
+        level_origins.append(neon.Index_3d(*box_origin))
 
     # Create the multires grid
     grid = multires_grid_factory(
         grid_shape,
         velocity_set=velocity_set,
-        sparsity_pattern_list=levels,
-        sparsity_pattern_origins=[neon.Index_3d(*level_origins[lvl]) for lvl in range(num_levels)],
+        sparsity_pattern_list=level_list,
+        sparsity_pattern_origins=level_origins,
     )
 
-    box = grid.bounding_box_indices(shape=grid.level_to_shape(1))
+    box = grid.bounding_box_indices(shape=grid.level_to_shape(num_levels - 1))
     box_no_edge = grid.bounding_box_indices(shape=grid.level_to_shape(1), remove_edges=True)
     lid = box_no_edge["top"]
     walls = [box["bottom"][i] + box["left"][i] + box["right"][i] + box["front"][i] + box["back"][i] for i in range(len(grid.shape))]
     walls = np.unique(np.array(walls), axis=-1).tolist()
     # convert bc indices to a list of list, where the first entry of the list corresponds to the finest level
-    lid = [[], lid]
-    walls = [[], walls]
+    lid = [[] for _ in range(num_levels - 1)] + [lid]
+    walls = [[] for _ in range(num_levels - 1)] + [walls]
     return grid, lid, walls
 
 
