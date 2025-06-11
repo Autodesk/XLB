@@ -139,7 +139,7 @@ class MomentumTransfer(Operator):
                 # Get the distribution function
                 f_post_collision = _f_vec()
                 for l in range(self.velocity_set.q):
-                    f_post_collision[l] = f_0[l, index[0], index[1], index[2]]
+                    f_post_collision[l] = self.compute_dtype(f_0[l, index[0], index[1], index[2]])
 
                 # Apply streaming (pull method)
                 timestep = 0

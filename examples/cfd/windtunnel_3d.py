@@ -10,6 +10,7 @@ from xlb.operator.boundary_condition import (
     FullwayBounceBackBC,
     RegularizedBC,
     ExtrapolationOutflowBC,
+    HybridBC,
 )
 from xlb.operator.force.momentum_transfer import MomentumTransfer
 from xlb.operator.macroscopic import Macroscopic
@@ -18,7 +19,7 @@ import warp as wp
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-
+from xlb.operator.boundary_masker import MeshVoxelizationMethod
 
 # -------------------------- Simulation Setup --------------------------
 
@@ -74,6 +75,7 @@ walls = np.unique(np.array(walls), axis=-1).tolist()
 
 # Load the mesh (replace with your own mesh)
 stl_filename = "../stl-files/DrivAer-Notchback.stl"
+voxelization_method = MeshVoxelizationMethod.RAY
 mesh = trimesh.load_mesh(stl_filename, process=False)
 mesh_vertices = mesh.vertices
 
@@ -84,7 +86,15 @@ length_phys_unit = mesh_extents.max()
 length_lbm_unit = grid_shape[0] / 4
 dx = length_phys_unit / length_lbm_unit
 mesh_vertices = mesh_vertices / dx
-shift = np.array([grid_shape[0] / 4, (grid_shape[1] - mesh_extents[1] / dx) / 2, 0.0])
+
+# Depending on the voxelization method, shift_z ensures the bottom ground does not intersect with the voxelized mesh
+# Any smaller shift value would lead to large lift computations due to the initial equilibrium distributions. Bigger
+# values would be fine but leave a gap between surfaces that are supposed to touch.
+if voxelization_method in (MeshVoxelizationMethod.RAY, MeshVoxelizationMethod.WINDING):
+    shift_z = 2
+elif voxelization_method in (MeshVoxelizationMethod.AABB, MeshVoxelizationMethod.AABB_FILL):
+    shift_z = 3
+shift = np.array([grid_shape[0] / 4, (grid_shape[1] - mesh_extents[1] / dx) / 2, shift_z])
 car_vertices = mesh_vertices + shift
 car_cross_section = np.prod(mesh_extents[1:]) / dx**2
 
@@ -92,7 +102,8 @@ car_cross_section = np.prod(mesh_extents[1:]) / dx**2
 bc_left = RegularizedBC("velocity", prescribed_value=(wind_speed, 0.0, 0.0), indices=inlet)
 bc_walls = FullwayBounceBackBC(indices=walls)
 bc_do_nothing = ExtrapolationOutflowBC(indices=outlet)
-bc_car = HalfwayBounceBackBC(mesh_vertices=car_vertices)
+bc_car = HalfwayBounceBackBC(mesh_vertices=car_vertices, voxelization_method=voxelization_method)
+# bc_car = HybridBC(bc_method="nonequilibrium_regularized",  mesh_vertices=car_vertices, voxelization_method=voxelization_method, use_mesh_distance=True)
 boundary_conditions = [bc_walls, bc_left, bc_do_nothing, bc_car]
 
 
@@ -110,28 +121,28 @@ f_0, f_1, bc_mask, missing_mask = stepper.prepare_fields()
 # -------------------------- Helper Functions --------------------------
 
 
-def plot_drag_coefficient(time_steps, drag_coefficients):
+def plot_coefficient(time_steps, coefficients, prefix="drag"):
     """
     Plot the drag coefficient with various moving averages.
 
     Args:
         time_steps (list): List of time steps.
-        drag_coefficients (list): List of drag coefficients.
+        coefficients (list): List of force coefficients.
     """
     # Convert lists to numpy arrays for processing
     time_steps_np = np.array(time_steps)
-    drag_coefficients_np = np.array(drag_coefficients)
+    coefficients_np = np.array(coefficients)
 
     # Define moving average windows
     windows = [10, 100, 1000, 10000, 100000]
     labels = ["MA 10", "MA 100", "MA 1,000", "MA 10,000", "MA 100,000"]
 
     plt.figure(figsize=(12, 8))
-    plt.plot(time_steps_np, drag_coefficients_np, label="Raw", alpha=0.5)
+    plt.plot(time_steps_np, coefficients_np, label="Raw", alpha=0.5)
 
     for window, label in zip(windows, labels):
-        if len(drag_coefficients_np) >= window:
-            ma = np.convolve(drag_coefficients_np, np.ones(window) / window, mode="valid")
+        if len(coefficients_np) >= window:
+            ma = np.convolve(coefficients_np, np.ones(window) / window, mode="valid")
             plt.plot(time_steps_np[window - 1 :], ma, label=label)
 
     plt.ylim(-1.0, 1.0)
@@ -139,7 +150,7 @@ def plot_drag_coefficient(time_steps, drag_coefficients):
     plt.xlabel("Time step")
     plt.ylabel("Drag coefficient")
     plt.title("Drag Coefficient Over Time with Moving Averages")
-    plt.savefig("drag_coefficient_ma.png")
+    plt.savefig(prefix + "_ma.png")
     plt.close()
 
 
@@ -203,12 +214,14 @@ def post_process(
     lift = boundary_force[2]
     cd = 2.0 * drag / (wind_speed**2 * car_cross_section)
     cl = 2.0 * lift / (wind_speed**2 * car_cross_section)
+    print(f"CD={cd}, CL={cl}")
     drag_coefficients.append(cd)
     lift_coefficients.append(cl)
     time_steps.append(step)
 
     # Plot drag coefficient
-    plot_drag_coefficient(time_steps, drag_coefficients)
+    plot_coefficient(time_steps, drag_coefficients, prefix="drag")
+    plot_coefficient(time_steps, lift_coefficients, prefix="lift")
 
 
 # Setup Momentum Transfer for Force Calculation
