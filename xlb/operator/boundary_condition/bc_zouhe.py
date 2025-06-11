@@ -7,7 +7,7 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
-from typing import Any, Union, Tuple
+from typing import Any, Union, Tuple, Callable
 import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -20,6 +20,7 @@ from xlb.operator.boundary_condition.boundary_condition import (
 )
 from xlb.operator.boundary_condition import HelperFunctionsBC
 from xlb.operator.equilibrium import QuadraticEquilibrium
+from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 
 
 class ZouHeBC(BoundaryCondition):
@@ -37,20 +38,20 @@ class ZouHeBC(BoundaryCondition):
     def __init__(
         self,
         bc_type,
-        profile=None,
+        profile: Callable = None,
         prescribed_value: Union[float, Tuple[float, ...], np.ndarray] = None,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
         mesh_vertices=None,
+        voxelization_method: MeshVoxelizationMethod = None,
     ):
         # Important Note: it is critical to add id inside __init__ for this BC because different instantiations of this BC
         # may have different types (velocity or pressure).
         assert bc_type in ["velocity", "pressure"], f"type = {bc_type} not supported! Use 'pressure' or 'velocity'."
         self.bc_type = bc_type
         self.equilibrium_operator = QuadraticEquilibrium()
-        self.profile = profile
 
         # Call the parent constructor
         super().__init__(
@@ -60,7 +61,12 @@ class ZouHeBC(BoundaryCondition):
             compute_backend,
             indices,
             mesh_vertices,
+            voxelization_method,
         )
+
+        # This BC class accepts both constant prescribed values of velocity with keyword "prescribed_value" or
+        # velocity profiles given by keyword "profile" which must be a callable function.
+        self.profile = profile
 
         # Handle prescribed value if provided
         if prescribed_value is not None:
@@ -100,13 +106,13 @@ class ZouHeBC(BoundaryCondition):
             self.prescribed_value = prescribed_value
             self.profile = self._create_constant_prescribed_profile()
 
-        # This BC needs auxilary data initialization before streaming
+        # This BC needs auxiliary data initialization before streaming
         self.needs_aux_init = True
 
-        # This BC needs auxilary data recovery after streaming
+        # This BC needs auxiliary data recovery after streaming
         self.needs_aux_recovery = True
 
-        # This BC needs one auxilary data for the density or normal velocity
+        # This BC needs one auxiliary data for the density or normal velocity
         self.num_of_aux_data = 1
 
         # This BC needs padding for finding missing directions when imposed on a geometry that is in the domain interior

@@ -7,7 +7,7 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
-from typing import Any, Union, Tuple
+from typing import Any, Union, Tuple, Callable
 import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -16,6 +16,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition import ZouHeBC, HelperFunctionsBC
 from xlb.operator.macroscopic import SecondMoment as MomentumFlux
+from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 
 
 class RegularizedBC(ZouHeBC):
@@ -43,13 +44,14 @@ class RegularizedBC(ZouHeBC):
     def __init__(
         self,
         bc_type,
-        profile=None,
+        profile: Callable = None,
         prescribed_value: Union[float, Tuple[float, ...], np.ndarray] = None,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
         indices=None,
         mesh_vertices=None,
+        voxelization_method: MeshVoxelizationMethod = None,
     ):
         # Call the parent constructor
         super().__init__(
@@ -61,6 +63,7 @@ class RegularizedBC(ZouHeBC):
             compute_backend,
             indices,
             mesh_vertices,
+            voxelization_method,
         )
         self.momentum_flux = MomentumFlux()
 

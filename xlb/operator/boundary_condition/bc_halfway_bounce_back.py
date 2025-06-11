@@ -7,7 +7,8 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
-from typing import Any
+from typing import Any, Union, Tuple, Callable
+import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -16,7 +17,9 @@ from xlb.operator.operator import Operator
 from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,
     BoundaryCondition,
+    HelperFunctionsBC,
 )
+from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 
 
 class HalfwayBounceBackBC(BoundaryCondition):
@@ -33,6 +36,9 @@ class HalfwayBounceBackBC(BoundaryCondition):
         compute_backend: ComputeBackend = None,
         indices=None,
         mesh_vertices=None,
+        voxelization_method: MeshVoxelizationMethod = None,
+        profile: Callable = None,
+        prescribed_value: Union[float, Tuple[float, ...], np.ndarray] = None,
     ):
         # Call the parent constructor
         super().__init__(
@@ -42,10 +48,53 @@ class HalfwayBounceBackBC(BoundaryCondition):
             compute_backend,
             indices,
             mesh_vertices,
+            voxelization_method,
         )
 
         # This BC needs padding for finding missing directions when imposed on a geometry that is in the domain interior
         self.needs_padding = True
+
+        # This BC class accepts both constant prescribed values of velocity with keyword "prescribed_value" or
+        # velocity profiles given by keyword "profile" which must be a callable function.
+        self.profile = profile
+
+        # A flag to enable moving wall treatment when either "prescribed_value" or "profile" are provided.
+        self.needs_moving_wall_treatment = False
+
+        if (profile is not None) or (prescribed_value is not None):
+            self.needs_moving_wall_treatment = True
+
+        # Handle no-slip BCs if neither prescribed_value or profile are provided.
+        if prescribed_value is None and profile is None:
+            print(f"WARNING! Assuming no-slip condition for BC type = {self.__class__.__name__}!")
+            prescribed_value = [0] * self.velocity_set.d
+
+        # Handle prescribed value if provided
+        if prescribed_value is not None:
+            if profile is not None:
+                raise ValueError("Cannot specify both profile and prescribed_value")
+
+            # Convert input to numpy array for validation
+            if isinstance(prescribed_value, (tuple, list)):
+                prescribed_value = np.array(prescribed_value, dtype=np.float64)
+            elif isinstance(prescribed_value, np.ndarray):
+                prescribed_value = prescribed_value.astype(np.float64)
+            elif isinstance(prescribed_value, (int, float)):
+                raise ValueError("Velocity prescribed_value must be a tuple or array")
+
+            # Validate prescribed value
+            if not isinstance(prescribed_value, np.ndarray):
+                raise ValueError("Velocity prescribed_value must be an array-like")
+
+            # create a constant prescribed profile
+            # Note this BC class is only implemented in WARP.
+            prescribed_value = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)(prescribed_value)
+
+            @wp.func
+            def prescribed_profile_warp(index: wp.vec3i, time: Any):
+                return wp.vec3(prescribed_value[0], prescribed_value[1], prescribed_value[2])
+
+            self.profile = prescribed_profile_warp
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
@@ -60,6 +109,9 @@ class HalfwayBounceBackBC(BoundaryCondition):
         )
 
     def _construct_warp(self):
+        # load helper functions
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
+
         # Set local constants
         _opp_indices = self.velocity_set.opp_indices
 
@@ -74,6 +126,9 @@ class HalfwayBounceBackBC(BoundaryCondition):
             f_pre: Any,
             f_post: Any,
         ):
+            # Get wall velocity
+            u_wall = self.profile(index, timestep)
+
             # Post-streaming values are only modified at missing direction
             _f = f_post
             for l in range(self.velocity_set.q):
@@ -81,6 +136,10 @@ class HalfwayBounceBackBC(BoundaryCondition):
                 if missing_mask[l] == wp.uint8(1):
                     # Get the pre-streaming distribution function in oppisite direction
                     _f[l] = f_pre[_opp_indices[l]]
+
+                    # Add contribution due to moving_wall to f_missing
+                    if wp.static(self.needs_moving_wall_treatment):
+                        _f[l] += bc_helper.moving_wall_fpop_correction(u_wall, l)
 
             return _f
 
