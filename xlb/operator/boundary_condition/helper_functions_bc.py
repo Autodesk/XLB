@@ -7,7 +7,7 @@ from typing import Any
 
 
 class HelperFunctionsBC(object):
-    def __init__(self, velocity_set=None, precision_policy=None, compute_backend=None):
+    def __init__(self, velocity_set=None, precision_policy=None, compute_backend=None, distance_decoder_function=None):
         if compute_backend == ComputeBackend.JAX:
             raise ValueError("This helper class contains helper functions only for the WARP implementation of some BCs not JAX!")
 
@@ -15,6 +15,7 @@ class HelperFunctionsBC(object):
         self.velocity_set = velocity_set or DefaultConfig.velocity_set
         self.precision_policy = precision_policy or DefaultConfig.default_precision_policy
         self.compute_backend = compute_backend or DefaultConfig.default_backend
+        self.distance_decoder_function = distance_decoder_function
 
         # Set the compute and Store dtypes
         compute_dtype = self.precision_policy.compute_precision.wp_dtype
@@ -242,7 +243,7 @@ class HelperFunctionsBC(object):
                     # The normalized distance to the mesh or "weights" have been stored in known directions of f_1
                     if needs_mesh_distance:
                         # use weights associated with curved boundaries that are properly stored in f_1.
-                        weight = compute_dtype(f_1[_opp_indices[l], index[0], index[1], index[2]])
+                        weight = compute_dtype(self.distance_decoder_function(f_1, index, l))
                     else:
                         weight = compute_dtype(0.5)
 
@@ -288,7 +289,7 @@ class HelperFunctionsBC(object):
                     # The normalized distance to the mesh or "weights" have been stored in known directions of f_1
                     if needs_mesh_distance:
                         # use weights associated with curved boundaries that are properly stored in f_1.
-                        weight = compute_dtype(f_1[_opp_indices[l], index[0], index[1], index[2]])
+                        weight = compute_dtype(self.distance_decoder_function(f_1, index, l))
                     else:
                         weight = compute_dtype(0.5)
 

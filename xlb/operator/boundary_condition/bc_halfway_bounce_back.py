@@ -91,7 +91,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
             prescribed_value = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)(prescribed_value)
 
             @wp.func
-            def prescribed_profile_warp(index: wp.vec3i, time: Any):
+            def prescribed_profile_warp(index: Any, time: Any):
                 return wp.vec3(prescribed_value[0], prescribed_value[1], prescribed_value[2])
 
             self.profile = prescribed_profile_warp
@@ -109,8 +109,8 @@ class HalfwayBounceBackBC(BoundaryCondition):
         )
 
     def _construct_warp(self):
-        # load helper functions
-        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
+        # load helper functions. Explicitly using the WARP backend for helper functions as it may also be called by the Neon backend.
+        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=ComputeBackend.WARP)
 
         # Set local constants
         _opp_indices = self.velocity_set.opp_indices

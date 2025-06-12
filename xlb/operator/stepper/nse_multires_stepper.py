@@ -82,9 +82,9 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         # f_0.export_vti("f0_eq_init.vti", "init_f0")
 
         # Process boundary conditions and update masks
-        bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, bc_mask, missing_mask, xlb_grid=self.grid)
+        f_1, bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, f_1, bc_mask, missing_mask, xlb_grid=self.grid)
         # Initialize auxiliary data if needed
-        f_0, f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_0, f_1, bc_mask, missing_mask)
+        f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_1, bc_mask, missing_mask)
         # bc_mask.update_host(0)
         bc_mask.update_host(0)
         f_0.update_host(0)
@@ -208,7 +208,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         return
 
     @classmethod
-    def _process_boundary_conditions(cls, boundary_conditions, bc_mask, missing_mask, xlb_grid=None):
+    def _process_boundary_conditions(cls, boundary_conditions, f_1, bc_mask, missing_mask, xlb_grid=None):
         """Process boundary conditions and update boundary masks."""
         # Check for boundary condition overlaps
         # TODO! check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
@@ -220,19 +220,19 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         )
 
         # Process all boundary conditions, either defined by indices or mesh_vertices
-        bc_mask, missing_mask = mres_masker(boundary_conditions, bc_mask, missing_mask, xlb_grid=xlb_grid)
+        f_1, bc_mask, missing_mask = mres_masker(boundary_conditions, f_1, bc_mask, missing_mask, xlb_grid=xlb_grid)
 
-        return bc_mask, missing_mask
+        return f_1, bc_mask, missing_mask
 
     @staticmethod
-    def _initialize_auxiliary_data(boundary_conditions, f_0, f_1, bc_mask, missing_mask):
+    def _initialize_auxiliary_data(boundary_conditions, f_1, bc_mask, missing_mask):
         """Initialize auxiliary data for boundary conditions that require it."""
         for bc in boundary_conditions:
             if bc.needs_aux_init and not bc.is_initialized_with_aux_data:
                 for level in range(bc_mask.get_grid().get_num_levels()):
                     # Initialize auxiliary data for each level
-                    f_0, f_1 = bc.multires_aux_data_init(f_0, f_1, bc_mask, missing_mask, level=level, stream=0)
-        return f_0, f_1
+                    f_1 = bc.multires_aux_data_init(f_1, bc_mask, missing_mask, level=level, stream=0)
+        return f_1
 
     def _construct_neon(self):
         # Set local constants

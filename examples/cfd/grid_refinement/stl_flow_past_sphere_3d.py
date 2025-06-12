@@ -3,12 +3,21 @@ from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
 from xlb.grid import multires_grid_factory
 from xlb.operator.stepper import MultiresIncompressibleNavierStokesStepper
-from xlb.operator.boundary_condition import FullwayBounceBackBC, HalfwayBounceBackBC, RegularizedBC, ExtrapolationOutflowBC, DoNothingBC, ZouHeBC
+from xlb.operator.boundary_condition import (
+    FullwayBounceBackBC,
+    HalfwayBounceBackBC,
+    RegularizedBC,
+    ExtrapolationOutflowBC,
+    DoNothingBC,
+    ZouHeBC,
+    HybridBC,
+)
 from xlb.utils import make_cuboid_mesh
 import neon
 import warp as wp
 import numpy as np
 import time
+from xlb.operator.boundary_masker import MeshVoxelizationMethod
 
 
 def generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part, grid_shape):
@@ -164,7 +173,11 @@ bc_left = RegularizedBC("velocity", profile=bc_profile(), indices=inlet)
 bc_walls = FullwayBounceBackBC(indices=walls)  # TODO: issues with halfway bounce back only here!
 # bc_outlet = ExtrapolationOutflowBC(indices=outlet)
 bc_outlet = DoNothingBC(indices=outlet)
-bc_sphere = HalfwayBounceBackBC(mesh_vertices=sphere)
+# bc_sphere = HalfwayBounceBackBC(mesh_vertices=sphere, voxelization_method=MeshVoxelizationMethod.AABB)
+bc_sphere = HybridBC(
+    bc_method="nonequilibrium_regularized", mesh_vertices=sphere, voxelization_method=MeshVoxelizationMethod.AABB, use_mesh_distance=True
+)
+
 boundary_conditions = [bc_walls, bc_left, bc_outlet, bc_sphere]
 
 # Configure the simulation relaxation time

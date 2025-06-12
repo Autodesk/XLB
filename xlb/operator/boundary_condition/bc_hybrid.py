@@ -60,10 +60,14 @@ class HybridBC(BoundaryCondition):
             voxelization_method,
         )
 
+        assert self.compute_backend == ComputeBackend.WARP or ComputeBackend.NEON
+        "This BC is currently not supported by JAX backend!"
+
         # Instantiate the operator for computing macroscopic values
-        self.macroscopic = Macroscopic()
-        self.zero_moment = ZeroMoment()
-        self.equilibrium = QuadraticEquilibrium()
+        # Explicitly using the WARP backend for these operators as they may also be called by the Neon backend.
+        self.macroscopic = Macroscopic(compute_backend=ComputeBackend.WARP)
+        self.zero_moment = ZeroMoment(compute_backend=ComputeBackend.WARP)
+        self.equilibrium = QuadraticEquilibrium(compute_backend=ComputeBackend.WARP)
 
         # This BC class accepts both constant prescribed values of velocity with keyword "prescribed_value" or
         # velocity profiles given by keyword "profile" which must be a callable function.
@@ -102,7 +106,7 @@ class HybridBC(BoundaryCondition):
             prescribed_value = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)(prescribed_value)
 
             @wp.func
-            def prescribed_profile_warp(index: wp.vec3i, time: Any):
+            def prescribed_profile_warp(index: Any, time: Any):
                 return wp.vec3(prescribed_value[0], prescribed_value[1], prescribed_value[2])
 
             self.profile = prescribed_profile_warp
@@ -126,6 +130,14 @@ class HybridBC(BoundaryCondition):
         if self.velocity_set.d == 2:
             raise NotImplementedError("This BC is not implemented in 2D!")
 
+        # Define BC helper functions. Explicitly using the WARP backend for helper functions as it may also be called by the Neon backend.
+        self.bc_helper = HelperFunctionsBC(
+            velocity_set=self.velocity_set,
+            precision_policy=self.precision_policy,
+            compute_backend=ComputeBackend.WARP,
+            distance_decoder_function=self._construct_distance_decoder_function(),
+        )
+
         # if indices is not None:
         #     # this BC would be limited to stationary boundaries
         #     # assert mesh_vertices is None
@@ -135,8 +147,6 @@ class HybridBC(BoundaryCondition):
         #     if mesh_velocity_function is not None:
         #         # mesh is moving and/or deforming
 
-        assert self.compute_backend == ComputeBackend.WARP, "This BC is currently only implemented with the Warp backend!"
-
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
@@ -144,19 +154,29 @@ class HybridBC(BoundaryCondition):
         raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
         return
 
-    def _construct_warp(self):
-        # load helper functions
-        bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
-
-        # Set local variables and constants
-        _c = self.velocity_set.c
-        _q = self.velocity_set.q
-        _d = self.velocity_set.d
+    def _construct_distance_decoder_function(self):
+        """
+        Constructs the distance decoder function for this BC.
+        """
+        # Get the opposite indices for the velocity set
         _opp_indices = self.velocity_set.opp_indices
-        _f_vec = wp.vec(_q, dtype=self.compute_dtype)
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _u_wall = _u_vec(0.0, 0.0, 0.0) if _d == 3 else _u_vec(0.0, 0.0)
 
+        # Define the distance decoder function for this BC
+        if self.compute_backend == ComputeBackend.WARP:
+
+            @wp.func
+            def distance_decoder_function(f_1: Any, index: Any, direction: Any):
+                return f_1[_opp_indices[direction], index[0], index[1], index[2]]
+
+        elif self.compute_backend == ComputeBackend.NEON:
+
+            @wp.func
+            def distance_decoder_function(f_1_pn: Any, index: Any, direction: Any):
+                return wp.neon_read(f_1_pn, index, _opp_indices[direction])
+
+        return distance_decoder_function
+
+    def _construct_warp(self):
         # Construct the functionals for this BC
         @wp.func
         def hybrid_bounceback_regularized(
@@ -177,7 +197,7 @@ class HybridBC(BoundaryCondition):
 
             # Apply interpolated bounceback first to find missing populations at the boundary
             u_wall = self.profile(index, timestep)
-            f_post = bc_helper.interpolated_bounceback(
+            f_post = self.bc_helper.interpolated_bounceback(
                 index,
                 _missing_mask,
                 f_0,
@@ -194,7 +214,7 @@ class HybridBC(BoundaryCondition):
 
             # Regularize the resulting populations
             feq = self.equilibrium.warp_functional(rho, u)
-            f_post = bc_helper.regularize_fpop(f_post, feq)
+            f_post = self.bc_helper.regularize_fpop(f_post, feq)
             return f_post
 
         @wp.func
@@ -216,7 +236,7 @@ class HybridBC(BoundaryCondition):
 
             # Apply interpolated bounceback first to find missing populations at the boundary
             u_wall = self.profile(index, timestep)
-            f_post = bc_helper.interpolated_bounceback(
+            f_post = self.bc_helper.interpolated_bounceback(
                 index,
                 _missing_mask,
                 f_0,
@@ -232,7 +252,7 @@ class HybridBC(BoundaryCondition):
             rho, u = self.macroscopic.warp_functional(f_post)
 
             # Compute Grad's appriximation using full equation as in Eq (10) of Dorschner et al.
-            f_post = bc_helper.grads_approximate_fpop(_missing_mask, rho, u, f_post)
+            f_post = self.bc_helper.grads_approximate_fpop(_missing_mask, rho, u, f_post)
             return f_post
 
         @wp.func
@@ -254,7 +274,7 @@ class HybridBC(BoundaryCondition):
 
             # Apply interpolated bounceback first to find missing populations at the boundary
             u_wall = self.profile(index, timestep)
-            f_post = bc_helper.interpolated_nonequilibrium_bounceback(
+            f_post = self.bc_helper.interpolated_nonequilibrium_bounceback(
                 index,
                 _missing_mask,
                 f_0,
@@ -271,7 +291,7 @@ class HybridBC(BoundaryCondition):
 
             # Regularize the resulting populations
             feq = self.equilibrium.warp_functional(rho, u)
-            f_post = bc_helper.regularize_fpop(f_post, feq)
+            f_post = self.bc_helper.regularize_fpop(f_post, feq)
             return f_post
 
         if self.bc_method == "bounceback_regularized":
@@ -294,3 +314,12 @@ class HybridBC(BoundaryCondition):
             dim=f_pre.shape[1:],
         )
         return f_post
+
+    def _construct_neon(self):
+        functional, _ = self._construct_warp()
+        return functional, None
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, f_pre, f_post, bc_mask, missing_mask):
+        # rise exception as this feature is not implemented yet
+        raise NotImplementedError("This feature is not implemented in XLB with the NEON backend yet.")
