@@ -3,32 +3,33 @@ from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import PrecisionPolicy
 from xlb.grid import multires_grid_factory
 from xlb.operator.stepper import MultiresIncompressibleNavierStokesStepper
-from xlb.operator.boundary_condition import FullwayBounceBackBC, HalfwayBounceBackBC, RegularizedBC, ExtrapolationOutflowBC, DoNothingBC, ZouHeBC
+from xlb.operator.boundary_condition import (
+    FullwayBounceBackBC,
+    HalfwayBounceBackBC,
+    RegularizedBC,
+    ExtrapolationOutflowBC,
+    DoNothingBC,
+    ZouHeBC,
+    HybridBC,
+)
 from xlb.utils import make_cuboid_mesh
 import neon
 import warp as wp
 import numpy as np
 import time
+from xlb.operator.boundary_masker import MeshVoxelizationMethod
 
 
-def generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part):
+def generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part, grid_shape):
     """
     Generate a cuboid mesh based on the provided voxel size and domain multipliers.
     """
     import open3d as o3d
     import os
 
-    # Domain multipliers for each refinement level
-    # First entry should be full domain size
-    domainMultiplier = [
-        # [15, 15, 7, 7, 7, 7],  # -x, x, -y, y, -z, z
-        [6, 8, 5, 5, 5, 5],  # -x, x, -y, y, -z, z
-        [4, 6, 4, 4, 4, 4],
-        # [2, 4, 2, 2, 2, 2],
-        # [1, 2, 1, 1, 1, 1],
-        # [0.4, 1, 0.4, 0.4, 0.4, 0.4],
-        # [0.2, 0.4, 0.2, 0.2, 0.2, 0.2],
-    ]
+    # STL position
+    nx, ny, nz = grid_shape
+    sphere_origin = (nx // 6, ny // 2, nz // 2)
 
     # Load the mesh
     mesh = o3d.io.read_triangle_mesh(stl_filename)
@@ -40,74 +41,51 @@ def generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part):
     min_bound = aabb.get_min_bound()
     max_bound = aabb.get_max_bound()
     partSize = max_bound - min_bound
+    sphere_diameter_phys_units = float(min(partSize))
 
     # smallest voxel size
-    voxel_size = min(partSize) / num_finest_voxels_across_part
-
-    # Infer the finest grid shape from the first entry of the domainMultiplier
-    nx_finest = (domainMultiplier[0][0] + domainMultiplier[0][1]) * num_finest_voxels_across_part
-    ny_finest = (domainMultiplier[0][2] + domainMultiplier[0][3]) * num_finest_voxels_across_part
-    nz_finest = (domainMultiplier[0][4] + domainMultiplier[0][5]) * num_finest_voxels_across_part
-    grid_shape_finest = (nx_finest, ny_finest, nz_finest)
+    voxel_size = sphere_diameter_phys_units / num_finest_voxels_across_part
+    sphere_radius = sphere_diameter_phys_units / voxel_size / 2.0
 
     # Compute translation to put mesh into first octant of that domain—
-    shift = np.array(
-        [
-            domainMultiplier[0][0] * partSize[0] - min_bound[0],
-            domainMultiplier[0][2] * partSize[1] - min_bound[1],
-            domainMultiplier[0][4] * partSize[2] - min_bound[2],
-        ],
-        dtype=float,
-    )
+    shift = np.array(sphere_origin) * voxel_size - sphere_diameter_phys_units / 2.0 - min_bound
 
     # Apply translation and save out temp stl
     mesh.translate(shift)
     mesh.compute_vertex_normals()
     mesh_vertices = np.asarray(mesh.vertices) / voxel_size
     o3d.io.write_triangle_mesh("temp.stl", mesh)
-
-    # Mesh base don temp stl
-    level_data = make_cuboid_mesh(voxel_size, domainMultiplier, "temp.stl")
     os.remove("temp.stl")
 
-    return level_data, mesh_vertices, grid_shape_finest
-
-
-def prepare_sparsity_pattern(level_data):
-    """
-    Prepare the sparsity pattern for the multiresolution grid based on the level data. "level_data" is expected to be formatted as in
-    the output of "make_cuboid_mesh".
-    """
-
-    def pad_to_cube(arr):
-        shape = arr.shape
-        max_dim = max(shape)
-        pad_width = []
-        for dim in shape:
-            total_pad = max_dim - dim
-            pad_width.append((0, total_pad))
-        return np.pad(arr, pad_width, mode="constant", constant_values=0)
-
-    num_levels = len(level_data)
-    sparsity_pattern = []
+    # Mesh base don temp stl
+    # Create the multires grid
+    num_levels = 3
     level_origins = []
+    level_data = []
     for lvl in range(num_levels):
-        # Get the level mask from the level data
-        level_mask = level_data[lvl][0]
+        divider = 2**lvl
+        growth = 1.25**lvl
+        shape = nx // divider, ny // divider, nz // divider
+        if lvl == num_levels - 1:
+            level = np.ascontiguousarray(np.ones(shape, dtype=int), dtype=np.int32)
+            box_origin = (0, 0, 0)  # The coarsest level has no origin offset
+        else:
+            box_size = tuple([int(shape[i] // 4 * growth) for i in range(3)])
+            if lvl == 0:
+                box_origin = tuple(
+                    [sphere_origin[0] // divider - int(2 * growth * sphere_radius // divider)]
+                    + [shape[i] // 2 - box_size[i] // 2 for i in range(1, 3)]
+                )
+            else:
+                finer_box_size = level_data[-1].shape
+                finer_box_origin = np.array(level_origins[-1])
+                shift = np.array(box_size) - np.array(finer_box_size) // 2
+                box_origin = finer_box_origin // 2 - shift // 2
+            level = np.ascontiguousarray(np.ones(box_size, dtype=int), dtype=np.int32)
+        level_data.append(level)
+        level_origins.append(box_origin)
 
-        # Ensure level_0 is contiguous int32
-        level_mask = np.ascontiguousarray(level_mask, dtype=np.int32)
-
-        # Pad level to be cubes (TODO: this is a hack, the inner box should be a cube for now!)
-        level_mask = pad_to_cube(level_mask)
-
-        # Append the padded level mask to the sparsity pattern
-        sparsity_pattern.append(level_mask)
-
-        # Get the origin for this level
-        level_origins.append(level_data[lvl][2])
-
-    return sparsity_pattern, level_origins
+    return level_data, level_origins, mesh_vertices
 
 
 # -------------------------- Simulation Setup --------------------------
@@ -117,9 +95,10 @@ num_finest_voxels_across_part = 10
 
 # Other setup parameters
 Re = 500.0
+grid_shape = (512 // 2, 128 // 2, 128 // 2)
 compute_backend = ComputeBackend.NEON
 precision_policy = PrecisionPolicy.FP32FP32
-velocity_set = xlb.velocity_set.D3Q19(precision_policy=precision_policy, compute_backend=compute_backend)
+velocity_set = xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=compute_backend)
 u_max = 0.04
 num_steps = 1000
 post_process_interval = 100
@@ -133,19 +112,17 @@ xlb.init(
 
 # Generate the cuboid mesh and sphere vertices
 stl_filename = "examples/cfd/stl-files/sphere.stl"
-level_data, sphere, grid_shape_finest = generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part)
+level_data, level_origins, sphere = generate_cuboid_mesh(stl_filename, num_finest_voxels_across_part, grid_shape)
 
-# Convert level data to the format expected by multires_grid_factory
-sparsity_pattern, level_origins = prepare_sparsity_pattern(level_data)
-
-# Create the multiresolution grid
+# get the number of levels
 num_levels = len(level_data)
 
+# Create the multires grid
 grid = multires_grid_factory(
-    grid_shape_finest,
+    grid_shape,
     velocity_set=velocity_set,
-    sparsity_pattern_list=sparsity_pattern,
-    sparsity_pattern_origins=[neon.Index_3d(*level_origins[lvl]) for lvl in range(num_levels)],
+    sparsity_pattern_list=level_data,
+    sparsity_pattern_origins=[neon.Index_3d(*box_origin) for box_origin in level_origins],
 )
 
 # Define Boundary Indices
@@ -163,7 +140,7 @@ def bc_profile():
     assert compute_backend == ComputeBackend.NEON
 
     # Note nx, ny, nz are the dimensions of the grid at the finest level while the inlet is defined at the coarsest level
-    nx, ny, nz = grid_shape_finest
+    nx, ny, nz = grid_shape
     H_y = float(ny // 2 ** (num_levels - 1) - 1)  # Height in y direction
     H_z = float(nz // 2 ** (num_levels - 1) - 1)  # Height in z direction
 
@@ -196,7 +173,11 @@ bc_left = RegularizedBC("velocity", profile=bc_profile(), indices=inlet)
 bc_walls = FullwayBounceBackBC(indices=walls)  # TODO: issues with halfway bounce back only here!
 # bc_outlet = ExtrapolationOutflowBC(indices=outlet)
 bc_outlet = DoNothingBC(indices=outlet)
-bc_sphere = HalfwayBounceBackBC(mesh_vertices=sphere)
+# bc_sphere = HalfwayBounceBackBC(mesh_vertices=sphere, voxelization_method=MeshVoxelizationMethod.AABB)
+bc_sphere = HybridBC(
+    bc_method="nonequilibrium_regularized", mesh_vertices=sphere, voxelization_method=MeshVoxelizationMethod.AABB, use_mesh_distance=True
+)
+
 boundary_conditions = [bc_walls, bc_left, bc_outlet, bc_sphere]
 
 # Configure the simulation relaxation time
@@ -208,7 +189,7 @@ sim = xlb.helper.MultiresSimulationManager(
     omega=omega,
     grid=grid,
     boundary_conditions=boundary_conditions,
-    collision_type="BGK",
+    collision_type="KBC",
 )
 
 # -------------------------- Simulation Loop --------------------------

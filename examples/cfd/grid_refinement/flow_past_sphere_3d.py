@@ -29,43 +29,29 @@ xlb.init(
 # Create the multires grid
 nx, ny, nz = grid_shape
 sphere_origin = (nx // 6, ny // 2, nz // 2)
-sphere_radius = ny // 12
-inner_box_shape = (12 * sphere_radius, 6 * sphere_radius, 6 * sphere_radius)
-num_levels = 2
-
-
-def pad_to_cube(arr):
-    shape = arr.shape
-    max_dim = max(shape)
-    pad_width = []
-    for dim in shape:
-        total_pad = max_dim - dim
-        pad_width.append((0, total_pad))
-    return np.pad(arr, pad_width, mode="constant", constant_values=0)
-
-
-level_0 = np.ones(inner_box_shape, dtype=int)
-level_1 = np.ones((nx // 2, ny // 2, nz // 2), dtype=int)
-
-# Pad both levels to cubes
-# TODO: with rectangular cuboid for the inner box, there are some issues with the
-#       multires_grid_factory. The inner box should be a cube for now!
-# For now we hack this by padding the level_0 and level_1 to be cubes
-level_0 = pad_to_cube(level_0)
-level_1 = pad_to_cube(level_1)
-
-# Ensure level_0 is contiguous int32
-level_0 = np.ascontiguousarray(level_0, dtype=np.int32)
-
-# Create the multiresolution grid
-levels = [level_0, level_1]
-level_origins = [(sphere_origin[0] - 2 * sphere_radius, ny // 2 - inner_box_shape[1] // 2, nz // 2 - inner_box_shape[2] // 2), (0, 0, 0)]
+sphere_radius = min(nx, ny, nz) // 12  # Radius of the sphere
+num_levels = 3
+level_origins = []
+level_list = []
+for lvl in range(num_levels):
+    divider = 2**lvl
+    growth = 1.5**lvl
+    shape = grid_shape[0] // divider, grid_shape[1] // divider, grid_shape[2] // divider
+    if lvl == num_levels - 1:
+        level = np.ascontiguousarray(np.ones(shape, dtype=int), dtype=np.int32)
+        box_origin = (0, 0, 0)  # The coarsest level has no origin offset
+    else:
+        box_size = tuple([int(shape[i] // 4 * growth) for i in range(3)])
+        box_origin = tuple([sphere_origin[0] // divider - 4 * sphere_radius // divider] + [shape[i] // 2 - box_size[i] // 2 for i in range(1, 3)])
+        level = np.ascontiguousarray(np.ones(box_size, dtype=int), dtype=np.int32)
+    level_list.append(level)
+    level_origins.append(neon.Index_3d(*box_origin))
 
 grid = multires_grid_factory(
     grid_shape,
     velocity_set=velocity_set,
-    sparsity_pattern_list=[level_0, level_1],
-    sparsity_pattern_origins=[neon.Index_3d(*level_origins[lvl]) for lvl in range(num_levels)],
+    sparsity_pattern_list=level_list,
+    sparsity_pattern_origins=level_origins,
 )
 
 # Define Boundary Indices
@@ -86,10 +72,10 @@ indices = np.where((X - sphere_origin[0]) ** 2 + (Y - sphere_origin[1]) ** 2 + (
 sphere = [tuple(indices[i]) for i in range(velocity_set.d)]
 
 # Convert bc indices to a list of list (first entry corresponds to the finest level)
-inlet = [[], inlet]
-outlet = [[], outlet]
-walls = [[], walls]
-sphere = [sphere, []]
+inlet = [[] for _ in range(num_levels - 1)] + [inlet]
+outlet = [[] for _ in range(num_levels - 1)] + [outlet]
+walls = [[] for _ in range(num_levels - 1)] + [walls]
+sphere = [sphere] + [[] for _ in range(num_levels - 1)]
 
 
 # Define Boundary Conditions
@@ -97,8 +83,8 @@ def bc_profile():
     assert compute_backend == ComputeBackend.NEON
 
     # Note nx, ny, nz are the dimensions of the grid at the finest level
-    H_y = float(ny // 2 - 1)  # Height in y direction
-    H_z = float(nz // 2 - 1)  # Height in z direction
+    H_y = float(ny // 2 ** (num_levels - 1) - 1)  # Height in y direction
+    H_z = float(nz // 2 ** (num_levels - 1) - 1)  # Height in z direction
 
     @wp.func
     def bc_profile_warp(index: wp.vec3i):

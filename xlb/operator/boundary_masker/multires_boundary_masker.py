@@ -1,10 +1,17 @@
 import warp as wp
+import neon, typing, copy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
 from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
-from xlb.operator.boundary_masker import IndicesBoundaryMasker, MeshBoundaryMasker
-import neon, typing, copy
+from xlb.operator.boundary_masker import (
+    IndicesBoundaryMasker,
+    MeshVoxelizationMethod,
+    MeshMaskerAABB,
+    MeshMaskerRay,
+    MeshMaskerWinding,
+    MeshMaskerAABBFill,
+)
 
 
 class MultiresBoundaryMasker(Operator):
@@ -30,14 +37,9 @@ class MultiresBoundaryMasker(Operator):
             precision_policy=precision_policy,
             compute_backend=ComputeBackend.WARP,
         )
-        self.mesh_masker = MeshBoundaryMasker(
-            velocity_set=velocity_set,
-            precision_policy=precision_policy,
-            compute_backend=ComputeBackend.WARP,
-        )
 
     @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None, xlb_grid=None):
+    def neon_implementation(self, bclist, f_1, bc_mask, missing_mask, start_index=None, xlb_grid=None):
         # Ensure that this operator is called on multires grids
         assert bc_mask.get_grid().get_name() == "mGrid", f"Operation {self.__class__.__name} is only applicable to multi-resolution cases"
 
@@ -53,6 +55,10 @@ class MultiresBoundaryMasker(Operator):
             grid_dense = grid_factory(grid_shape, compute_backend=ComputeBackend.WARP)
             missing_mask_warp = grid_dense.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
             bc_mask_warp = grid_dense.create_field(cardinality=1, dtype=Precision.UINT8)
+            f_1_warp = grid_dense.create_field(cardinality=self.velocity_set.q, dtype=self.precision_policy.store_precision)
+
+            # Set local constants
+            lattice_central_index = self.velocity_set.center_index
 
             # create a new bclist for this level only
             bc_with_indices = []
@@ -66,20 +72,49 @@ class MultiresBoundaryMasker(Operator):
                     bc_copy.mesh_vertices = copy.deepcopy(bc.mesh_vertices) / refinement
 
                     # call mesh masker for this bc at this level
-                    bc_mask_warp, missing_mask_warp = self.mesh_masker(bc_copy, bc_mask_warp, missing_mask_warp)
+                    if bc.voxelization_method is MeshVoxelizationMethod.AABB:
+                        mesh_masker = MeshMaskerAABB(
+                            velocity_set=self.velocity_set,
+                            precision_policy=self.precision_policy,
+                            compute_backend=ComputeBackend.WARP,
+                        )
+                    elif bc.voxelization_method is MeshVoxelizationMethod.RAY:
+                        mesh_masker = MeshMaskerRay(
+                            velocity_set=self.velocity_set,
+                            precision_policy=self.precision_policy,
+                            compute_backend=ComputeBackend.WARP,
+                        )
+                    elif bc.voxelization_method is MeshVoxelizationMethod.WINDING:
+                        mesh_masker = MeshMaskerWinding(
+                            velocity_set=self.velocity_set,
+                            precision_policy=self.precision_policy,
+                            compute_backend=ComputeBackend.WARP,
+                        )
+                    elif bc.voxelization_method is MeshVoxelizationMethod.AABB_FILL:
+                        mesh_masker = MeshMaskerAABBFill(
+                            velocity_set=self.velocity_set,
+                            precision_policy=self.precision_policy,
+                            compute_backend=ComputeBackend.WARP,
+                        )
+                    else:
+                        raise ValueError(f"Unsupported voxelization method: {bc.voxelization_method}")
+                    f_1_warp, bc_mask_warp, missing_mask_warp = mesh_masker(bc_copy, f_1_warp, bc_mask_warp, missing_mask_warp)
 
             # call indices masker for all BC's with indices at this level
             bc_mask_warp, missing_mask_warp = self.indices_masker(bc_with_indices, bc_mask_warp, missing_mask_warp, start_index)
 
             @neon.Container.factory(name="MultiresBoundaryMasker")
             def container(
+                f_1_warp: typing.Any,
                 bc_mask_warp: typing.Any,
                 missing_mask_warp: typing.Any,
+                f_1_field: typing.Any,
                 bc_mask_field: typing.Any,
                 missing_mask_field: typing.Any,
             ):
                 def loading_step(loader: neon.Loader):
                     loader.set_mres_grid(bc_mask_field.get_grid(), level)
+                    f_1_hdl = loader.get_mres_write_handle(f_1_field)
                     bc_mask_hdl = loader.get_mres_write_handle(bc_mask_field)
                     missing_mask_hdl = loader.get_mres_write_handle(missing_mask_field)
 
@@ -102,15 +137,19 @@ class MultiresBoundaryMasker(Operator):
                             is_missing = wp.uint8(missing_mask_warp[q, lx, ly, lz])
                             wp.neon_write(missing_mask_hdl, gridIdx, q, is_missing)
 
+                            if q != lattice_central_index and is_missing == wp.uint8(False):
+                                wp.neon_write(f_1_hdl, gridIdx, q, f_1_warp[q, lx, ly, lz])
+
                     loader.declare_kernel(masker)
 
                 return loading_step
 
-            c = container(bc_mask_warp, missing_mask_warp, bc_mask, missing_mask)
+            c = container(f_1_warp, bc_mask_warp, missing_mask_warp, f_1, bc_mask, missing_mask)
             c.run(0)
             wp.synchronize()
 
+            del f_1_warp
             del bc_mask_warp
             del missing_mask_warp
 
-        return bc_mask, missing_mask
+        return f_1, bc_mask, missing_mask
