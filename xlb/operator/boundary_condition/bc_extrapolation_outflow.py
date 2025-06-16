@@ -61,7 +61,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         # Unpack the two warp functionals needed for this BC!
         if self.compute_backend == ComputeBackend.WARP:
-            self.warp_functional, self.assemble_dynamic_data = self.warp_functional
+            self.warp_functional, self.assemble_auxiliary_data = self.warp_functional
 
     def _get_normal_vec(self, indices):
         # Get the frequency count and most common element directly
@@ -92,7 +92,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return jnp.roll(fld, (vec[0], vec[1], vec[2]), axis=(1, 2, 3))
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def assemble_dynamic_data(self, f_pre, f_post, bc_mask, missing_mask):
+    def assemble_auxiliary_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
         Prepare time-dependent dynamic data for imposing the boundary condition in the next iteration after streaming.
         We use directions that leave the domain for storing this prepared data.
@@ -172,7 +172,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
             return _f
 
         @wp.func
-        def assemble_dynamic_data(
+        def assemble_auxiliary_data(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -200,7 +200,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
 
         kernel = self._construct_kernel(functional)
 
-        return (functional, assemble_dynamic_data), kernel
+        return (functional, assemble_auxiliary_data), kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, _f_pre, _f_post, bc_mask, missing_mask):

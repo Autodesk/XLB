@@ -187,13 +187,7 @@ class MeshBoundaryMasker(Operator):
         bc_mask,
         missing_mask,
     ):
-        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
-        # Use Warp backend even for this particular operation.
-        wp.init()
-        bc_mask = wp.from_jax(bc_mask)
-        missing_mask = wp.from_jax(missing_mask)
-        bc_mask, missing_mask = self.warp_implementation(bc, bc_mask, missing_mask)
-        return wp.to_jax(bc_mask), wp.to_jax(missing_mask)
+        raise NotImplementedError(f"Operation {self.__class__.__name__} not implemented in JAX!")
 
     def warp_implementation_base(
         self,
@@ -230,19 +224,11 @@ class MeshBoundaryMasker(Operator):
         bc_id = bc.id
 
         # Launch the appropriate warp kernel
-        kernel_list = self.warp_kernel
-        if bc.needs_mesh_distance:
-            wp.launch(
-                kernel_list[1],
-                inputs=[mesh_id, bc_id, distances, bc_mask, missing_mask],
-                dim=bc_mask.shape[1:],
-            )
-        else:
-            wp.launch(
-                kernel_list[0],
-                inputs=[mesh_id, bc_id, bc_mask, missing_mask],
-                dim=bc_mask.shape[1:],
-            )
+        wp.launch(
+            self.warp_kernel,
+            inputs=[mesh_id, bc_id, distances, bc_mask, missing_mask, wp.static(bc.needs_mesh_distance)],
+            dim=bc_mask.shape[1:],
+        )
         wp.launch(
             self.resolve_out_of_bound_kernel,
             inputs=[bc_id, bc_mask, missing_mask],

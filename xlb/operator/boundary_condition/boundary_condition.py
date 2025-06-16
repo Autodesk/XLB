@@ -84,7 +84,7 @@ class BoundaryCondition(Operator):
             _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         @wp.func
-        def assemble_dynamic_data(
+        def assemble_auxiliary_data(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -97,10 +97,10 @@ class BoundaryCondition(Operator):
 
         # Construct some helper warp functions for getting tid data
         if self.compute_backend == ComputeBackend.WARP:
-            self.assemble_dynamic_data = assemble_dynamic_data
+            self.assemble_auxiliary_data = assemble_auxiliary_data
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def assemble_dynamic_data(self, f_pre, f_post, bc_mask, missing_mask):
+    def assemble_auxiliary_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
         A placeholder function for prepare the auxiliary distribution functions for the boundary condition.
         currently being called after collision only.

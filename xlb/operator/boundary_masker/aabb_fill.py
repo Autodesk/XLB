@@ -87,50 +87,23 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
             index = wp.vec3i(i, j, k)
 
             # position of the point
-            pos_bc_cell = self.index_to_position(index) + offset
+            cell_center_pos = self.index_to_position(index) + offset
             half = wp.vec3(0.5, 0.5, 0.5)
 
-            if self.mesh_voxel_intersect(mesh_id=mesh_id, low=pos_bc_cell - half):
+            if self.mesh_voxel_intersect(mesh_id=mesh_id, low=cell_center_pos - half):
                 # Make solid voxel
                 solid_mask[index[0], index[1], index[2]] = wp.int32(255)
 
-        # Assign the bc_mask based on the solid_mask we already computed
-        @wp.kernel
-        def kernel(
-            mesh_id: wp.uint64,
-            id_number: wp.int32,
-            bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
-            solid_mask: wp.array3d(dtype=wp.uint8),
-        ):
-            # get index
-            i, j, k = wp.tid()
-
-            # Get local indices
-            index = wp.vec3i(i, j, k)
-
-            if solid_mask[i, j, k] == wp.uint8(255):
-                # Make solid voxel
-                bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
-            else:
-                # Find the boundary voxels and their missing directions
-                for l in range(1, _q):
-                    # Check to see if this neighbor is solid - this is super inefficient TODO: make it way better
-                    if solid_mask[i + _c[0, l], j + _c[1, l], k + _c[2, l]] == wp.uint8(255):
-                        # We know we have a solid neighbor
-                        # Set the boundary id and missing_mask
-                        bc_mask[0, index[0], index[1], index[2]] = wp.uint8(id_number)
-                        missing_mask[_opp_indices[l], index[0], index[1], index[2]] = True
-
         # Assign the bc_mask and distances based on the solid_mask we already computed
         @wp.kernel
-        def kernel_with_distance(
+        def kernel(
             mesh_id: wp.uint64,
             id_number: wp.int32,
             distances: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
             solid_mask: wp.array3d(dtype=wp.uint8),
+            needs_mesh_distance: bool,
         ):
             # get index
             i, j, k = wp.tid()
@@ -139,45 +112,46 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
             index = wp.vec3i(i, j, k)
 
             # position of the point
-            pos_bc_cell = self.index_to_position(index)
+            cell_center_pos = self.index_to_position(index)
 
             if solid_mask[i, j, k] == wp.uint8(255) or bc_mask[0, index[0], index[1], index[2]] == wp.uint8(255):
                 # Make solid voxel
                 bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
             else:
                 # Find the boundary voxels and their missing directions
-                for l in range(1, _q):
-                    _dir = wp.vec3f(wp.float32(_c[0, l]), wp.float32(_c[1, l]), wp.float32(_c[2, l]))
+                for direction_idx in range(1, _q):
+                    direction_vec = wp.vec3f(wp.float32(_c[0, direction_idx]), wp.float32(_c[1, direction_idx]), wp.float32(_c[2, direction_idx]))
 
                     # Check to see if this neighbor is solid - this is super inefficient TODO: make it way better
                     # if solid_mask[i,j,k] == wp.uint8(255):
-                    if solid_mask[i + _c[0, l], j + _c[1, l], k + _c[2, l]] == wp.uint8(255):
+                    if solid_mask[i + _c[0, direction_idx], j + _c[1, direction_idx], k + _c[2, direction_idx]] == wp.uint8(255):
                         # We know we have a solid neighbor
                         # Set the boundary id and missing_mask
                         bc_mask[0, index[0], index[1], index[2]] = wp.uint8(id_number)
-                        missing_mask[_opp_indices[l], index[0], index[1], index[2]] = True
+                        missing_mask[_opp_indices[direction_idx], index[0], index[1], index[2]] = True
+
+                        # If we don't need the mesh distance, we can return early
+                        if not needs_mesh_distance:
+                            continue
 
                         # Find the fractional distance to the mesh in each direction
                         # We increase max_length to find intersections in neighboring cells
-                        max_length = wp.length(_dir)
-                        query = wp.mesh_query_ray(mesh_id, pos_bc_cell, _dir / max_length, 1.5 * max_length)
+                        max_length = wp.length(direction_vec)
+                        query = wp.mesh_query_ray(mesh_id, cell_center_pos, direction_vec / max_length, 1.5 * max_length)
                         if query.result:
                             # get position of the mesh triangle that intersects with the ray
                             pos_mesh = wp.mesh_eval_position(mesh_id, query.face, query.u, query.v)
                             # We reduce the distance to give some wall thickness
-                            dist = wp.length(pos_mesh - pos_bc_cell) - 0.5 * max_length
+                            dist = wp.length(pos_mesh - cell_center_pos) - 0.5 * max_length
                             weight = self.store_dtype(dist / max_length)
-                            distances[l, index[0], index[1], index[2]] = weight
-                            # if weight <= 0.0 or weight > 1.0:
-                            #     wp.printf("Got bad weight %f at %d,%d,%d\n", weight, index[0], index[1], index[2])
+                            distances[direction_idx, index[0], index[1], index[2]] = weight
                         else:
                             # We didn't have an intersection in the given direction but we know we should so we assume the solid is slightly thicker
                             # and one lattice direction away from the BC voxel
-                            distances[l, index[0], index[1], index[2]] = self.store_dtype(1.0)
+                            distances[direction_idx, index[0], index[1], index[2]] = self.store_dtype(1.0)
 
         kernel_dict = {
             "kernel": kernel,
-            "kernel_with_distance": kernel_with_distance,
             "kernel_solid": kernel_solid,
             "erode_tile": erode_tile,
             "dilate_tile": dilate_tile,
@@ -259,18 +233,11 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
         )
 
         # Launch the main kernel for boundary masker
-        if bc.needs_mesh_distance:
-            wp.launch(
-                kernel_dict["kernel_with_distance"],
-                inputs=[mesh_id, bc_id, distances, bc_mask, missing_mask, solid_mask_cropped],
-                dim=bc_mask.shape[1:],
-            )
-        else:
-            wp.launch(
-                kernel_dict["kernel"],
-                inputs=[mesh_id, bc_id, bc_mask, missing_mask, solid_mask_cropped],
-                dim=bc_mask.shape[1:],
-            )
+        wp.launch(
+            kernel_dict["kernel"],
+            inputs=[mesh_id, bc_id, distances, bc_mask, missing_mask, solid_mask_cropped, wp.static(bc.needs_mesh_distance)],
+            dim=bc_mask.shape[1:],
+        )
 
         # Resolve out of bound indices
         wp.launch(

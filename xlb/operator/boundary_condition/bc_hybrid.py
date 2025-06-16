@@ -8,8 +8,7 @@ from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
-from xlb.operator.macroscopic import Macroscopic, ZeroMoment
-from xlb.operator.macroscopic import SecondMoment as MomentumFlux
+from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.boundary_condition.boundary_condition import (
     ImplementationStep,
@@ -23,7 +22,7 @@ class HybridBC(BoundaryCondition):
     """
     The hybrid BC methods in this boundary condition have been originally developed by H. Salehipour and are inspired from
     various previous publications, in particular [1]. The reformulations are aimed to provide local formulations that are
-    computationally efficient and numerically stable at exessively large Reynolds numbers.
+    computationally efficient and numerically stable at high Reynolds numbers.
 
     [1] Dorschner, B., Chikatamarla, S. S., Bösch, F., & Karlin, I. V. (2015). Grad's approximation for moving and
         stationary walls in entropic lattice Boltzmann simulations. Journal of Computational Physics, 295, 340-354.
@@ -60,9 +59,11 @@ class HybridBC(BoundaryCondition):
             voxelization_method,
         )
 
+        # Check if the compute backend is Warp
+        assert self.compute_backend == ComputeBackend.WARP, "This BC is currently only implemented with the Warp backend!"
+
         # Instantiate the operator for computing macroscopic values
         self.macroscopic = Macroscopic()
-        self.zero_moment = ZeroMoment()
         self.equilibrium = QuadraticEquilibrium()
 
         # This BC class accepts both constant prescribed values of velocity with keyword "prescribed_value" or
@@ -78,28 +79,26 @@ class HybridBC(BoundaryCondition):
         # Handle no-slip BCs if neither prescribed_value or profile are provided.
         if prescribed_value is None and profile is None:
             print(f"WARNING! Assuming no-slip condition for BC type = {self.__class__.__name__}_{self.bc_method}!")
-            prescribed_value = [0] * self.velocity_set.d
+            prescribed_value = [0, 0, 0]
 
         # Handle prescribed value if provided
         if prescribed_value is not None:
             if profile is not None:
                 raise ValueError("Cannot specify both profile and prescribed_value")
 
-            # Convert input to numpy array for validation
-            if isinstance(prescribed_value, (tuple, list)):
-                prescribed_value = np.array(prescribed_value, dtype=np.float64)
-            elif isinstance(prescribed_value, np.ndarray):
-                prescribed_value = prescribed_value.astype(np.float64)
-            elif isinstance(prescribed_value, (int, float)):
-                raise ValueError("Velocity prescribed_value must be a tuple or array")
+            # Ensure prescribed_value is a NumPy array of floats
+            if isinstance(prescribed_value, (tuple, list, np.ndarray)):
+                prescribed_value = np.asarray(prescribed_value, dtype=np.float64)
+            else:
+                raise ValueError("Velocity prescribed_value must be a tuple, list, or array")
 
-            # Validate prescribed value
-            if not isinstance(prescribed_value, np.ndarray):
-                raise ValueError("Velocity prescribed_value must be an array-like")
+            # Handle 2D velocity sets
+            if self.velocity_set.d == 2:
+                assert len(prescribed_value) == 2, "For 2D velocity set, prescribed_value must be a tuple or array of length 2!"
+                prescribed_value = np.array([prescribed_value[0], prescribed_value[1], 0.0], dtype=np.float64)
 
             # create a constant prescribed profile
-            # Note this BC class is only implemented in WARP.
-            prescribed_value = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)(prescribed_value)
+            prescribed_value = wp.vec(3, dtype=self.compute_dtype)(prescribed_value)
 
             @wp.func
             def prescribed_profile_warp(index: wp.vec3i, time: Any):
@@ -120,42 +119,19 @@ class HybridBC(BoundaryCondition):
         if self.mesh_vertices is None:
             assert self.indices is not None
             assert self.needs_mesh_distance is False, 'To use mesh distance, please provide the mesh vertices using keyword "mesh_vertices"!'
+            assert self.voxelization_method is None, "Voxelization method is only applicable when using mesh vertices!"
             self.needs_padding = True
-
-        # Raise error if used for 2d examples:
-        if self.velocity_set.d == 2:
-            raise NotImplementedError("This BC is not implemented in 2D!")
-
-        # if indices is not None:
-        #     # this BC would be limited to stationary boundaries
-        #     # assert mesh_vertices is None
-        # if mesh_vertices is not None:
-        #     # this BC would be applicable for stationary and moving boundaries
-        #     assert indices is None
-        #     if mesh_velocity_function is not None:
-        #         # mesh is moving and/or deforming
-
-        assert self.compute_backend == ComputeBackend.WARP, "This BC is currently only implemented with the Warp backend!"
+        else:
+            assert self.indices is None, "Cannot use indices with mesh vertices! Please provide mesh vertices only."
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
     def jax_implementation(self, f_pre, f_post, bc_mask, missing_mask):
-        # TODO
-        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
-        return
+        raise NotImplementedError(f"Operation {self.__class__.__name__} not implemented in JAX!")
 
     def _construct_warp(self):
         # load helper functions
         bc_helper = HelperFunctionsBC(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
-
-        # Set local variables and constants
-        _c = self.velocity_set.c
-        _q = self.velocity_set.q
-        _d = self.velocity_set.d
-        _opp_indices = self.velocity_set.opp_indices
-        _f_vec = wp.vec(_q, dtype=self.compute_dtype)
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _u_wall = _u_vec(0.0, 0.0, 0.0) if _d == 3 else _u_vec(0.0, 0.0)
 
         # Construct the functionals for this BC
         @wp.func
@@ -172,7 +148,7 @@ class HybridBC(BoundaryCondition):
             # missing data in lattice Boltzmann.
             # [1] Latt, J., Chopard, B., Malaspinas, O., Deville, M., Michler, A., 2008. Straight velocity
             #     boundaries in the lattice Boltzmann method. Physical Review E 77, 056703.
-            # [2] Yu, D., Mei, R., Shyy, W., 2003. A uniﬁed boundary treatment in lattice boltzmann method,
+            # [2] Yu, D., Mei, R., Shyy, W., 2003. A unified boundary treatment in lattice boltzmann method,
             #     in: 41st aerospace sciences meeting and exhibit, p. 953.
 
             # Apply interpolated bounceback first to find missing populations at the boundary
@@ -211,7 +187,7 @@ class HybridBC(BoundaryCondition):
             # missing data in lattice Boltzmann.
             # [1] Dorschner, B., Chikatamarla, S. S., Bösch, F., & Karlin, I. V. (2015). Grad's approximation for moving and
             #    stationary walls in entropic lattice Boltzmann simulations. Journal of Computational Physics, 295, 340-354.
-            # [2] Yu, D., Mei, R., Shyy, W., 2003. A uniﬁed boundary treatment in lattice boltzmann method,
+            # [2] Yu, D., Mei, R., Shyy, W., 2003. A unified boundary treatment in lattice boltzmann method,
             #     in: 41st aerospace sciences meeting and exhibit, p. 953.
 
             # Apply interpolated bounceback first to find missing populations at the boundary
@@ -231,7 +207,7 @@ class HybridBC(BoundaryCondition):
             # Compute density, velocity using all f_post-streaming values
             rho, u = self.macroscopic.warp_functional(f_post)
 
-            # Compute Grad's appriximation using full equation as in Eq (10) of Dorschner et al.
+            # Compute Grad's approximation using full equation as in Eq (10) of Dorschner et al.
             f_post = bc_helper.grads_approximate_fpop(_missing_mask, rho, u, f_post)
             return f_post
 
@@ -246,7 +222,7 @@ class HybridBC(BoundaryCondition):
             f_post: Any,
         ):
             # This boundary condition uses the method of Tao et al (2018) [1] to get unknown populations on curved boundaries (denoted here by
-            # interpolated_nonequilibrium_bounceback method). To further stabalize this BC, we add regularization technique of [2].
+            # interpolated_nonequilibrium_bounceback method). To further stabilize this BC, we add regularization technique of [2].
             # [1] Tao, Shi, et al. "One-point second-order curved boundary condition for lattice Boltzmann simulation of suspended particles."
             #     Computers & Mathematics with Applications 76.7 (2018): 1593-1607.
             # [2] Latt, J., Chopard, B., Malaspinas, O., Deville, M., Michler, A., 2008. Straight velocity

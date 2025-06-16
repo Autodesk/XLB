@@ -31,54 +31,10 @@ class MeshMaskerWinding(MeshBoundaryMasker):
         def kernel(
             mesh_id: wp.uint64,
             id_number: wp.int32,
-            bc_mask: wp.array4d(dtype=wp.uint8),
-            missing_mask: wp.array4d(dtype=wp.bool),
-        ):
-            # get index
-            i, j, k = wp.tid()
-
-            # Get local indices
-            index = wp.vec3i(i, j, k)
-
-            # position of the point
-            pos_bc_cell = self.index_to_position(index)
-
-            # Compute the maximum length
-            max_length = wp.sqrt(
-                (wp.float32(bc_mask.shape[1])) ** 2.0 + (wp.float32(bc_mask.shape[2])) ** 2.0 + (wp.float32(bc_mask.shape[3])) ** 2.0
-            )
-
-            # evaluate if point is inside mesh
-            query = wp.mesh_query_point_sign_winding_number(mesh_id, pos_bc_cell, max_length)
-            if query.result:
-                # set point to be solid
-                if query.sign <= 0:  # TODO: fix this
-                    # Make solid voxel
-                    bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
-
-                    # Find the fractional distance to the mesh in each direction
-                    for l in range(1, _q):
-                        _dir = wp.vec3f(wp.float32(_c[0, l]), wp.float32(_c[1, l]), wp.float32(_c[2, l]))
-                        # Max length depends on ray direction (diagonals are longer)
-                        max_length = wp.length(_dir)
-                        query_dir = wp.mesh_query_ray(mesh_id, pos_bc_cell, _dir / max_length, max_length)
-                        if query_dir.result:
-                            # Get the index of the streaming direction
-                            push_index = wp.vec3i()
-                            for d in range(self.velocity_set.d):
-                                push_index[d] = index[d] + _c[d, l]
-
-                            # Set the boundary id and missing_mask
-                            bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
-                            missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
-
-        @wp.kernel
-        def kernel_with_distance(
-            mesh_id: wp.uint64,
-            id_number: wp.int32,
             distances: wp.array4d(dtype=Any),
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.bool),
+            needs_mesh_distance: bool,
         ):
             # get index
             i, j, k = wp.tid()
@@ -103,31 +59,33 @@ class MeshMaskerWinding(MeshBoundaryMasker):
                     bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
 
                     # Find the fractional distance to the mesh in each direction
-                    for l in range(1, _q):
-                        _dir = wp.vec3f(wp.float32(_c[0, l]), wp.float32(_c[1, l]), wp.float32(_c[2, l]))
+                    for direction_idx in range(1, _q):
+                        direction_vec = wp.vec3f(wp.float32(_c[0, direction_idx]), wp.float32(_c[1, direction_idx]), wp.float32(_c[2, direction_idx]))
                         # Max length depends on ray direction (diagonals are longer)
-                        max_length = wp.length(_dir)
-                        query_dir = wp.mesh_query_ray(mesh_id, pos_cell, _dir / max_length, max_length)
+                        max_length = wp.length(direction_vec)
+                        query_dir = wp.mesh_query_ray(mesh_id, pos_cell, direction_vec / max_length, max_length)
                         if query_dir.result:
                             # Get the index of the streaming direction
                             push_index = wp.vec3i()
                             for d in range(self.velocity_set.d):
-                                push_index[d] = index[d] + _c[d, l]
+                                push_index[d] = index[d] + _c[d, direction_idx]
 
                             # Set the boundary id and missing_mask
                             bc_mask[0, push_index[0], push_index[1], push_index[2]] = wp.uint8(id_number)
-                            missing_mask[l, push_index[0], push_index[1], push_index[2]] = True
+                            missing_mask[direction_idx, push_index[0], push_index[1], push_index[2]] = True
+
+                            # If we don't need the mesh distance, we can return early
+                            if not needs_mesh_distance:
+                                continue
 
                             # get position of the mesh triangle that intersects with the ray
                             pos_mesh = wp.mesh_eval_position(mesh_id, query_dir.face, query_dir.u, query_dir.v)
-                            pos_bc_cell = self.index_to_position(push_index)
-                            dist = wp.length(pos_mesh - pos_bc_cell)
+                            cell_center_pos = self.index_to_position(push_index)
+                            dist = wp.length(pos_mesh - cell_center_pos)
                             weight = self.store_dtype(dist / max_length)
-                            distances[_opp_indices[l], push_index[0], push_index[1], push_index[2]] = weight
-                            # if weight < 0.0 or weight > 1.0:
-                            #     wp.printf("Got bad weight %f at %d,%d,%d\n", weight, push_index[0], push_index[1], push_index[2])
+                            distances[_opp_indices[direction_idx], push_index[0], push_index[1], push_index[2]] = weight
 
-        return None, [kernel, kernel_with_distance]
+        return None, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(
