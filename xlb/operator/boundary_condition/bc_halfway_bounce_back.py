@@ -74,21 +74,19 @@ class HalfwayBounceBackBC(BoundaryCondition):
             if profile is not None:
                 raise ValueError("Cannot specify both profile and prescribed_value")
 
-            # Convert input to numpy array for validation
-            if isinstance(prescribed_value, (tuple, list)):
-                prescribed_value = np.array(prescribed_value, dtype=np.float64)
-            elif isinstance(prescribed_value, np.ndarray):
-                prescribed_value = prescribed_value.astype(np.float64)
-            elif isinstance(prescribed_value, (int, float)):
-                raise ValueError("Velocity prescribed_value must be a tuple or array")
+            # Ensure prescribed_value is a NumPy array of floats
+            if isinstance(prescribed_value, (tuple, list, np.ndarray)):
+                prescribed_value = np.asarray(prescribed_value, dtype=np.float64)
+            else:
+                raise ValueError("Velocity prescribed_value must be a tuple, list, or array")
 
-            # Validate prescribed value
-            if not isinstance(prescribed_value, np.ndarray):
-                raise ValueError("Velocity prescribed_value must be an array-like")
+            # Handle 2D velocity sets
+            if self.velocity_set.d == 2:
+                assert len(prescribed_value) == 2, "For 2D velocity set, prescribed_value must be a tuple or array of length 2!"
+                prescribed_value = np.array([prescribed_value[0], prescribed_value[1], 0.0], dtype=np.float64)
 
             # create a constant prescribed profile
-            # Note this BC class is only implemented in WARP.
-            prescribed_value = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)(prescribed_value)
+            prescribed_value = wp.vec(3, dtype=self.compute_dtype)(prescribed_value)
 
             @wp.func
             def prescribed_profile_warp(index: Any, time: Any):
