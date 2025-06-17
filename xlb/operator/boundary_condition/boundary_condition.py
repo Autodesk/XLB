@@ -236,14 +236,12 @@ class BoundaryCondition(Operator):
                         # wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
                         if l == lattice_central_index:
                             # The first BC auxiliary data is stored in the zero'th index of f_1 associated with its center.
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, l, prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, l, self.store_dtype(prescribed_values[l]))
                             counter += 1
                         elif _missing_mask[l] == wp.uint8(1):
                             # The other remaining BC auxiliary data are stored in missing directions of f_1.
                             # Only store up to num_of_aux_data
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, _opp_indices[l], prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, _opp_indices[l], self.store_dtype(prescribed_values[l]))
                             counter += 1
                         if counter > _num_of_aux_data:
                             # Only store up to num_of_aux_data
@@ -327,14 +325,12 @@ class BoundaryCondition(Operator):
                         # wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
                         if l == lattice_central_index:
                             # The first BC auxiliary data is stored in the zero'th index of f_1 associated with its center.
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, l, prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, l, self.store_dtype(prescribed_values[l]))
                             counter += 1
                         elif _missing_mask[l] == wp.uint8(1):
                             # The other remaining BC auxiliary data are stored in missing directions of f_1.
                             # Only store up to num_of_aux_data
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, _opp_indices[l], prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, _opp_indices[l], self.store_dtype(prescribed_values[l]))
                             counter += 1
                         if counter > _num_of_aux_data:
                             # Only store up to num_of_aux_data

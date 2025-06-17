@@ -134,6 +134,8 @@ class Operator:
             return self.precision_policy.store_precision.jax_dtype
         elif self.compute_backend == ComputeBackend.WARP:
             return self.precision_policy.store_precision.wp_dtype
+        elif self.compute_backend == ComputeBackend.NEON:
+            return self.precision_policy.store_precision.wp_dtype
 
     def get_precision_policy(self):
         """
