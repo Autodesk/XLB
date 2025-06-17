@@ -50,11 +50,9 @@ class MeshMaskerAABB(MeshBoundaryMasker):
             cell_center_pos = self.index_to_position(index)
             HALF_VOXEL = wp.vec3(0.5, 0.5, 0.5)
 
-            if bc_mask[0, index[0], index[1], index[2]] == wp.uint8(255) or self.mesh_voxel_intersect(
-                mesh_id=mesh_id, low=cell_center_pos - HALF_VOXEL
-            ):
+            if self.read_field(bc_mask, index, 0) == wp.uint8(255) or self.mesh_voxel_intersect(mesh_id=mesh_id, low=cell_center_pos - HALF_VOXEL):
                 # Make solid voxel
-                bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
+                self.write_field(bc_mask, index, 0, wp.uint8(255))
             else:
                 # Find the boundary voxels and their missing directions
                 for direction_idx in range(1, _q):
@@ -64,8 +62,8 @@ class MeshMaskerAABB(MeshBoundaryMasker):
                     if self.mesh_voxel_intersect(mesh_id=mesh_id, low=cell_center_pos + direction_vec - HALF_VOXEL):
                         # We know we have a solid neighbor
                         # Set the boundary id and missing_mask
-                        bc_mask[0, index[0], index[1], index[2]] = wp.uint8(id_number)
-                        missing_mask[_opp_indices[direction_idx], index[0], index[1], index[2]] = wp.uint8(True)
+                        self.write_field(bc_mask, index, 0, wp.uint8(id_number))
+                        self.write_field(missing_mask, index, _opp_indices[direction_idx], wp.uint8(True))
 
                         # If we don't need the mesh distance, we can return early
                         if not needs_mesh_distance:
@@ -81,11 +79,11 @@ class MeshMaskerAABB(MeshBoundaryMasker):
                             # We reduce the distance to give some wall thickness
                             dist = wp.length(pos_mesh - cell_center_pos) - 0.5 * max_length
                             weight = self.store_dtype(dist / max_length)
-                            distances[direction_idx, index[0], index[1], index[2]] = weight
+                            self.write_field(distances, index, direction_idx, weight)
                         else:
                             # Expected an intersection in this direction but none was found.
                             # Assume the solid extends one lattice unit beyond the BC voxel leading to a distance fraction of 1.
-                            distances[direction_idx, index[0], index[1], index[2]] = self.store_dtype(1.0)
+                            self.write_field(distances, index, direction_idx, self.store_dtype(1.0))
 
         return None, kernel
 

@@ -1,6 +1,8 @@
 import inspect
 import traceback
 import jax
+import warp as wp
+from typing import Any
 
 from xlb.compute_backend import ComputeBackend
 from xlb import DefaultConfig
@@ -25,6 +27,10 @@ class Operator:
         # Check if the compute compute_backend is supported
         if self.compute_backend not in ComputeBackend:
             raise ValueError(f"Compute_backend {compute_backend} is not supported")
+
+        # Construct read/write functions for the compute backend
+        if self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
+            self.read_field, self.write_field = self._construct_read_write_functions()
 
         # Construct the kernel based compute_backend functions TODO: Maybe move this to the register or something
         if self.compute_backend == ComputeBackend.WARP:
@@ -158,3 +164,51 @@ class Operator:
         Leave it for now, as it is not clear how the neon backend will evolve
         """
         return None, None
+
+    def _construct_read_write_functions(self):
+        if self.compute_backend == ComputeBackend.WARP:
+
+            @wp.func
+            def read_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given index and direction.
+                return field[direction, index[0], index[1], index[2]]
+
+            @wp.func
+            def write_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+                value: Any,
+            ):
+                # This function writes a value to a field at a given index and direction.
+                field[direction, index[0], index[1], index[2]] = value
+
+        elif self.compute_backend == ComputeBackend.NEON:
+
+            @wp.func
+            def read_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given index and direction.
+                return wp.neon_read(field, index, direction)
+
+            @wp.func
+            def write_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+                value: Any,
+            ):
+                # This function writes a value to a field at a given index and direction.
+                wp.neon_write(field, index, direction, value)
+
+        else:
+            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
+
+        return read_field, write_field
