@@ -1,9 +1,9 @@
+import warp as wp
+from typing import Any
 from xlb import DefaultConfig, ComputeBackend
 from xlb.operator.macroscopic import SecondMoment as MomentumFlux
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.equilibrium import QuadraticEquilibrium
-import warp as wp
-from typing import Any
 
 
 class HelperFunctionsBC(object):
@@ -233,7 +233,7 @@ class HelperFunctionsBC(object):
             # A local single-node version of the interpolated bounce-back boundary condition due to Bouzidi for a lattice
             # Boltzmann method simulation.
             # Ref:
-            # [1] Yu, D., Mei, R., Shyy, W., 2003. A uniﬁed boundary treatment in lattice boltzmann method,
+            # [1] Yu, D., Mei, R., Shyy, W., 2003. A unified boundary treatment in lattice boltzmann method,
             # in: 41st aerospace sciences meeting and exhibit, p. 953.
 
             one = compute_dtype(1.0)
