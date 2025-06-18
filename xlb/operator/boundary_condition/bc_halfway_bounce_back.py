@@ -80,19 +80,27 @@ class HalfwayBounceBackBC(BoundaryCondition):
             else:
                 raise ValueError("Velocity prescribed_value must be a tuple, list, or array")
 
-            # Handle 2D velocity sets
-            if self.velocity_set.d == 2:
-                assert len(prescribed_value) == 2, "For 2D velocity set, prescribed_value must be a tuple or array of length 2!"
-                prescribed_value = np.array([prescribed_value[0], prescribed_value[1], 0.0], dtype=np.float64)
+            # Create a constant prescribed profile function
+            if self.compute_backend == ComputeBackend.WARP:
+                if self.velocity_set.d == 2:
+                    prescribed_value = np.array([prescribed_value[0], prescribed_value[1], 0.0], dtype=np.float64)
+                prescribed_value = wp.vec(3, dtype=self.precision_policy.store_precision.wp_dtype)(prescribed_value)
+            self.profile = self._create_constant_prescribed_profile(prescribed_value)
 
-            # create a constant prescribed profile
-            prescribed_value = wp.vec(3, dtype=self.compute_dtype)(prescribed_value)
+    def _create_constant_prescribed_profile(self, prescribed_value):
+        @wp.func
+        def prescribed_profile_warp(index: Any, time: Any):
+            return wp.vec3(prescribed_value[0], prescribed_value[1], prescribed_value[2])
 
-            @wp.func
-            def prescribed_profile_warp(index: Any, time: Any):
-                return wp.vec3(prescribed_value[0], prescribed_value[1], prescribed_value[2])
+        def prescribed_profile_jax():
+            return jnp.array(prescribed_value, dtype=self.precision_policy.store_precision.jax_dtype).reshape(-1, 1)
 
-            self.profile = prescribed_profile_warp
+        if self.compute_backend == ComputeBackend.JAX:
+            return prescribed_profile_jax
+        elif self.compute_backend == ComputeBackend.WARP:
+            return prescribed_profile_warp
+        elif self.compute_backend == ComputeBackend.NEON:
+            return prescribed_profile_warp
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
@@ -100,11 +108,19 @@ class HalfwayBounceBackBC(BoundaryCondition):
         boundary = bc_mask == self.id
         new_shape = (self.velocity_set.q,) + boundary.shape[1:]
         boundary = lax.broadcast_in_dim(boundary, new_shape, tuple(range(self.velocity_set.d + 1)))
-        return jnp.where(
-            jnp.logical_and(missing_mask, boundary),
-            f_pre[self.velocity_set.opp_indices],
-            f_post,
-        )
+
+        # Add contribution due to moving_wall to f_missing
+        moving_wall_component = 0.0
+        if self.needs_moving_wall_treatment:
+            u_wall = self.profile()
+            cu = self.velocity_set.w[:, None] * jnp.tensordot(self.velocity_set.c, u_wall, axes=(0, 0))
+            cu = cu.reshape((-1,) + (1,) * (len(f_post[1:].shape) - 1))
+            moving_wall_component = 6.0 * cu
+
+        # Apply the halfway bounce-back condition
+        f_post = jnp.where(jnp.logical_and(missing_mask, boundary), f_pre[self.velocity_set.opp_indices] + moving_wall_component, f_post)
+
+        return f_post
 
     def _construct_warp(self):
         # load helper functions. Explicitly using the WARP backend for helper functions as it may also be called by the Neon backend.
