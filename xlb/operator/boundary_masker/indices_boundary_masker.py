@@ -162,7 +162,7 @@ class IndicesBoundaryMasker(Operator):
         return None, kernel
 
     # a helper for this operator
-    def _prepare_warp_kernel_inputs(self, bclist, bc_mask):
+    def _prepare_kernel_inputs(self, bclist, bc_mask):
         # Pre-allocate arrays with maximum possible size
         max_size = sum(len(bc.indices[0]) if isinstance(bc.indices, list) else bc.indices.shape[1] for bc in bclist if bc.indices is not None)
         indices = np.zeros((3, max_size), dtype=np.int32)
@@ -214,7 +214,7 @@ class IndicesBoundaryMasker(Operator):
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         # prepare warp kernel inputs
-        total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_warp_kernel_inputs(bclist, bc_mask)
+        total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist, bc_mask)
 
         # Launch the warp kernel
         wp.launch(
@@ -239,7 +239,7 @@ class IndicesBoundaryMasker(Operator):
         _d = self.velocity_set.d
 
         # Pre-allocate arrays with maximum possible size
-        grid_shape = bc_mask.shape[1:]  # (nx, ny) for 2D or (nx, ny, nz) for 3D
+        grid_shape = bc_mask.get_grid().dim.x, bc_mask.get_grid().dim.y, bc_mask.get_grid().dim.z
         grid_warp = grid_factory(grid_shape, compute_backend=ComputeBackend.WARP, velocity_set=self.velocity_set)
         missing_mask_warp = grid_warp.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
         bc_mask_warp = grid_warp.create_field(cardinality=1, dtype=Precision.UINT8)

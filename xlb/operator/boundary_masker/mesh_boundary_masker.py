@@ -2,6 +2,7 @@
 
 import numpy as np
 import warp as wp
+from typing import Any
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
@@ -22,6 +23,11 @@ class MeshBoundaryMasker(Operator):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+        assert self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON], (
+            f"MeshBoundaryMasker is only implemented for {ComputeBackend.WARP} and {ComputeBackend.NEON} backends!"
+        )
+
+        assert self.velocity_set.d == 3, "MeshBoundaryMasker is only implemented for 3D velocity sets!"
         # Raise error if used for 2d examples:
         if self.velocity_set.d == 2:
             raise NotImplementedError("This Operator is not implemented in 2D!")
@@ -29,13 +35,36 @@ class MeshBoundaryMasker(Operator):
         # Make constants for warp
         _c = self.velocity_set.c
         _q = self.velocity_set.q
+        _d = self.velocity_set.d
 
         @wp.func
-        def index_to_position(index: wp.vec3i):
+        def neon_index_to_warp(neon_field_hdl: Any, index: Any):
+            # Unpack the global index in Neon
+            cIdx = wp.neon_global_idx(neon_field_hdl, index)
+            gx = wp.neon_get_x(cIdx)
+            gy = wp.neon_get_y(cIdx)
+            gz = wp.neon_get_z(cIdx)
+
+            # TODO@Max - XLB is flattening the z dimension in 3D, while neon uses the y dimension
+            if _d == 2:
+                gy, gz = gz, gy
+
+            # Get warp indices
+            index_wp = wp.vec3i(gx, gy, gz)
+            return index_wp
+
+        @wp.func
+        def index_to_position_warp(field: Any, index: wp.vec3i):
             # position of the point
             ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
             pos = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
             return pos
+
+        @wp.func
+        def index_to_position_neon(field: Any, index: Any):
+            # position of the point
+            index_wp = neon_index_to_warp(field, index)
+            return index_to_position_warp(field, index_wp)
 
         @wp.func
         def is_in_bounds(index: wp.vec3i, domain_shape: wp.vec3i):
@@ -173,28 +202,25 @@ class MeshBoundaryMasker(Operator):
                         missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
 
         # Construct some helper warp functions
+        self.index_to_position = index_to_position_warp if self.compute_backend == ComputeBackend.WARP else index_to_position_neon
+        self.mesh_voxel_intersect = mesh_voxel_intersect
+        self.resolve_out_of_bound_kernel = resolve_out_of_bound_kernel
+
+    def get_grid_shape(self, bc_mask):
+        """
+        Get the grid shape from the boundary mask.
+        """
         if self.compute_backend == ComputeBackend.WARP:
-            self.index_to_position = index_to_position
-            self.is_in_bounds = is_in_bounds
-            self.out_of_bound_pull_index = out_of_bound_pull_index
-            self.mesh_voxel_intersect = mesh_voxel_intersect
-            self.resolve_out_of_bound_kernel = resolve_out_of_bound_kernel
+            return bc_mask.shape[1:]
+        elif self.compute_backend == ComputeBackend.NEON:
+            return bc_mask.get_grid().dim.x, bc_mask.get_grid().dim.y, bc_mask.get_grid().dim.z
+        else:
+            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
 
-    @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(
+    def _prepare_kernel_inputs(
         self,
         bc,
         bc_mask,
-        missing_mask,
-    ):
-        raise NotImplementedError(f"Operation {self.__class__.__name__} not implemented in JAX!")
-
-    def warp_implementation_base(
-        self,
-        bc,
-        distances,
-        bc_mask,
-        missing_mask,
     ):
         assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
         assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
@@ -202,7 +228,7 @@ class MeshBoundaryMasker(Operator):
             "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
         )
 
-        domain_shape = bc_mask.shape[1:]  # (nx, ny, nz)
+        domain_shape = self.get_grid_shape(bc_mask)  # (nx, ny, nz)
         mesh_vertices = bc.mesh_vertices
         mesh_min = np.min(mesh_vertices, axis=0)
         mesh_max = np.max(mesh_vertices, axis=0)
@@ -222,6 +248,26 @@ class MeshBoundaryMasker(Operator):
         )
         mesh_id = wp.uint64(mesh.id)
         bc_id = bc.id
+        return mesh_id, bc_id
+
+    @Operator.register_backend(ComputeBackend.JAX)
+    def jax_implementation(
+        self,
+        bc,
+        bc_mask,
+        missing_mask,
+    ):
+        raise NotImplementedError(f"Operation {self.__class__.__name__} not implemented in JAX!")
+
+    def warp_implementation_base(
+        self,
+        bc,
+        distances,
+        bc_mask,
+        missing_mask,
+    ):
+        # Prepare inputs
+        mesh_id, bc_id = self._prepare_kernel_inputs(bc, bc_mask)
 
         # Launch the appropriate warp kernel
         wp.launch(
