@@ -6,3 +6,4 @@ from xlb.operator.boundary_masker.winding import MeshMaskerWinding
 from xlb.operator.boundary_masker.aabb_fill import MeshMaskerAABBFill
 from xlb.operator.boundary_masker.mesh_voxelization_method import MeshVoxelizationMethod
 from xlb.operator.boundary_masker.multires_boundary_masker import MultiresBoundaryMasker
+from xlb.operator.boundary_masker.multires_aabb import MultiresMeshMaskerAABB

@@ -22,7 +22,11 @@ from xlb.operator.boundary_condition.boundary_condition_registry import boundary
 from xlb.operator.collision import ForcedCollision
 from xlb.operator.boundary_masker import MultiresBoundaryMasker
 from xlb.helper import check_bc_overlaps
-
+from xlb.operator.boundary_masker import (
+    IndicesBoundaryMasker,
+    MeshVoxelizationMethod,
+    MultiresMeshMaskerAABB,
+)
 
 class MultiresIncompressibleNavierStokesStepper(Stepper):
     def __init__(
@@ -82,7 +86,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         # f_0.export_vti("f0_eq_init.vti", "init_f0")
 
         # Process boundary conditions and update masks
-        f_1, bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, f_1, bc_mask, missing_mask, xlb_grid=self.grid)
+        f_1, bc_mask, missing_mask = self._process_boundary_conditions(self.boundary_conditions, f_1, bc_mask, missing_mask)
         # Initialize auxiliary data if needed
         f_1 = self._initialize_auxiliary_data(self.boundary_conditions, f_1, bc_mask, missing_mask)
         # bc_mask.update_host(0)
@@ -208,19 +212,58 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         return
 
     @classmethod
-    def _process_boundary_conditions(cls, boundary_conditions, f_1, bc_mask, missing_mask, xlb_grid=None):
+    def _process_boundary_conditions(cls, boundary_conditions, f_1, bc_mask, missing_mask):
         """Process boundary conditions and update boundary masks."""
+
         # Check for boundary condition overlaps
         # TODO! check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
+
         # Create boundary maskers
-        mres_masker = MultiresBoundaryMasker(
+        indices_masker = IndicesBoundaryMasker(
             velocity_set=DefaultConfig.velocity_set,
             precision_policy=DefaultConfig.default_precision_policy,
             compute_backend=DefaultConfig.default_backend,
         )
 
-        # Process all boundary conditions, either defined by indices or mesh_vertices
-        f_1, bc_mask, missing_mask = mres_masker(boundary_conditions, f_1, bc_mask, missing_mask, xlb_grid=xlb_grid)
+        # Split boundary conditions by type
+        bc_with_vertices = [bc for bc in boundary_conditions if bc.mesh_vertices is not None]
+        bc_with_indices = [bc for bc in boundary_conditions if bc.indices is not None]
+
+        # Process indices-based boundary conditions
+        # if bc_with_indices:
+        #     bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask)
+
+        # Process mesh-based boundary conditions for 3D
+        if DefaultConfig.velocity_set.d == 3 and bc_with_vertices:
+            for bc in bc_with_vertices:
+                if bc.voxelization_method is MeshVoxelizationMethod.AABB:
+                    mesh_masker = MultiresMeshMaskerAABB(
+                        velocity_set=DefaultConfig.velocity_set,
+                        precision_policy=DefaultConfig.default_precision_policy,
+                        compute_backend=DefaultConfig.default_backend,
+                    )
+                # elif bc.voxelization_method is MeshVoxelizationMethod.RAY:
+                #     mesh_masker = MeshMaskerRay(
+                #         velocity_set=DefaultConfig.velocity_set,
+                #         precision_policy=DefaultConfig.default_precision_policy,
+                #         compute_backend=DefaultConfig.default_backend,
+                #     )
+                # elif bc.voxelization_method is MeshVoxelizationMethod.WINDING:
+                #     mesh_masker = MeshMaskerWinding(
+                #         velocity_set=DefaultConfig.velocity_set,
+                #         precision_policy=DefaultConfig.default_precision_policy,
+                #         compute_backend=DefaultConfig.default_backend,
+                #     )
+                # elif bc.voxelization_method is MeshVoxelizationMethod.AABB_FILL:
+                #     mesh_masker = MeshMaskerAABBFill(
+                #         velocity_set=DefaultConfig.velocity_set,
+                #         precision_policy=DefaultConfig.default_precision_policy,
+                #         compute_backend=DefaultConfig.default_backend,
+                #     )
+                else:
+                    raise ValueError(f"Unsupported voxelization method: {bc.voxelization_method}")
+                # Apply the mesh masker to the boundary condition
+                f_1, bc_mask, missing_mask = mesh_masker(bc, f_1, bc_mask, missing_mask)
 
         return f_1, bc_mask, missing_mask
 
