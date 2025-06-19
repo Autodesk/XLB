@@ -57,7 +57,7 @@ class ExtrapolationOutflowBC(BoundaryCondition):
         )
 
         # find and store the normal vector using indices
-        if compute_backend == ComputeBackend.JAX:
+        if self.compute_backend == ComputeBackend.JAX:
             self._get_normal_vectors(indices)
 
         # Unpack the two warp functionals needed for this BC!

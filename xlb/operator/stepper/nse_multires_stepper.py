@@ -28,6 +28,7 @@ from xlb.operator.boundary_masker import (
     MultiresMeshMaskerAABB,
 )
 
+
 class MultiresIncompressibleNavierStokesStepper(Stepper):
     def __init__(
         self,
