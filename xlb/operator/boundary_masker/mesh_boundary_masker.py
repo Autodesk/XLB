@@ -206,17 +206,6 @@ class MeshBoundaryMasker(Operator):
         self.mesh_voxel_intersect = mesh_voxel_intersect
         self.resolve_out_of_bound_kernel = resolve_out_of_bound_kernel
 
-    def get_grid_shape(self, bc_mask):
-        """
-        Get the grid shape from the boundary mask.
-        """
-        if self.compute_backend == ComputeBackend.WARP:
-            return bc_mask.shape[1:]
-        elif self.compute_backend == ComputeBackend.NEON:
-            return bc_mask.get_grid().dim.x, bc_mask.get_grid().dim.y, bc_mask.get_grid().dim.z
-        else:
-            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
-
     def _prepare_kernel_inputs(
         self,
         bc,

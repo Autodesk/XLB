@@ -143,14 +143,14 @@ class IndicesBoundaryMasker(Operator):
                 # If the index is in the interior, we set that index to be a solid node (identified by 255)
                 # This information will be used in the next kernel to identify missing directions using the
                 # padded indices of the solid node that are associated with the boundary condition.
-                bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
+                self.write_field(bc_mask, index, 0, wp.uint8(255))
                 return
 
             # Check if index is in bounds
             shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
             if is_in_bounds(index, shape):
                 # Set bc_mask for all bc indices
-                bc_mask[0, index[0], index[1], index[2]] = id_number[ii]
+                self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
 
                 # Stream indices
                 for l in range(_q):
@@ -163,7 +163,7 @@ class IndicesBoundaryMasker(Operator):
                     # These directions will have missing information after streaming
                     if not is_in_bounds(pull_index, shape):
                         # Set the missing mask
-                        missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
+                        self.write_field(missing_mask, index, l, wp.uint8(True))
 
         @wp.kernel
         def kernel_interior_bc_mask(
@@ -181,7 +181,8 @@ class IndicesBoundaryMasker(Operator):
             index[2] = indices[2, ii]
 
             # Set bc_mask for all interior bc indices
-            bc_mask[0, index[0], index[1], index[2]] = id_number[ii]
+            self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
+            return
 
         @wp.kernel
         def kernel_interior_missing_mask(
@@ -206,8 +207,8 @@ class IndicesBoundaryMasker(Operator):
                     pull_index[d] = index[d] - _c[d, l]
 
                 # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
-                if is_in_bounds(pull_index, shape) and bc_mask[0, pull_index[0], pull_index[1], pull_index[2]] == wp.uint8(255):
-                    missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
+                if is_in_bounds(pull_index, shape) and self.read_field(bc_mask, pull_index, 0) == wp.uint8(255):
+                    self.write_field(missing_mask, index, l, wp.uint8(True))
 
         kernel_dic = {
             "kernel_domain_bounds": kernel_domain_bounds,
@@ -269,7 +270,7 @@ class IndicesBoundaryMasker(Operator):
     def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         # prepare warp kernel inputs
         bc_interior = []
-        grid_shape = bc_mask[0].shape
+        grid_shape = self.get_grid_shape(bc_mask)
         for bc in bclist:
             if any(self.are_indices_in_interior(np.array(bc.indices), grid_shape)):
                 bc_copy = copy.copy(bc)  # shallow copy of the whole object
