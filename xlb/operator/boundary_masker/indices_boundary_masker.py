@@ -1,16 +1,18 @@
 from typing import Any
+import copy
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import warp as wp
-import copy
 
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
 from xlb.operator.operator import Operator
 from xlb.operator.stream.stream import Stream
 from xlb.precision_policy import Precision
+from xlb.operator.boundary_masker.helper_functions_masker import HelperFunctionsMasker
+import neon
 
 
 class IndicesBoundaryMasker(Operator):
@@ -29,6 +31,14 @@ class IndicesBoundaryMasker(Operator):
 
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
+
+        if self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
+            # Define masker helper functions
+            self.helper_masker = HelperFunctionsMasker(
+                velocity_set=self.velocity_set,
+                precision_policy=self.precision_policy,
+                compute_backend=self.compute_backend,
+            )
 
     def are_indices_in_interior(self, indices, shape):
         """
@@ -115,11 +125,7 @@ class IndicesBoundaryMasker(Operator):
     def _construct_warp(self):
         # Make constants for warp
         _c = self.velocity_set.c
-        _q = wp.constant(self.velocity_set.q)
-
-        @wp.func
-        def is_in_bounds(index: wp.vec3i, shape: wp.vec3i):
-            return index[0] >= 0 and index[0] < shape[0] and index[1] >= 0 and index[1] < shape[1] and index[2] >= 0 and index[2] < shape[2]
+        _q = self.velocity_set.q
 
         # Construct the warp 3D kernel
         @wp.kernel
@@ -147,8 +153,7 @@ class IndicesBoundaryMasker(Operator):
                 return
 
             # Check if index is in bounds
-            shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
-            if is_in_bounds(index, shape):
+            if self.helper_masker.is_in_bounds(index, missing_mask):
                 # Set bc_mask for all bc indices
                 self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
 
@@ -161,7 +166,7 @@ class IndicesBoundaryMasker(Operator):
 
                     # Check if pull index is out of bound
                     # These directions will have missing information after streaming
-                    if not is_in_bounds(pull_index, shape):
+                    if not self.helper_masker.is_in_bounds(pull_index, missing_mask):
                         # Set the missing mask
                         self.write_field(missing_mask, index, l, wp.uint8(True))
 
@@ -199,7 +204,6 @@ class IndicesBoundaryMasker(Operator):
             index[1] = indices[1, ii]
             index[2] = indices[2, ii]
 
-            shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
             for l in range(_q):
                 # Get the index of the streaming direction
                 pull_index = wp.vec3i()
@@ -207,7 +211,7 @@ class IndicesBoundaryMasker(Operator):
                     pull_index[d] = index[d] - _c[d, l]
 
                 # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
-                if is_in_bounds(pull_index, shape) and self.read_field(bc_mask, pull_index, 0) == wp.uint8(255):
+                if self.helper_masker.is_in_bounds(pull_index, missing_mask) and self.read_field(bc_mask, pull_index, 0) == wp.uint8(255):
                     self.write_field(missing_mask, index, l, wp.uint8(True))
 
         kernel_dic = {
@@ -217,8 +221,11 @@ class IndicesBoundaryMasker(Operator):
         }
         return None, kernel_dic
 
-    # a helper for this operator
     def _prepare_kernel_inputs(self, bclist, grid_shape):
+        """
+        Prepare the inputs for the warp kernel by pre-allocating arrays and filling them with boundary condition information.
+        """
+
         # Pre-allocate arrays with maximum possible size
         max_size = sum(
             len(bc.indices[0]) if isinstance(bc.indices, (list, tuple)) else bc.indices.shape[1] for bc in bclist if bc.indices is not None
@@ -270,7 +277,7 @@ class IndicesBoundaryMasker(Operator):
     def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         # prepare warp kernel inputs
         bc_interior = []
-        grid_shape = self.get_grid_shape(bc_mask)
+        grid_shape = self.helper_masker.get_grid_shape(bc_mask)
         for bc in bclist:
             if any(self.are_indices_in_interior(np.array(bc.indices), grid_shape)):
                 bc_copy = copy.copy(bc)  # shallow copy of the whole object
@@ -319,8 +326,6 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-        import neon
-
         # Make constants
         _d = self.velocity_set.d
 

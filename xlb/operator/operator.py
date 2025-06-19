@@ -214,16 +214,3 @@ class Operator:
             raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
 
         return read_field, write_field
-
-    def get_grid_shape(self, bc_mask):
-        """
-        Get the grid shape from the boundary mask.
-        """
-        if self.compute_backend == ComputeBackend.JAX:
-            return bc_mask.shape[1:]
-        elif self.compute_backend == ComputeBackend.WARP:
-            return bc_mask.shape[1:]
-        elif self.compute_backend == ComputeBackend.NEON:
-            return bc_mask.get_grid().dim.x, bc_mask.get_grid().dim.y, bc_mask.get_grid().dim.z
-        else:
-            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")

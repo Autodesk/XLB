@@ -46,7 +46,7 @@ class MeshMaskerAABB(MeshBoundaryMasker):
             needs_mesh_distance: Any,
         ):
             # position of the point
-            cell_center_pos = self.index_to_position(bc_mask, index)
+            cell_center_pos = self.helper_masker.index_to_position(bc_mask, index)
             HALF_VOXEL = wp.vec3(0.5, 0.5, 0.5)
 
             if self.read_field(bc_mask, index, 0) == wp.uint8(255) or self.mesh_voxel_intersect(mesh_id=mesh_id, low=cell_center_pos - HALF_VOXEL):

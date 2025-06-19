@@ -1,3 +1,4 @@
+from xlb.operator.boundary_masker.helper_functions_masker import HelperFunctionsMasker
 from xlb.operator.boundary_masker.indices_boundary_masker import IndicesBoundaryMasker
 from xlb.operator.boundary_masker.mesh_boundary_masker import MeshBoundaryMasker
 from xlb.operator.boundary_masker.aabb import MeshMaskerAABB
