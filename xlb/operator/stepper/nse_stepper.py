@@ -2,7 +2,6 @@
 
 from functools import partial
 
-from docutils.nodes import container
 from jax import jit
 import warp as wp
 import neon

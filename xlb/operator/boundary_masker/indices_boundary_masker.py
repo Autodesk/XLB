@@ -38,38 +38,36 @@ class IndicesBoundaryMasker(Operator):
         :param shape: Tuple representing the shape of the domain (nx, ny) for 2D or (nx, ny, nz) for 3D.
         :return: Array of boolean flags where each flag indicates whether the corresponding index is inside the bounds.
         """
-        d = self.velocity_set.d
+        _d = self.velocity_set.d
         shape_array = np.array(shape)
-        return np.all((indices[:d] > 0) & (indices[:d] < shape_array[:d, np.newaxis] - 1), axis=0)
+        return np.all((indices[:_d] > 0) & (indices[:_d] < shape_array[:_d, np.newaxis] - 1), axis=0)
 
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
     # @partial(jit, static_argnums=(0))
     def jax_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-        # Pad the missing mask to create a grid mask to identify out of bound boundaries
-        # Set padded regin to True (i.e. boundary)
+        # Extend the missing mask by padding to identify out of bound boundaries
+        # Set padded region to True (i.e. boundary)
         dim = missing_mask.ndim - 1
+        grid_shape = bc_mask[0].shape
         nDevices = jax.device_count()
         pad_x, pad_y, pad_z = nDevices, 1, 1
-        # TODO MEHDI: There is sometimes a halting problem here when padding is used in a multi-GPU setting since we're not jitting this function.
-        # For now, we compute the bmap on GPU zero.
-        if dim == 2:
-            bmap = jnp.zeros((pad_x * 2 + bc_mask[0].shape[0], pad_y * 2 + bc_mask[0].shape[1]), dtype=jnp.uint8)
-            bmap = bmap.at[pad_x:-pad_x, pad_y:-pad_y].set(bc_mask[0])
-            grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y)), constant_values=True)
-            # bmap = jnp.pad(bc_mask[0], ((pad_x, pad_x), (pad_y, pad_y)), constant_values=0)
-        if dim == 3:
-            bmap = jnp.zeros((pad_x * 2 + bc_mask[0].shape[0], pad_y * 2 + bc_mask[0].shape[1], pad_z * 2 + bc_mask[0].shape[2]), dtype=jnp.uint8)
-            bmap = bmap.at[pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z].set(bc_mask[0])
-            grid_mask = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=True)
-            # bmap = jnp.pad(bc_mask[0], ((pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=0)
 
-        # shift indices
-        shift_tup = (pad_x, pad_y) if dim == 2 else (pad_x, pad_y, pad_z)
+        # Shift indices due to padding
+        shift = np.array((pad_x, pad_y) if dim == 2 else (pad_x, pad_y, pad_z))[:, np.newaxis]
         if start_index is None:
             start_index = (0,) * dim
 
-        domain_shape = bc_mask[0].shape
+        # TODO MEHDI: There is sometimes a halting problem here when padding is used in a multi-GPU setting since we're not jitting this function.
+        # For now, we compute the bc_mask_extended on GPU zero.
+        if dim == 2:
+            bc_mask_extended = jnp.pad(bc_mask[0], ((pad_x, pad_x), (pad_y, pad_y)), constant_values=0)
+            missing_mask_extended = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y)), constant_values=True)
+        if dim == 3:
+            bc_mask_extended = jnp.pad(bc_mask[0], ((pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=0)
+            missing_mask_extended = jnp.pad(missing_mask, ((0, 0), (pad_x, pad_x), (pad_y, pad_y), (pad_z, pad_z)), constant_values=True)
+
+        # Iterate over boundary conditions and set the mask
         for bc in bclist:
             assert bc.indices is not None, f"Please specify indices associated with the {bc.__class__.__name__} BC!"
             assert bc.mesh_vertices is None, (
@@ -77,32 +75,40 @@ class IndicesBoundaryMasker(Operator):
             )
             id_number = bc.id
             bc_indices = np.array(bc.indices)
-            local_indices = bc_indices - np.array(start_index)[:, np.newaxis]
-            padded_indices = local_indices + np.array(shift_tup)[:, np.newaxis]
-            bmap = bmap.at[tuple(padded_indices)].set(id_number)
-            if any(self.are_indices_in_interior(bc_indices, domain_shape)) and bc.needs_padding:
-                # checking if all indices associated with this BC are in the interior of the domain.
-                # This flag is needed e.g. if the no-slip geometry is anywhere but at the boundaries of the computational domain.
-                if dim == 2:
-                    grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1]].set(True)
-                if dim == 3:
-                    grid_mask = grid_mask.at[:, padded_indices[0], padded_indices[1], padded_indices[2]].set(True)
+            indices_origin = np.array(start_index)[:, np.newaxis]
+            if any(self.are_indices_in_interior(bc_indices, grid_shape)):
+                # If the indices are in the interior, we assume the usre specified indices are solid indices
+                solid_indices = bc_indices - indices_origin
+                solid_indices_shifted = solid_indices + shift
 
-                # Assign the boundary id to the push indices
-                push_indices = padded_indices[:, :, None] + self.velocity_set.c[:, None, :]
-                push_indices = push_indices.reshape(dim, -1)
-                bmap = bmap.at[tuple(push_indices)].set(id_number)
+                # We obtain the boundary indices by padding the solid indices in all lattice directions
+                indices_padded = bc.pad_indices() - indices_origin
+                indices_shifted = indices_padded + shift
+
+                # The missing mask is set to True meaning (exterior or solid nodes) using the original indices.
+                # This is because of the following streaming step which will assign missing directions for the boundary nodes.
+                missing_mask_extended = missing_mask_extended.at[:, solid_indices_shifted[0], solid_indices_shifted[1], solid_indices_shifted[2]].set(
+                    True
+                )
+            else:
+                indices_shifted = bc_indices - indices_origin + shift
+
+            # Assign the boundary id to the shifted (and possibly padded) indices
+            bc_mask_extended = bc_mask_extended.at[tuple(indices_shifted)].set(id_number)
 
             # We are done with bc.indices. Remove them from BC objects
             bc.__dict__.pop("indices", None)
 
-        grid_mask = self.stream(grid_mask)
+        # Stream the missing mask to identify missing directions
+        missing_mask_extended = self.stream(missing_mask_extended)
+
+        # Crop the extended masks to remove padding
         if dim == 2:
-            missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y]
-            bc_mask = bc_mask.at[0].set(bmap[pad_x:-pad_x, pad_y:-pad_y])
+            missing_mask = missing_mask_extended[:, pad_x:-pad_x, pad_y:-pad_y]
+            bc_mask = bc_mask.at[0].set(bc_mask_extended[pad_x:-pad_x, pad_y:-pad_y])
         if dim == 3:
-            missing_mask = grid_mask[:, pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z]
-            bc_mask = bc_mask.at[0].set(bmap[pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z])
+            missing_mask = missing_mask_extended[:, pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z]
+            bc_mask = bc_mask.at[0].set(bc_mask_extended[pad_x:-pad_x, pad_y:-pad_y, pad_z:-pad_z])
         return bc_mask, missing_mask
 
     def _construct_warp(self):

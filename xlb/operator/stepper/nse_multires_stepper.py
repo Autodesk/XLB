@@ -1,9 +1,5 @@
-# Base class for all stepper operators
+# Base class for all multires stepper operators
 
-from functools import partial
-
-from docutils.nodes import container
-from jax import jit
 import warp as wp
 import neon
 from typing import Any
@@ -95,6 +91,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         f_0.update_host(0)
         wp.synchronize()
         bc_mask.export_vti("bc_mask.vti", "bc_mask")
+        exit(0)
         # f_0.export_vti("init_f0.vti", 'init_f0')
         # missing_mask.export_vti("missing_mask.vti", 'missing_mask')
 

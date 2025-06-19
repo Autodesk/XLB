@@ -7,8 +7,7 @@ import warp as wp
 from typing import Any
 from jax import jit
 from functools import partial
-import jax
-import jax.numpy as jnp
+import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -99,6 +98,21 @@ class BoundaryCondition(Operator):
         # Construct some helper warp functions for getting tid data
         if self.compute_backend == ComputeBackend.WARP:
             self.assemble_auxiliary_data = assemble_auxiliary_data
+
+    def pad_indices(self):
+        """
+        This method pads the indices to ensure that the boundary condition can be applied correctly.
+        It is used to find missing directions in indices_boundary_masker when the BC is imposed on a
+        geometry that is in the domain interior.
+        """
+        _d = self.velocity_set.d
+        bc_indices = np.array(self.indices)
+
+        if self.needs_padding:
+            bc_indices_padded = bc_indices[:, :, None] + self.velocity_set.c[:, None, :]
+            return np.unique(bc_indices_padded.reshape(_d, -1), axis=1)
+        else:
+            return bc_indices
 
     @partial(jit, static_argnums=(0,), inline=True)
     def assemble_auxiliary_data(self, f_pre, f_post, bc_mask, missing_mask):
