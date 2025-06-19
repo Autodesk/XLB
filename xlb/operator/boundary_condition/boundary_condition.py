@@ -107,9 +107,9 @@ class BoundaryCondition(Operator):
         """
         _d = self.velocity_set.d
         bc_indices = np.array(self.indices)
-
+        lattice_velocity_np = self.velocity_set._c
         if self.needs_padding:
-            bc_indices_padded = bc_indices[:, :, None] + self.velocity_set.c[:, None, :]
+            bc_indices_padded = bc_indices[:, :, None] + lattice_velocity_np[:, None, :]
             return np.unique(bc_indices_padded.reshape(_d, -1), axis=1)
         else:
             return bc_indices

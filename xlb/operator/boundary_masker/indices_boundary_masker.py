@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import warp as wp
+import copy
 
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
@@ -122,10 +123,10 @@ class IndicesBoundaryMasker(Operator):
 
         # Construct the warp 3D kernel
         @wp.kernel
-        def kernel(
+        def kernel_domain_bounds(
             indices: wp.array2d(dtype=wp.int32),
             id_number: wp.array1d(dtype=wp.uint8),
-            is_interior: wp.array1d(dtype=wp.bool),
+            is_interior: wp.array1d(dtype=wp.uint8),
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.uint8),
         ):
@@ -138,42 +139,92 @@ class IndicesBoundaryMasker(Operator):
             index[1] = indices[1, ii]
             index[2] = indices[2, ii]
 
+            if is_interior[ii] == wp.uint8(True):
+                # If the index is in the interior, we set that index to be a solid node (identified by 255)
+                # This information will be used in the next kernel to identify missing directions using the
+                # padded indices of the solid node that are associated with the boundary condition.
+                bc_mask[0, index[0], index[1], index[2]] = wp.uint8(255)
+                return
+
             # Check if index is in bounds
             shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
             if is_in_bounds(index, shape):
+                # Set bc_mask for all bc indices
+                bc_mask[0, index[0], index[1], index[2]] = id_number[ii]
+
                 # Stream indices
                 for l in range(_q):
                     # Get the index of the streaming direction
                     pull_index = wp.vec3i()
-                    push_index = wp.vec3i()
                     for d in range(self.velocity_set.d):
                         pull_index[d] = index[d] - _c[d, l]
-                        push_index[d] = index[d] + _c[d, l]
 
-                    # set bc_mask for all bc indices
-                    bc_mask[0, index[0], index[1], index[2]] = id_number[ii]
-
-                    # check if pull index is out of bound
+                    # Check if pull index is out of bound
                     # These directions will have missing information after streaming
                     if not is_in_bounds(pull_index, shape):
                         # Set the missing mask
                         missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
 
-                    # handling geometries in the interior of the computational domain
-                    elif is_in_bounds(pull_index, shape) and is_interior[ii]:
-                        # Set the missing mask
-                        missing_mask[l, push_index[0], push_index[1], push_index[2]] = wp.uint8(True)
-                        bc_mask[0, push_index[0], push_index[1], push_index[2]] = id_number[ii]
+        @wp.kernel
+        def kernel_interior_bc_mask(
+            indices: wp.array2d(dtype=wp.int32),
+            id_number: wp.array1d(dtype=wp.uint8),
+            bc_mask: wp.array4d(dtype=wp.uint8),
+        ):
+            # Get the index of indices
+            ii = wp.tid()
 
-        return None, kernel
+            # Get local indices
+            index = wp.vec3i()
+            index[0] = indices[0, ii]
+            index[1] = indices[1, ii]
+            index[2] = indices[2, ii]
+
+            # Set bc_mask for all interior bc indices
+            bc_mask[0, index[0], index[1], index[2]] = id_number[ii]
+
+        @wp.kernel
+        def kernel_interior_missing_mask(
+            indices: wp.array2d(dtype=wp.int32),
+            bc_mask: wp.array4d(dtype=wp.uint8),
+            missing_mask: wp.array4d(dtype=wp.uint8),
+        ):
+            # Get the index of indices
+            ii = wp.tid()
+
+            # Get local indices
+            index = wp.vec3i()
+            index[0] = indices[0, ii]
+            index[1] = indices[1, ii]
+            index[2] = indices[2, ii]
+
+            shape = wp.vec3i(missing_mask.shape[1], missing_mask.shape[2], missing_mask.shape[3])
+            for l in range(_q):
+                # Get the index of the streaming direction
+                pull_index = wp.vec3i()
+                for d in range(self.velocity_set.d):
+                    pull_index[d] = index[d] - _c[d, l]
+
+                # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
+                if is_in_bounds(pull_index, shape) and bc_mask[0, pull_index[0], pull_index[1], pull_index[2]] == wp.uint8(255):
+                    missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
+
+        kernel_dic = {
+            "kernel_domain_bounds": kernel_domain_bounds,
+            "kernel_interior_bc_mask": kernel_interior_bc_mask,
+            "kernel_interior_missing_mask": kernel_interior_missing_mask,
+        }
+        return None, kernel_dic
 
     # a helper for this operator
-    def _prepare_kernel_inputs(self, bclist, bc_mask):
+    def _prepare_kernel_inputs(self, bclist, grid_shape):
         # Pre-allocate arrays with maximum possible size
-        max_size = sum(len(bc.indices[0]) if isinstance(bc.indices, list) else bc.indices.shape[1] for bc in bclist if bc.indices is not None)
+        max_size = sum(
+            len(bc.indices[0]) if isinstance(bc.indices, (list, tuple)) else bc.indices.shape[1] for bc in bclist if bc.indices is not None
+        )
         indices = np.zeros((3, max_size), dtype=np.int32)
         id_numbers = np.zeros(max_size, dtype=np.uint8)
-        is_interior = np.zeros(max_size, dtype=bool)
+        is_interior = np.zeros(max_size, dtype=np.uint8)
 
         current_index = 0
         for bc in bclist:
@@ -195,10 +246,7 @@ class IndicesBoundaryMasker(Operator):
             id_numbers[current_index : current_index + num_indices] = bc.id
 
             # Set is_interior flags
-            if bc.needs_padding:
-                is_interior[current_index : current_index + num_indices] = self.are_indices_in_interior(bc_indices, bc_mask[0].shape)
-            else:
-                is_interior[current_index : current_index + num_indices] = False
+            is_interior[current_index : current_index + num_indices] = self.are_indices_in_interior(bc_indices, grid_shape)
 
             current_index += num_indices
 
@@ -214,17 +262,26 @@ class IndicesBoundaryMasker(Operator):
         # Convert to Warp arrays
         wp_indices = wp.array(indices, dtype=wp.int32)
         wp_id_numbers = wp.array(id_numbers, dtype=wp.uint8)
-        wp_is_interior = wp.array(is_interior, dtype=wp.bool)
+        wp_is_interior = wp.array(is_interior, dtype=wp.uint8)
         return total_index, wp_indices, wp_id_numbers, wp_is_interior
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
         # prepare warp kernel inputs
-        total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist, bc_mask)
+        bc_interior = []
+        grid_shape = bc_mask[0].shape
+        for bc in bclist:
+            if any(self.are_indices_in_interior(np.array(bc.indices), grid_shape)):
+                bc_copy = copy.copy(bc)  # shallow copy of the whole object
+                bc_copy.indices = copy.deepcopy(bc.pad_indices())  # deep copy only the modified part
+                bc_interior.append(bc_copy)
+
+        # Prepare the first kernel inputs for all items in boundary condition list
+        total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist, grid_shape)
 
         # Launch the warp kernel
         wp.launch(
-            self.warp_kernel,
+            self.warp_kernel["kernel_domain_bounds"],
             dim=total_index,
             inputs=[
                 wp_indices,
@@ -232,6 +289,28 @@ class IndicesBoundaryMasker(Operator):
                 wp_is_interior,
                 bc_mask,
                 missing_mask,
+            ],
+        )
+        # Prepare the second and third kernel inputs for only a subset of boundary conditions associated with the interior
+        # Note 1: launching order of the following kernels are important here!
+        # Note 2: Due to race conditioning, the two kernels cannot be fused together.
+        total_index, wp_indices, wp_id_numbers, _ = self._prepare_kernel_inputs(bc_interior, grid_shape)
+        wp.launch(
+            self.warp_kernel["kernel_interior_missing_mask"],
+            dim=total_index,
+            inputs=[
+                wp_indices,
+                bc_mask,
+                missing_mask,
+            ],
+        )
+        wp.launch(
+            self.warp_kernel["kernel_interior_bc_mask"],
+            dim=total_index,
+            inputs=[
+                wp_indices,
+                wp_id_numbers,
+                bc_mask,
             ],
         )
 
