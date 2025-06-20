@@ -226,10 +226,11 @@ class Operator:
             def read_field_neighbor(
                 field: Any,
                 index: Any,
-                neighbor: Any,
+                offset: Any,
                 direction: Any,
             ):
                 # This function reads a field value at a given neighboring index and direction.
+                neighbor = index + offset
                 return field[direction, neighbor[0], neighbor[1], neighbor[2]]
 
         elif self.compute_backend == ComputeBackend.NEON:
@@ -238,12 +239,13 @@ class Operator:
             def read_field_neighbor(
                 field: Any,
                 index: Any,
-                neighbor: Any,
+                offset: Any,
                 direction: Any,
             ):
                 # This function reads a field value at a given neighboring index and direction.
                 unused_is_valid = wp.bool(False)
-                return wp.neon_read_ngh(field, index, neighbor, direction, self.compute_dtype(0.0), unused_is_valid)
+                # TODO: the type of the returned value should be the same as field's dtype
+                return wp.neon_read_ngh(field, index, offset, direction, wp.uint8(0), unused_is_valid)
 
         else:
             raise ValueError(f"Unsupported compute backend: {self.compute_backend}")

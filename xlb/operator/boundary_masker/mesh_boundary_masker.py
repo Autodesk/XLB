@@ -50,6 +50,7 @@ class MeshBoundaryMasker(Operator):
             lattice_dir: wp.int32,
             index: wp.vec3i,
             field: wp.array4d(dtype=wp.uint8),
+            grid_shape: wp.vec3i,
         ):
             # Get the index of the streaming direction
             pull_index = wp.vec3i()
@@ -58,7 +59,7 @@ class MeshBoundaryMasker(Operator):
 
             # check if pull index is out of bound
             # These directions will have missing information after streaming
-            missing = not self.helper_masker.is_in_bounds(pull_index, field)
+            missing = not self.helper_masker.is_in_bounds(pull_index, grid_shape, field)
             return missing
 
         # Function to precompute useful values per triangle, assuming spacing is (1,1,1)
@@ -160,13 +161,13 @@ class MeshBoundaryMasker(Operator):
             index = wp.vec3i(i, j, k)
 
             # domain shape to check for out of bounds
-            domain_shape = wp.vec3i(bc_mask.shape[1], bc_mask.shape[2], bc_mask.shape[3])
+            grid_shape = wp.vec3i(bc_mask.shape[1], bc_mask.shape[2], bc_mask.shape[3])
 
             # Find the fractional distance to the mesh in each direction
             if bc_mask[0, index[0], index[1], index[2]] == wp.uint8(id_number):
                 for l in range(1, _q):
                     # Ensuring out of bound pull indices are properly considered in the missing_mask
-                    if out_of_bound_pull_index(l, index, missing_mask):
+                    if out_of_bound_pull_index(l, index, missing_mask, grid_shape):
                         missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
 
         # Construct some helper warp functions

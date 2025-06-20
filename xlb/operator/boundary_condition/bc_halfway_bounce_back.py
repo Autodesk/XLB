@@ -81,7 +81,7 @@ class HalfwayBounceBackBC(BoundaryCondition):
                 raise ValueError("Velocity prescribed_value must be a tuple, list, or array")
 
             # Create a constant prescribed profile function
-            if self.compute_backend == ComputeBackend.WARP:
+            if self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
                 if self.velocity_set.d == 2:
                     prescribed_value = np.array([prescribed_value[0], prescribed_value[1], 0.0], dtype=np.float64)
                 prescribed_value = wp.vec(3, dtype=self.precision_policy.store_precision.wp_dtype)(prescribed_value)

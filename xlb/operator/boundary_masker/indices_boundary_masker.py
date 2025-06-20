@@ -26,9 +26,6 @@ class IndicesBoundaryMasker(Operator):
         precision_policy=None,
         compute_backend=None,
     ):
-        # Make stream operator
-        self.stream = Stream(velocity_set, precision_policy, compute_backend)
-
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
@@ -39,6 +36,9 @@ class IndicesBoundaryMasker(Operator):
                 precision_policy=self.precision_policy,
                 compute_backend=self.compute_backend,
             )
+        else:
+            # Make stream operator
+            self.stream = Stream(velocity_set, precision_policy, compute_backend)
 
     def are_indices_in_interior(self, indices, shape):
         """
@@ -144,6 +144,7 @@ class IndicesBoundaryMasker(Operator):
             is_interior: Any,
             bc_mask: Any,
             missing_mask: Any,
+            grid_shape: Any,
         ):
             for ii in range(bc_indices.shape[1]):
                 # If the current index does not match the boundary condition index, we skip it
@@ -157,21 +158,19 @@ class IndicesBoundaryMasker(Operator):
                     self.write_field(bc_mask, index, 0, wp.uint8(255))
                     return
 
-                # Check if index is in bounds
-                if self.helper_masker.is_in_bounds(index, missing_mask):
-                    # Set bc_mask for all bc indices
-                    self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
+                # Set bc_mask for all bc indices
+                self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
 
-                    # Stream indices
-                    for l in range(_q):
-                        # Get the pull index which is the index of the neighboring node where information is pulled from
-                        pull_index, _ = self.helper_masker.get_pull_index(bc_mask, l, index)
+                # Stream indices
+                for l in range(_q):
+                    # Get the pull index which is the index of the neighboring node where information is pulled from
+                    pull_index, _ = self.helper_masker.get_pull_index(bc_mask, l, index)
 
-                        # Check if pull index is out of bound
-                        # These directions will have missing information after streaming
-                        if not self.helper_masker.is_in_bounds(pull_index, missing_mask):
-                            # Set the missing mask
-                            self.write_field(missing_mask, index, l, wp.uint8(True))
+                    # Check if pull index is out of bound
+                    # These directions will have missing information after streaming
+                    if not self.helper_masker.is_in_bounds(pull_index, grid_shape, missing_mask):
+                        # Set the missing mask
+                        self.write_field(missing_mask, index, l, wp.uint8(True))
 
         @wp.func
         def functional_interior_bc_mask(
@@ -193,6 +192,7 @@ class IndicesBoundaryMasker(Operator):
             bc_indices: Any,
             bc_mask: Any,
             missing_mask: Any,
+            grid_shape: Any,
         ):
             for ii in range(bc_indices.shape[1]):
                 # If the current index does not match the boundary condition index, we skip it
@@ -200,11 +200,12 @@ class IndicesBoundaryMasker(Operator):
                     continue
                 for l in range(_q):
                     # Get the index of the streaming direction
-                    pull_index_data, pull_index_handle = self.helper_masker.get_pull_index(bc_mask, l, index)
+                    pull_index, offset = self.helper_masker.get_pull_index(bc_mask, l, index)
 
                     # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
-                    if (self.helper_masker.is_in_bounds(pull_index_data, missing_mask)) and (
-                        self.read_field_neighbor(bc_mask, index, pull_index_handle, 0) == wp.uint8(255)
+                    bc_mask_ngh = self.read_field_neighbor(bc_mask, index, offset, 0)
+                    if (self.helper_masker.is_in_bounds(pull_index, grid_shape, missing_mask)) and (
+                        bc_mask_ngh == wp.uint8(255)
                     ):
                         self.write_field(missing_mask, index, l, wp.uint8(True))
 
@@ -216,6 +217,7 @@ class IndicesBoundaryMasker(Operator):
             is_interior: wp.array1d(dtype=wp.uint8),
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.uint8),
+            grid_shape: wp.vec3i,
         ):
             # get index
             i, j, k = wp.tid()
@@ -231,6 +233,7 @@ class IndicesBoundaryMasker(Operator):
                 is_interior,
                 bc_mask,
                 missing_mask,
+                grid_shape,
             )
 
         @wp.kernel
@@ -259,6 +262,7 @@ class IndicesBoundaryMasker(Operator):
             bc_indices: wp.array2d(dtype=wp.int32),
             bc_mask: wp.array4d(dtype=wp.uint8),
             missing_mask: wp.array4d(dtype=wp.uint8),
+            grid_shape: wp.vec3i,
         ):
             # get index
             i, j, k = wp.tid()
@@ -271,6 +275,7 @@ class IndicesBoundaryMasker(Operator):
                 bc_indices,
                 bc_mask,
                 missing_mask,
+                grid_shape
             )
 
         functional_dict = {
@@ -355,6 +360,7 @@ class IndicesBoundaryMasker(Operator):
                 wp_is_interior,
                 bc_mask,
                 missing_mask,
+                grid_shape
             ],
         )
         # Prepare the second and third kernel inputs for only a subset of boundary conditions associated with the interior
@@ -368,6 +374,7 @@ class IndicesBoundaryMasker(Operator):
                 wp_bc_indices,
                 bc_mask,
                 missing_mask,
+                grid_shape
             ],
         )
         wp.launch(
@@ -382,65 +389,140 @@ class IndicesBoundaryMasker(Operator):
 
         return bc_mask, missing_mask
 
-    @Operator.register_backend(ComputeBackend.NEON)
-    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-        # Make constants
-        _d = self.velocity_set.d
+    def _construct_neon(self):
+        # Use the warp functional for the NEON backend
+        functional_dict, _ = self._construct_warp()
+        functional_domain_bounds = functional_dict.get("functional_domain_bounds")
+        functional_interior_bc_mask = functional_dict.get("functional_interior_bc_mask")
+        functional_interior_missing_mask = functional_dict.get("functional_interior_missing_mask")
 
-        # Pre-allocate arrays with maximum possible size
-        grid_shape = bc_mask.get_grid().dim.x, bc_mask.get_grid().dim.y, bc_mask.get_grid().dim.z
-        grid_warp = grid_factory(grid_shape, compute_backend=ComputeBackend.WARP, velocity_set=self.velocity_set)
-        missing_mask_warp = grid_warp.create_field(cardinality=self.velocity_set.q, dtype=Precision.UINT8)
-        bc_mask_warp = grid_warp.create_field(cardinality=1, dtype=Precision.UINT8)
-
-        # Use indices masker with the warp backend to build bc_mask_warp and missing_mask_warp before writing in Neon DS.
-        indices_masker_warp = IndicesBoundaryMasker(
-            velocity_set=self.velocity_set,
-            precision_policy=self.precision_policy,
-            compute_backend=ComputeBackend.WARP,
-        )
-        bc_mask_warp, missing_mask_warp = indices_masker_warp(bclist, bc_mask_warp, missing_mask_warp, start_index)
-        wp.synchronize()
-
-        @neon.Container.factory("")
-        def container(
-            bc_mask_warp: Any,
-            missing_mask_warp: Any,
-            bc_mask_field: Any,
-            missing_mask_field: Any,
+        @neon.Container.factory(name="IndicesBoundaryMasker_DomainBounds")
+        def container_domain_bounds(
+            wp_bc_indices,
+            wp_id_numbers,
+            wp_is_interior,
+            bc_mask,
+            missing_mask,
+            grid_shape,
         ):
-            def loading_step(loader: neon.Loader):
-                loader.set_grid(bc_mask_field.get_grid())
-                bc_mask_hdl = loader.get_write_handle(bc_mask_field)
-                missing_mask_hdl = loader.get_write_handle(missing_mask_field)
+            def domain_bounds_launcher(loader: neon.Loader):
+                loader.set_grid(bc_mask.get_grid())
+                bc_mask_pn = loader.get_write_handle(bc_mask)
+                missing_mask_pn = loader.get_write_handle(missing_mask)
 
                 @wp.func
-                def masker(gridIdx: Any):
-                    cIdx = wp.neon_global_idx(bc_mask_hdl, gridIdx)
-                    gx = wp.neon_get_x(cIdx)
-                    gy = wp.neon_get_y(cIdx)
-                    gz = wp.neon_get_z(cIdx)
+                def domain_bounds_kernel(index: Any):
+                    # apply the functional
+                    functional_domain_bounds(
+                        index,
+                        wp_bc_indices,
+                        wp_id_numbers,
+                        wp_is_interior,
+                        bc_mask_pn,
+                        missing_mask_pn,
+                        grid_shape,
+                    )
 
-                    # TODO@Max - XLB is flattening the z dimension in 3D, while neon uses the y dimension
-                    if _d == 2:
-                        gy, gz = gz, gy
+                loader.declare_kernel(domain_bounds_kernel)
 
-                    local_mask = bc_mask_warp[0, gx, gy, gz]
-                    wp.neon_write(bc_mask_hdl, gridIdx, 0, local_mask)
+            return domain_bounds_launcher
 
-                    for q in range(self.velocity_set.q):
-                        is_missing = wp.uint8(missing_mask_warp[q, gx, gy, gz])
-                        wp.neon_write(missing_mask_hdl, gridIdx, q, is_missing)
+        @neon.Container.factory(name="IndicesBoundaryMasker_InteriorBcMask")
+        def container_interior_bc_mask(
+            wp_bc_indices,
+            wp_id_numbers,
+            bc_mask,
+        ):
+            def interior_bc_mask_launcher(loader: neon.Loader):
+                loader.set_grid(bc_mask.get_grid())
+                bc_mask_pn = loader.get_write_handle(bc_mask)
 
-                loader.declare_kernel(masker)
+                @wp.func
+                def interior_bc_mask_kernel(index: Any):
+                    # apply the functional
+                    functional_interior_bc_mask(
+                        index,
+                        wp_bc_indices,
+                        wp_id_numbers,
+                        bc_mask_pn,
+                    )
 
-            return loading_step
+                loader.declare_kernel(interior_bc_mask_kernel)
 
-        c = container(bc_mask_warp, missing_mask_warp, bc_mask, missing_mask)
-        c.run(0)
-        wp.synchronize()
+            return interior_bc_mask_launcher
 
-        del bc_mask_warp
-        del missing_mask_warp
+        @neon.Container.factory(name="IndicesBoundaryMasker_InteriorMissingMask")
+        def container_interior_missing_mask(
+            wp_bc_indices,
+            bc_mask,
+            missing_mask,
+            grid_shape,
+        ):
+            def interior_bc_mask_launcher(loader: neon.Loader):
+                loader.set_grid(bc_mask.get_grid())
+                bc_mask_pn = loader.get_write_handle(bc_mask)
+                missing_mask_pn = loader.get_write_handle(missing_mask)
+
+                @wp.func
+                def interior_missing_mask_kernel(index: Any):
+                    # apply the functional
+                    functional_interior_missing_mask(
+                        index,
+                        wp_bc_indices,
+                        bc_mask_pn,
+                        missing_mask_pn,
+                        grid_shape,
+                    )
+
+                loader.declare_kernel(interior_missing_mask_kernel)
+
+            return interior_bc_mask_launcher
+
+        container_dict = {
+            "container_domain_bounds": container_domain_bounds,
+            "container_interior_bc_mask": container_interior_bc_mask,
+            "container_interior_missing_mask": container_interior_missing_mask,
+        }
+
+        return functional_dict, container_dict
+
+    @Operator.register_backend(ComputeBackend.NEON)
+    def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
+        # find interior boundary conditions
+        bc_interior, grid_shape = self._find_bclist_interior(bclist, bc_mask)
+
+        # Prepare the first kernel inputs for all items in boundary condition list
+        wp_bc_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist, grid_shape)
+
+        # Launch the first container
+        container_domain_bounds = self.neon_container["container_domain_bounds"](
+            wp_bc_indices,
+            wp_id_numbers,
+            wp_is_interior,
+            bc_mask,
+            missing_mask,
+            grid_shape,
+        )
+        container_domain_bounds.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
+
+        # Prepare the second and third kernel inputs for only a subset of boundary conditions associated with the interior
+        # Note 1: launching order of the following kernels are important here!
+        # Note 2: Due to race conditioning, the two kernels cannot be fused together.
+        wp_bc_indices, wp_id_numbers, _ = self._prepare_kernel_inputs(bc_interior, grid_shape)
+        container_interior_missing_mask = self.neon_container["container_interior_missing_mask"](
+            wp_bc_indices,
+            bc_mask,
+            missing_mask,
+            grid_shape
+        )
+        container_interior_missing_mask.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
+
+        # Launch the third container
+        container_interior_bc_mask = self.neon_container["container_interior_bc_mask"](
+            wp_bc_indices,
+            wp_id_numbers,
+            bc_mask,
+        )
+        container_interior_bc_mask.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
 
         return bc_mask, missing_mask
