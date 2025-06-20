@@ -51,7 +51,7 @@ class HelperFunctionsMasker(object):
             return index_to_position_warp(field, index_wp)
 
         @wp.func
-        def is_in_bounds_warp(index: wp.vec3i, field: wp.array4d(dtype=wp.uint8)):
+        def is_in_bounds(index: wp.vec3i, field: wp.array4d(dtype=wp.uint8)):
             grid_shape = wp.vec3i(field.shape[1], field.shape[2], field.shape[3])
             return (
                 index[0] >= 0
@@ -63,17 +63,12 @@ class HelperFunctionsMasker(object):
             )
 
         @wp.func
-        def is_in_bounds_neon(field: Any, index: Any):
-            grid_shape = get_grid_shape_neon(field)
-            index_wp = neon_index_to_warp(field, index)
-            return is_in_bounds_warp(index_wp, grid_shape)
-
-        @wp.func
         def get_grid_shape_neon(bc_mask: wp.array4d(dtype=wp.uint8)):
             return bc_mask.get_grid().dim.x, bc_mask.get_grid().dim.y, bc_mask.get_grid().dim.z
 
         @wp.func
         def get_pull_index_warp(
+            field: wp.array4d(dtype=wp.uint8),
             lattice_dir: wp.int32,
             index: wp.vec3i,
         ):
@@ -81,20 +76,23 @@ class HelperFunctionsMasker(object):
             for d in range(self.velocity_set.d):
                 pull_index[d] = index[d] - _c[d, lattice_dir]
 
-            return pull_index
+            return pull_index, pull_index
 
         @wp.func
         def get_pull_index_neon(
+            field: wp.array4d(dtype=wp.uint8),
             lattice_dir: wp.int32,
             index: wp.vec3i,
         ):
-            # TODO: this seems incorrect to me.
-            pull_index = wp.neon_ngh_idx(wp.int8(-_c[0, lattice_dir]), wp.int8(-_c[1, lattice_dir]), wp.int8(-_c[2, lattice_dir]))
-            return pull_index
+            # Convert the index to warp
+            index_wp = neon_index_to_warp(field, index)
+            pull_index_wp = get_pull_index_warp(field, lattice_dir, index_wp)
+            pull_index_neon = wp.neon_ngh_idx(wp.int8(-_c[0, lattice_dir]), wp.int8(-_c[1, lattice_dir]), wp.int8(-_c[2, lattice_dir]))
+            return pull_index_wp, pull_index_neon
 
         # Construct some helper warp functions
+        self.is_in_bounds = is_in_bounds
         self.index_to_position = index_to_position_warp if self.compute_backend == ComputeBackend.WARP else index_to_position_neon
-        self.is_in_bounds = is_in_bounds_warp if self.compute_backend == ComputeBackend.WARP else is_in_bounds_neon
         self.get_pull_index = get_pull_index_warp if self.compute_backend == ComputeBackend.WARP else get_pull_index_neon
 
     def get_grid_shape(self, bc_mask):

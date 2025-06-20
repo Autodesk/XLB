@@ -31,6 +31,7 @@ class Operator:
         # Construct read/write functions for the compute backend
         if self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
             self.read_field, self.write_field = self._construct_read_write_functions()
+            self.read_field_neighbor = self._construct_read_field_neighbor()
 
         # Construct the kernel based compute_backend functions TODO: Maybe move this to the register or something
         if self.compute_backend == ComputeBackend.WARP:
@@ -214,3 +215,37 @@ class Operator:
             raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
 
         return read_field, write_field
+
+    def _construct_read_field_neighbor(self):
+        """
+        Construct a function to read a field value at a neighboring index along a given direction.
+        """
+        if self.compute_backend == ComputeBackend.WARP:
+
+            @wp.func
+            def read_field_neighbor(
+                field: Any,
+                index: Any,
+                neighbor: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given neighboring index and direction.
+                return field[direction, neighbor[0], neighbor[1], neighbor[2]]
+
+        elif self.compute_backend == ComputeBackend.NEON:
+
+            @wp.func
+            def read_field_neighbor(
+                field: Any,
+                index: Any,
+                neighbor: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given neighboring index and direction.
+                unused_is_valid = wp.bool(False)
+                return wp.neon_read_ngh(field, index, neighbor, direction, self.compute_dtype(0.0), unused_is_valid)
+
+        else:
+            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
+
+        return read_field_neighbor

@@ -124,7 +124,6 @@ class IndicesBoundaryMasker(Operator):
 
     def _construct_warp(self):
         # Make constants for warp
-        _c = self.velocity_set.c
         _q = self.velocity_set.q
 
         # Construct the warp 3D kernel
@@ -159,10 +158,8 @@ class IndicesBoundaryMasker(Operator):
 
                 # Stream indices
                 for l in range(_q):
-                    # Get the index of the streaming direction
-                    pull_index = wp.vec3i()
-                    for d in range(self.velocity_set.d):
-                        pull_index[d] = index[d] - _c[d, l]
+                    # Get the pull index which is the index of the neighboring node where information is pulled from
+                    pull_index, _ = self.helper_masker.get_pull_index(bc_mask, l, index)
 
                     # Check if pull index is out of bound
                     # These directions will have missing information after streaming
@@ -206,12 +203,12 @@ class IndicesBoundaryMasker(Operator):
 
             for l in range(_q):
                 # Get the index of the streaming direction
-                pull_index = wp.vec3i()
-                for d in range(self.velocity_set.d):
-                    pull_index[d] = index[d] - _c[d, l]
+                pull_index_data, pull_index_handle = self.helper_masker.get_pull_index(bc_mask, l, index)
 
                 # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
-                if self.helper_masker.is_in_bounds(pull_index, missing_mask) and self.read_field(bc_mask, pull_index, 0) == wp.uint8(255):
+                if (self.helper_masker.is_in_bounds(pull_index_data, missing_mask)) and (
+                    self.read_field_neighbor(bc_mask, index, pull_index_handle, 0) == wp.uint8(255)
+                ):
                     self.write_field(missing_mask, index, l, wp.uint8(True))
 
         kernel_dic = {
