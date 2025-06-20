@@ -147,7 +147,7 @@ class IndicesBoundaryMasker(Operator):
         ):
             for ii in range(bc_indices.shape[1]):
                 # If the current index does not match the boundary condition index, we skip it
-                if not (bc_indices[0, ii] == index[0] and bc_indices[1, ii] == index[1] and bc_indices[2, ii] == index[2]):
+                if not self.helper_masker.is_in_bc_indices(bc_mask, index, bc_indices, ii):
                     continue
 
                 if is_interior[ii] == wp.uint8(True):
@@ -182,7 +182,7 @@ class IndicesBoundaryMasker(Operator):
         ):
             for ii in range(bc_indices.shape[1]):
                 # If the current index does not match the boundary condition index, we skip it
-                if not (bc_indices[0, ii] == index[0] and bc_indices[1, ii] == index[1] and bc_indices[2, ii] == index[2]):
+                if not self.helper_masker.is_in_bc_indices(bc_mask, index, bc_indices, ii):
                     continue
                 # Set bc_mask for all interior bc indices
                 self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
@@ -196,7 +196,7 @@ class IndicesBoundaryMasker(Operator):
         ):
             for ii in range(bc_indices.shape[1]):
                 # If the current index does not match the boundary condition index, we skip it
-                if not (bc_indices[0, ii] == index[0] and bc_indices[1, ii] == index[1] and bc_indices[2, ii] == index[2]):
+                if not self.helper_masker.is_in_bc_indices(bc_mask, index, bc_indices, ii):
                     continue
                 for l in range(_q):
                     # Get the index of the streaming direction

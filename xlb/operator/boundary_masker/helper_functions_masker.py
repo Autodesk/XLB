@@ -90,10 +90,30 @@ class HelperFunctionsMasker(object):
             pull_index_neon = wp.neon_ngh_idx(wp.int8(-_c[0, lattice_dir]), wp.int8(-_c[1, lattice_dir]), wp.int8(-_c[2, lattice_dir]))
             return pull_index_wp, pull_index_neon
 
+        @wp.func
+        def is_in_bc_indices_warp(
+            field: wp.array4d(dtype=wp.uint8),
+            index: wp.vec3i,
+            bc_indices: wp.array2d(dtype=wp.int32),
+            ii: wp.int32,
+        ):
+            return bc_indices[0, ii] == index[0] and bc_indices[1, ii] == index[1] and bc_indices[2, ii] == index[2]
+
+        @wp.func
+        def is_in_bc_indices_neon(
+            field: Any,
+            index: Any,
+            bc_indices: wp.array2d(dtype=wp.int32),
+            ii: wp.int32,
+        ):
+            index_wp = neon_index_to_warp(field, index)
+            return is_in_bc_indices_warp(field, index_wp, bc_indices, ii)
+
         # Construct some helper warp functions
         self.is_in_bounds = is_in_bounds
         self.index_to_position = index_to_position_warp if self.compute_backend == ComputeBackend.WARP else index_to_position_neon
         self.get_pull_index = get_pull_index_warp if self.compute_backend == ComputeBackend.WARP else get_pull_index_neon
+        self.is_in_bc_indices = is_in_bc_indices_warp if self.compute_backend == ComputeBackend.WARP else is_in_bc_indices_neon
 
     def get_grid_shape(self, bc_mask):
         """
