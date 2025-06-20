@@ -53,6 +53,16 @@ class IndicesBoundaryMasker(Operator):
         shape_array = np.array(shape)
         return np.all((indices[:_d] > 0) & (indices[:_d] < shape_array[:_d, np.newaxis] - 1), axis=0)
 
+    def _find_bclist_interior(self, bclist, bc_mask):
+        bc_interior = []
+        grid_shape = self.helper_masker.get_grid_shape(bc_mask)
+        for bc in bclist:
+            if any(self.are_indices_in_interior(np.array(bc.indices), grid_shape)):
+                bc_copy = copy.copy(bc)  # shallow copy of the whole object
+                bc_copy.indices = copy.deepcopy(bc.pad_indices())  # deep copy only the modified part
+                bc_interior.append(bc_copy)
+        return bc_interior, grid_shape
+
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
     # @partial(jit, static_argnums=(0))
@@ -126,6 +136,62 @@ class IndicesBoundaryMasker(Operator):
         # Make constants for warp
         _q = self.velocity_set.q
 
+        @wp.func
+        def functional_domain_bounds(
+            index: Any,
+            _id_number: Any,
+            _is_interior: Any,
+            bc_mask: Any,
+            missing_mask: Any,
+        ):
+            if _is_interior == wp.uint8(True):
+                # If the index is in the interior, we set that index to be a solid node (identified by 255)
+                # This information will be used in the next kernel to identify missing directions using the
+                # padded indices of the solid node that are associated with the boundary condition.
+                self.write_field(bc_mask, index, 0, wp.uint8(255))
+                return
+
+            # Check if index is in bounds
+            if self.helper_masker.is_in_bounds(index, missing_mask):
+                # Set bc_mask for all bc indices
+                self.write_field(bc_mask, index, 0, wp.uint8(_id_number))
+
+                # Stream indices
+                for l in range(_q):
+                    # Get the pull index which is the index of the neighboring node where information is pulled from
+                    pull_index, _ = self.helper_masker.get_pull_index(bc_mask, l, index)
+
+                    # Check if pull index is out of bound
+                    # These directions will have missing information after streaming
+                    if not self.helper_masker.is_in_bounds(pull_index, missing_mask):
+                        # Set the missing mask
+                        self.write_field(missing_mask, index, l, wp.uint8(True))
+
+        @wp.func
+        def functional_interior_bc_mask(
+            index: Any,
+            _id_number: Any,
+            bc_mask: Any,
+        ):
+            # Set bc_mask for all interior bc indices
+            self.write_field(bc_mask, index, 0, wp.uint8(_id_number))
+
+        @wp.func
+        def functional_interior_missing_mask(
+            index: Any,
+            bc_mask: Any,
+            missing_mask: Any,
+        ):
+            for l in range(_q):
+                # Get the index of the streaming direction
+                pull_index_data, pull_index_handle = self.helper_masker.get_pull_index(bc_mask, l, index)
+
+                # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
+                if (self.helper_masker.is_in_bounds(pull_index_data, missing_mask)) and (
+                    self.read_field_neighbor(bc_mask, index, pull_index_handle, 0) == wp.uint8(255)
+                ):
+                    self.write_field(missing_mask, index, l, wp.uint8(True))
+
         # Construct the warp 3D kernel
         @wp.kernel
         def kernel_domain_bounds(
@@ -144,28 +210,14 @@ class IndicesBoundaryMasker(Operator):
             index[1] = indices[1, ii]
             index[2] = indices[2, ii]
 
-            if is_interior[ii] == wp.uint8(True):
-                # If the index is in the interior, we set that index to be a solid node (identified by 255)
-                # This information will be used in the next kernel to identify missing directions using the
-                # padded indices of the solid node that are associated with the boundary condition.
-                self.write_field(bc_mask, index, 0, wp.uint8(255))
-                return
-
-            # Check if index is in bounds
-            if self.helper_masker.is_in_bounds(index, missing_mask):
-                # Set bc_mask for all bc indices
-                self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
-
-                # Stream indices
-                for l in range(_q):
-                    # Get the pull index which is the index of the neighboring node where information is pulled from
-                    pull_index, _ = self.helper_masker.get_pull_index(bc_mask, l, index)
-
-                    # Check if pull index is out of bound
-                    # These directions will have missing information after streaming
-                    if not self.helper_masker.is_in_bounds(pull_index, missing_mask):
-                        # Set the missing mask
-                        self.write_field(missing_mask, index, l, wp.uint8(True))
+            # Call the functional
+            functional_domain_bounds(
+                index,
+                id_number[ii],
+                is_interior[ii],
+                bc_mask,
+                missing_mask,
+            )
 
         @wp.kernel
         def kernel_interior_bc_mask(
@@ -183,7 +235,11 @@ class IndicesBoundaryMasker(Operator):
             index[2] = indices[2, ii]
 
             # Set bc_mask for all interior bc indices
-            self.write_field(bc_mask, index, 0, wp.uint8(id_number[ii]))
+            functional_interior_bc_mask(
+                index,
+                id_number[ii],
+                bc_mask,
+            )
             return
 
         @wp.kernel
@@ -201,22 +257,23 @@ class IndicesBoundaryMasker(Operator):
             index[1] = indices[1, ii]
             index[2] = indices[2, ii]
 
-            for l in range(_q):
-                # Get the index of the streaming direction
-                pull_index_data, pull_index_handle = self.helper_masker.get_pull_index(bc_mask, l, index)
+            functional_interior_missing_mask(
+                index,
+                bc_mask,
+                missing_mask,
+            )
 
-                # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
-                if (self.helper_masker.is_in_bounds(pull_index_data, missing_mask)) and (
-                    self.read_field_neighbor(bc_mask, index, pull_index_handle, 0) == wp.uint8(255)
-                ):
-                    self.write_field(missing_mask, index, l, wp.uint8(True))
-
-        kernel_dic = {
+        functional_dict = {
+            "functional_domain_bounds": functional_domain_bounds,
+            "functional_interior_bc_mask": functional_interior_bc_mask,
+            "functional_interior_missing_mask": functional_interior_missing_mask,
+        }
+        kernel_dict = {
             "kernel_domain_bounds": kernel_domain_bounds,
             "kernel_interior_bc_mask": kernel_interior_bc_mask,
             "kernel_interior_missing_mask": kernel_interior_missing_mask,
         }
-        return None, kernel_dic
+        return functional_dict, kernel_dict
 
     def _prepare_kernel_inputs(self, bclist, grid_shape):
         """
@@ -272,14 +329,9 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-        # prepare warp kernel inputs
-        bc_interior = []
-        grid_shape = self.helper_masker.get_grid_shape(bc_mask)
-        for bc in bclist:
-            if any(self.are_indices_in_interior(np.array(bc.indices), grid_shape)):
-                bc_copy = copy.copy(bc)  # shallow copy of the whole object
-                bc_copy.indices = copy.deepcopy(bc.pad_indices())  # deep copy only the modified part
-                bc_interior.append(bc_copy)
+
+        # find interior boundary conditions
+        bc_interior, grid_shape = self._find_bclist_interior(bclist, bc_mask)
 
         # Prepare the first kernel inputs for all items in boundary condition list
         total_index, wp_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist, grid_shape)
