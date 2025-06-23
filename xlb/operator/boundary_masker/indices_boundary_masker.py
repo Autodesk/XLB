@@ -53,15 +53,14 @@ class IndicesBoundaryMasker(Operator):
         shape_array = np.array(shape)
         return np.all((indices[:_d] > 0) & (indices[:_d] < shape_array[:_d, np.newaxis] - 1), axis=0)
 
-    def _find_bclist_interior(self, bclist, bc_mask):
+    def _find_bclist_interior(self, bclist, grid_shape):
         bc_interior = []
-        grid_shape = self.helper_masker.get_grid_shape(bc_mask)
         for bc in bclist:
             if any(self.are_indices_in_interior(np.array(bc.indices), grid_shape)):
                 bc_copy = copy.copy(bc)  # shallow copy of the whole object
                 bc_copy.indices = copy.deepcopy(bc.pad_indices())  # deep copy only the modified part
                 bc_interior.append(bc_copy)
-        return bc_interior, grid_shape
+        return bc_interior
 
     @Operator.register_backend(ComputeBackend.JAX)
     # TODO HS: figure out why uncommenting the line below fails unlike other operators!
@@ -344,8 +343,11 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-        # find interior boundary conditions
-        bc_interior, grid_shape = self._find_bclist_interior(bclist, bc_mask)
+        # get the grid shape
+        grid_shape = self.helper_masker.get_grid_shape(bc_mask)
+
+        # Find interior boundary conditions
+        bc_interior = self._find_bclist_interior(bclist, grid_shape)
 
         # Prepare the first kernel inputs for all items in boundary condition list
         wp_bc_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist, grid_shape)
@@ -363,6 +365,11 @@ class IndicesBoundaryMasker(Operator):
                 grid_shape
             ],
         )
+
+        # If there are no interior boundary conditions, skip the rest and retun early
+        if not bc_interior:
+            return bc_mask, missing_mask
+
         # Prepare the second and third kernel inputs for only a subset of boundary conditions associated with the interior
         # Note 1: launching order of the following kernels are important here!
         # Note 2: Due to race conditioning, the two kernels cannot be fused together.
@@ -488,8 +495,11 @@ class IndicesBoundaryMasker(Operator):
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-        # find interior boundary conditions
-        bc_interior, grid_shape = self._find_bclist_interior(bclist, bc_mask)
+        # get the grid shape
+        grid_shape = self.helper_masker.get_grid_shape(bc_mask)
+
+        # Find interior boundary conditions
+        bc_interior = self._find_bclist_interior(bclist, grid_shape)
 
         # Prepare the first kernel inputs for all items in boundary condition list
         wp_bc_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist, grid_shape)
@@ -504,6 +514,10 @@ class IndicesBoundaryMasker(Operator):
             grid_shape,
         )
         container_domain_bounds.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
+
+        # If there are no interior boundary conditions, skip the rest and retun early
+        if not bc_interior:
+            return bc_mask, missing_mask
 
         # Prepare the second and third kernel inputs for only a subset of boundary conditions associated with the interior
         # Note 1: launching order of the following kernels are important here!

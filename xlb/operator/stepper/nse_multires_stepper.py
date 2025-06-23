@@ -16,12 +16,11 @@ from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.collision import ForcedCollision
-from xlb.operator.boundary_masker import MultiresBoundaryMasker
 from xlb.helper import check_bc_overlaps
 from xlb.operator.boundary_masker import (
-    IndicesBoundaryMasker,
     MeshVoxelizationMethod,
     MultiresMeshMaskerAABB,
+    MultiresIndicesBoundaryMasker
 )
 
 
@@ -217,7 +216,7 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         # TODO! check_bc_overlaps(boundary_conditions, DefaultConfig.velocity_set.d, DefaultConfig.default_backend)
 
         # Create boundary maskers
-        indices_masker = IndicesBoundaryMasker(
+        indices_masker = MultiresIndicesBoundaryMasker(
             velocity_set=DefaultConfig.velocity_set,
             precision_policy=DefaultConfig.default_precision_policy,
             compute_backend=DefaultConfig.default_backend,
@@ -228,8 +227,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         bc_with_indices = [bc for bc in boundary_conditions if bc.indices is not None]
 
         # Process indices-based boundary conditions
-        # if bc_with_indices:
-        #     bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask)
+        if bc_with_indices:
+            bc_mask, missing_mask = indices_masker(bc_with_indices, bc_mask, missing_mask)
 
         # Process mesh-based boundary conditions for 3D
         if DefaultConfig.velocity_set.d == 3 and bc_with_vertices:
