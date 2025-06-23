@@ -17,11 +17,7 @@ from xlb.operator.boundary_condition.boundary_condition import ImplementationSte
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.collision import ForcedCollision
 from xlb.helper import check_bc_overlaps
-from xlb.operator.boundary_masker import (
-    MeshVoxelizationMethod,
-    MultiresMeshMaskerAABB,
-    MultiresIndicesBoundaryMasker
-)
+from xlb.operator.boundary_masker import MeshVoxelizationMethod, MultiresMeshMaskerAABB, MultiresIndicesBoundaryMasker
 
 
 class MultiresIncompressibleNavierStokesStepper(Stepper):
@@ -90,7 +86,6 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         f_0.update_host(0)
         wp.synchronize()
         bc_mask.export_vti("bc_mask.vti", "bc_mask")
-        exit(0)
         # f_0.export_vti("init_f0.vti", 'init_f0')
         # missing_mask.export_vti("missing_mask.vti", 'missing_mask')
 

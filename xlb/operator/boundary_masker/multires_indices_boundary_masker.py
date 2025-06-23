@@ -1,5 +1,6 @@
 from typing import Any
 import copy
+import numpy as np
 
 import warp as wp
 
@@ -129,18 +130,18 @@ class MultiresIndicesBoundaryMasker(IndicesBoundaryMasker):
 
     @Operator.register_backend(ComputeBackend.NEON)
     def neon_implementation(self, bclist, bc_mask, missing_mask, start_index=None):
-
         grid = bc_mask.get_grid()
         num_levels = grid.num_levels
         grid_shape_finest = self.helper_masker.get_grid_shape(bc_mask)
         for level in range(num_levels):
-
             # Create a copy of the boundary condition list for the current level if the indices at that level are not empty
             bclist_at_level = []
             for bc in bclist:
                 if bc.indices is not None and bc.indices[level]:
                     bc_copy = copy.copy(bc)  # shallow copy of the whole object
-                    bc_copy.indices = copy.deepcopy(bc.indices[level])  # deep copy only the modified part
+                    indices = copy.deepcopy(bc.indices[level])  # deep copy only the modified part
+                    indices = np.array(indices) * 2**level
+                    bc_copy.indices = tuple(indices.tolist())  # convert to tuple
                     bclist_at_level.append(bc_copy)
 
             # If the boundary condition list is empty, skip to the next level
@@ -148,7 +149,7 @@ class MultiresIndicesBoundaryMasker(IndicesBoundaryMasker):
                 continue
 
             # find grid shape at current level
-            grid_shape_tuple = tuple([shape//2 ** level for shape in grid_shape_finest])
+            grid_shape_tuple = tuple([shape // 2**level for shape in grid_shape_finest])
             grid_shape_warp = wp.vec3i(*grid_shape_tuple)
 
             # find interior boundary conditions

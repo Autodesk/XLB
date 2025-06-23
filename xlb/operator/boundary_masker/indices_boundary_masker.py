@@ -203,9 +203,7 @@ class IndicesBoundaryMasker(Operator):
 
                     # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
                     bc_mask_ngh = self.read_field_neighbor(bc_mask, index, offset, 0)
-                    if (self.helper_masker.is_in_bounds(pull_index, grid_shape, missing_mask)) and (
-                        bc_mask_ngh == wp.uint8(255)
-                    ):
+                    if (self.helper_masker.is_in_bounds(pull_index, grid_shape, missing_mask)) and (bc_mask_ngh == wp.uint8(255)):
                         self.write_field(missing_mask, index, l, wp.uint8(True))
 
         # Construct the warp 3D kernel
@@ -269,13 +267,7 @@ class IndicesBoundaryMasker(Operator):
             # Get local indices
             index = wp.vec3i(i, j, k)
 
-            functional_interior_missing_mask(
-                index,
-                bc_indices,
-                bc_mask,
-                missing_mask,
-                grid_shape
-            )
+            functional_interior_missing_mask(index, bc_indices, bc_mask, missing_mask, grid_shape)
 
         functional_dict = {
             "functional_domain_bounds": functional_domain_bounds,
@@ -356,14 +348,7 @@ class IndicesBoundaryMasker(Operator):
         wp.launch(
             self.warp_kernel["kernel_domain_bounds"],
             dim=bc_mask.shape[1:],
-            inputs=[
-                wp_bc_indices,
-                wp_id_numbers,
-                wp_is_interior,
-                bc_mask,
-                missing_mask,
-                grid_shape
-            ],
+            inputs=[wp_bc_indices, wp_id_numbers, wp_is_interior, bc_mask, missing_mask, grid_shape],
         )
 
         # If there are no interior boundary conditions, skip the rest and retun early
@@ -377,12 +362,7 @@ class IndicesBoundaryMasker(Operator):
         wp.launch(
             self.warp_kernel["kernel_interior_missing_mask"],
             dim=bc_mask.shape[1:],
-            inputs=[
-                wp_bc_indices,
-                bc_mask,
-                missing_mask,
-                grid_shape
-            ],
+            inputs=[wp_bc_indices, bc_mask, missing_mask, grid_shape],
         )
         wp.launch(
             self.warp_kernel["kernel_interior_bc_mask"],
@@ -523,12 +503,7 @@ class IndicesBoundaryMasker(Operator):
         # Note 1: launching order of the following kernels are important here!
         # Note 2: Due to race conditioning, the two kernels cannot be fused together.
         wp_bc_indices, wp_id_numbers, _ = self._prepare_kernel_inputs(bc_interior, grid_shape)
-        container_interior_missing_mask = self.neon_container["container_interior_missing_mask"](
-            wp_bc_indices,
-            bc_mask,
-            missing_mask,
-            grid_shape
-        )
+        container_interior_missing_mask = self.neon_container["container_interior_missing_mask"](wp_bc_indices, bc_mask, missing_mask, grid_shape)
         container_interior_missing_mask.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
 
         # Launch the third container
