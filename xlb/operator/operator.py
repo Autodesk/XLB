@@ -220,6 +220,8 @@ class Operator:
         """
         Construct a function to read a field value at a neighboring index along a given direction.
         """
+        from neon.multires.mPartition import neon_get_type
+
         if self.compute_backend == ComputeBackend.WARP:
 
             @wp.func
@@ -244,8 +246,8 @@ class Operator:
             ):
                 # This function reads a field value at a given neighboring index and direction.
                 unused_is_valid = wp.bool(False)
-                # TODO: the type of the returned value should be the same as field's dtype
-                return wp.neon_read_ngh(field, index, offset, direction, wp.uint8(0), unused_is_valid)
+                dtype = neon_get_type(field)  # This is a placeholder to ensure the dtype is set correctly
+                return wp.neon_read_ngh(field, index, offset, direction, dtype(0.0), unused_is_valid)
 
         else:
             raise ValueError(f"Unsupported compute backend: {self.compute_backend}")

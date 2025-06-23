@@ -140,7 +140,7 @@ class MultiresIndicesBoundaryMasker(IndicesBoundaryMasker):
                 if bc.indices is not None and bc.indices[level]:
                     bc_copy = copy.copy(bc)  # shallow copy of the whole object
                     indices = copy.deepcopy(bc.indices[level])  # deep copy only the modified part
-                    indices = np.array(indices) * 2**level      # TODO: This is a hack
+                    indices = np.array(indices) * 2**level  # TODO: This is a hack
                     bc_copy.indices = tuple(indices.tolist())  # convert to tuple
                     bclist_at_level.append(bc_copy)
 
