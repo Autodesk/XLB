@@ -140,7 +140,7 @@ class MultiresIndicesBoundaryMasker(IndicesBoundaryMasker):
                 if bc.indices is not None and bc.indices[level]:
                     bc_copy = copy.copy(bc)  # shallow copy of the whole object
                     indices = copy.deepcopy(bc.indices[level])  # deep copy only the modified part
-                    indices = np.array(indices) * 2**level
+                    indices = np.array(indices) * 2**level      # TODO: This is a hack
                     bc_copy.indices = tuple(indices.tolist())  # convert to tuple
                     bclist_at_level.append(bc_copy)
 
@@ -149,14 +149,15 @@ class MultiresIndicesBoundaryMasker(IndicesBoundaryMasker):
                 continue
 
             # find grid shape at current level
-            grid_shape_tuple = tuple([shape // 2**level for shape in grid_shape_finest])
-            grid_shape_warp = wp.vec3i(*grid_shape_tuple)
+            # TODO: this is a hack. Should be corrected in the helper function when getting neon global indices
+            grid_shape_at_level = tuple([shape // 2**level for shape in grid_shape_finest])
+            grid_shape_finest_warp = wp.vec3i(*grid_shape_finest)
 
             # find interior boundary conditions
-            bc_interior = self._find_bclist_interior(bclist_at_level, grid_shape_tuple)
+            bc_interior = self._find_bclist_interior(bclist_at_level, grid_shape_at_level)
 
             # Prepare the first kernel inputs for all items in boundary condition list
-            wp_bc_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist_at_level, grid_shape_tuple)
+            wp_bc_indices, wp_id_numbers, wp_is_interior = self._prepare_kernel_inputs(bclist_at_level, grid_shape_at_level)
 
             # Launch the first container
             container_domain_bounds = self.neon_container["container_domain_bounds"](
@@ -165,7 +166,7 @@ class MultiresIndicesBoundaryMasker(IndicesBoundaryMasker):
                 wp_is_interior,
                 bc_mask,
                 missing_mask,
-                grid_shape_warp,
+                grid_shape_finest_warp,
                 level,
             )
             container_domain_bounds.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
@@ -177,12 +178,12 @@ class MultiresIndicesBoundaryMasker(IndicesBoundaryMasker):
             # Prepare the second and third kernel inputs for only a subset of boundary conditions associated with the interior
             # Note 1: launching order of the following kernels are important here!
             # Note 2: Due to race conditioning, the two kernels cannot be fused together.
-            wp_bc_indices, wp_id_numbers, _ = self._prepare_kernel_inputs(bc_interior, grid_shape_tuple)
+            wp_bc_indices, wp_id_numbers, _ = self._prepare_kernel_inputs(bc_interior, grid_shape_at_level)
             container_interior_missing_mask = self.neon_container["container_interior_missing_mask"](
                 wp_bc_indices,
                 bc_mask,
                 missing_mask,
-                grid_shape_warp,
+                grid_shape_finest_warp,
                 level,
             )
             container_interior_missing_mask.run(0, container_runtime=neon.Container.ContainerRuntime.neon)
