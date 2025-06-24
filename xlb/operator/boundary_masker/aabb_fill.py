@@ -40,14 +40,8 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
         @wp.kernel
         def erode_tile(f_field: wp.array3d(dtype=Any), f_field_out: wp.array3d(dtype=Any)):
             i, j, k = wp.tid()
-            if (
-                i < TILE_HALF
-                or i >= f_field.shape[0] - TILE_HALF
-                or j < TILE_HALF
-                or j >= f_field.shape[1] - TILE_HALF
-                or k < TILE_HALF
-                or k >= f_field.shape[2] - TILE_HALF
-            ):
+            index = wp.vec3i(i, j, k)
+            if not self.helper_masker.is_in_bounds(index, wp.vec3i(f_field.shape[0], f_field.shape[1], f_field.shape[2]), TILE_HALF):
                 f_field_out[i, j, k] = f_field[i, j, k]
                 return
             t = wp.tile_load(f_field, shape=(TILE_SIZE, TILE_SIZE, TILE_SIZE), offset=(i - TILE_HALF, j - TILE_HALF, k - TILE_HALF))
@@ -58,14 +52,8 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
         @wp.kernel
         def dilate_tile(f_field: wp.array3d(dtype=Any), f_field_out: wp.array3d(dtype=Any)):
             i, j, k = wp.tid()
-            if (
-                i < TILE_HALF
-                or i >= f_field.shape[0] - TILE_HALF
-                or j < TILE_HALF
-                or j >= f_field.shape[1] - TILE_HALF
-                or k < TILE_HALF
-                or k >= f_field.shape[2] - TILE_HALF
-            ):
+            index = wp.vec3i(i, j, k)
+            if not self.helper_masker.is_in_bounds(index, wp.vec3i(f_field.shape[0], f_field.shape[1], f_field.shape[2]), TILE_HALF):
                 f_field_out[i, j, k] = f_field[i, j, k]
                 return
             t = wp.tile_load(f_field, shape=(TILE_SIZE, TILE_SIZE, TILE_SIZE), offset=(i - TILE_HALF, j - TILE_HALF, k - TILE_HALF))
@@ -87,7 +75,7 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
             index = wp.vec3i(i, j, k)
 
             # position of the point
-            cell_center_pos = self.index_to_position(index) + offset
+            cell_center_pos = self.helper_masker.index_to_position(solid_mask, index) + offset
             half = wp.vec3(0.5, 0.5, 0.5)
 
             if self.mesh_voxel_intersect(mesh_id=mesh_id, low=cell_center_pos - half):
@@ -112,7 +100,7 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
             index = wp.vec3i(i, j, k)
 
             # position of the point
-            cell_center_pos = self.index_to_position(index)
+            cell_center_pos = self.helper_masker.index_to_position(bc_mask, index)
 
             if solid_mask[i, j, k] == wp.uint8(255) or bc_mask[0, index[0], index[1], index[2]] == wp.uint8(255):
                 # Make solid voxel

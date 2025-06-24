@@ -43,7 +43,7 @@ class MeshMaskerWinding(MeshBoundaryMasker):
             index = wp.vec3i(i, j, k)
 
             # position of the point
-            pos_cell = self.index_to_position(index)
+            pos_cell = self.helper_masker.index_to_position(bc_mask, index)
 
             # Compute the maximum length
             max_length = wp.sqrt(
@@ -80,7 +80,7 @@ class MeshMaskerWinding(MeshBoundaryMasker):
 
                             # get position of the mesh triangle that intersects with the ray
                             pos_mesh = wp.mesh_eval_position(mesh_id, query_dir.face, query_dir.u, query_dir.v)
-                            cell_center_pos = self.index_to_position(push_index)
+                            cell_center_pos = self.helper_masker.index_to_position(bc_mask, push_index)
                             dist = wp.length(pos_mesh - cell_center_pos)
                             weight = self.store_dtype(dist / max_length)
                             distances[_opp_indices[direction_idx], push_index[0], push_index[1], push_index[2]] = weight

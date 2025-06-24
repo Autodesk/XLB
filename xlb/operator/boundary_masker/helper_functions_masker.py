@@ -51,14 +51,14 @@ class HelperFunctionsMasker(object):
             return index_to_position_warp(field, index_wp)
 
         @wp.func
-        def is_in_bounds(index: wp.vec3i, grid_shape: wp.vec3i, field: Any):
+        def is_in_bounds(index: wp.vec3i, grid_shape: wp.vec3i, SHIFT: Any = 0):
             return (
-                index[0] >= 0
-                and index[0] < grid_shape[0]
-                and index[1] >= 0
-                and index[1] < grid_shape[1]
-                and index[2] >= 0
-                and index[2] < grid_shape[2]
+                index[0] >= SHIFT
+                and index[0] < grid_shape[0] - SHIFT
+                and index[1] >= SHIFT
+                and index[1] < grid_shape[1] - SHIFT
+                and index[2] >= SHIFT
+                and index[2] < grid_shape[2] - SHIFT
             )
 
         @wp.func

@@ -234,26 +234,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
                         precision_policy=DefaultConfig.default_precision_policy,
                         compute_backend=DefaultConfig.default_backend,
                     )
-                # elif bc.voxelization_method is MeshVoxelizationMethod.RAY:
-                #     mesh_masker = MeshMaskerRay(
-                #         velocity_set=DefaultConfig.velocity_set,
-                #         precision_policy=DefaultConfig.default_precision_policy,
-                #         compute_backend=DefaultConfig.default_backend,
-                #     )
-                # elif bc.voxelization_method is MeshVoxelizationMethod.WINDING:
-                #     mesh_masker = MeshMaskerWinding(
-                #         velocity_set=DefaultConfig.velocity_set,
-                #         precision_policy=DefaultConfig.default_precision_policy,
-                #         compute_backend=DefaultConfig.default_backend,
-                #     )
-                # elif bc.voxelization_method is MeshVoxelizationMethod.AABB_FILL:
-                #     mesh_masker = MeshMaskerAABBFill(
-                #         velocity_set=DefaultConfig.velocity_set,
-                #         precision_policy=DefaultConfig.default_precision_policy,
-                #         compute_backend=DefaultConfig.default_backend,
-                #     )
                 else:
-                    raise ValueError(f"Unsupported voxelization method: {bc.voxelization_method}")
+                    raise ValueError(f"Unsupported voxelization method for multi-res: {bc.voxelization_method}")
                 # Apply the mesh masker to the boundary condition
                 f_1, bc_mask, missing_mask = mesh_masker(bc, f_1, bc_mask, missing_mask)
 

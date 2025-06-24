@@ -59,7 +59,7 @@ class MeshBoundaryMasker(Operator):
 
             # check if pull index is out of bound
             # These directions will have missing information after streaming
-            missing = not self.helper_masker.is_in_bounds(pull_index, grid_shape, field)
+            missing = not self.helper_masker.is_in_bounds(pull_index, grid_shape)
             return missing
 
         # Function to precompute useful values per triangle, assuming spacing is (1,1,1)

@@ -43,7 +43,7 @@ class MeshMaskerRay(MeshBoundaryMasker):
             index = wp.vec3i(i, j, k)
 
             # position of the point
-            cell_center_pos = self.index_to_position(index)
+            cell_center_pos = self.helper_masker.index_to_position(bc_mask, index)
 
             # Find the fractional distance to the mesh in each direction
             for direction_idx in range(1, _q):

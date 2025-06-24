@@ -167,7 +167,7 @@ class IndicesBoundaryMasker(Operator):
 
                     # Check if pull index is out of bound
                     # These directions will have missing information after streaming
-                    if not self.helper_masker.is_in_bounds(pull_index, grid_shape, missing_mask):
+                    if not self.helper_masker.is_in_bounds(pull_index, grid_shape):
                         # Set the missing mask
                         self.write_field(missing_mask, index, l, wp.uint8(True))
 
@@ -203,7 +203,7 @@ class IndicesBoundaryMasker(Operator):
 
                     # Check if pull index is a fluid node (bc_mask is zero for fluid nodes)
                     bc_mask_ngh = self.read_field_neighbor(bc_mask, index, offset, 0)
-                    if (self.helper_masker.is_in_bounds(pull_index, grid_shape, missing_mask)) and (bc_mask_ngh == wp.uint8(255)):
+                    if (self.helper_masker.is_in_bounds(pull_index, grid_shape)) and (bc_mask_ngh == wp.uint8(255)):
                         self.write_field(missing_mask, index, l, wp.uint8(True))
 
         # Construct the warp 3D kernel
