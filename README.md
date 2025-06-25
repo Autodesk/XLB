@@ -168,7 +168,7 @@ The stages of a fluid density field from an initial state to the emergence of th
 
 - **Do Nothing BC:** In this boundary condition, the fluid populations are allowed to pass through the boundary without any reflection or modification.
 
-- **Zouhe BC:** This boundary condition is used to impose a prescribed velocity or pressure profile at the boundary.
+- **Zou-He BC:** This boundary condition is used to impose a prescribed velocity or pressure profile at the boundary.
 - **Regularized BC:** This boundary condition is used to impose a prescribed velocity or pressure profile at the boundary. This BC is more stable than Zouhe BC, but computationally more expensive.
 - **Extrapolation Outflow BC:** A type of outflow boundary condition that uses extrapolation to avoid strong wave reflections.
 
