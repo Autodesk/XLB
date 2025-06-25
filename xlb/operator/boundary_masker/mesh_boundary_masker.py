@@ -2,10 +2,12 @@
 
 import numpy as np
 import warp as wp
+from typing import Any
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.operator import Operator
+from xlb.operator.boundary_masker.helper_functions_masker import HelperFunctionsMasker
 
 
 class MeshBoundaryMasker(Operator):
@@ -15,13 +17,18 @@ class MeshBoundaryMasker(Operator):
 
     def __init__(
         self,
-        velocity_set: VelocitySet,
-        precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend.WARP,
+        velocity_set: VelocitySet = None,
+        precision_policy: PrecisionPolicy = None,
+        compute_backend: ComputeBackend = None,
     ):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+        assert self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON], (
+            f"MeshBoundaryMasker is only implemented for {ComputeBackend.WARP} and {ComputeBackend.NEON} backends!"
+        )
+
+        assert self.velocity_set.d == 3, "MeshBoundaryMasker is only implemented for 3D velocity sets!"
         # Raise error if used for 2d examples:
         if self.velocity_set.d == 2:
             raise NotImplementedError("This Operator is not implemented in 2D!")
@@ -30,29 +37,20 @@ class MeshBoundaryMasker(Operator):
         _c = self.velocity_set.c
         _q = self.velocity_set.q
 
-        @wp.func
-        def index_to_position(index: wp.vec3i):
-            # position of the point
-            ijk = wp.vec3(wp.float32(index[0]), wp.float32(index[1]), wp.float32(index[2]))
-            pos = ijk + wp.vec3(0.5, 0.5, 0.5)  # cell center
-            return pos
-
-        @wp.func
-        def is_in_bounds(index: wp.vec3i, domain_shape: wp.vec3i):
-            return (
-                index[0] >= 0
-                and index[0] < domain_shape[0]
-                and index[1] >= 0
-                and index[1] < domain_shape[1]
-                and index[2] >= 0
-                and index[2] < domain_shape[2]
+        if self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
+            # Define masker helper functions
+            self.helper_masker = HelperFunctionsMasker(
+                velocity_set=self.velocity_set,
+                precision_policy=self.precision_policy,
+                compute_backend=self.compute_backend,
             )
 
         @wp.func
         def out_of_bound_pull_index(
             lattice_dir: wp.int32,
             index: wp.vec3i,
-            domain_shape: wp.vec3i,
+            field: wp.array4d(dtype=wp.uint8),
+            grid_shape: wp.vec3i,
         ):
             # Get the index of the streaming direction
             pull_index = wp.vec3i()
@@ -61,7 +59,7 @@ class MeshBoundaryMasker(Operator):
 
             # check if pull index is out of bound
             # These directions will have missing information after streaming
-            missing = not is_in_bounds(pull_index, domain_shape)
+            missing = not self.helper_masker.is_in_bounds(pull_index, grid_shape)
             return missing
 
         # Function to precompute useful values per triangle, assuming spacing is (1,1,1)
@@ -163,44 +161,23 @@ class MeshBoundaryMasker(Operator):
             index = wp.vec3i(i, j, k)
 
             # domain shape to check for out of bounds
-            domain_shape = wp.vec3i(bc_mask.shape[1], bc_mask.shape[2], bc_mask.shape[3])
+            grid_shape = wp.vec3i(bc_mask.shape[1], bc_mask.shape[2], bc_mask.shape[3])
 
             # Find the fractional distance to the mesh in each direction
             if bc_mask[0, index[0], index[1], index[2]] == wp.uint8(id_number):
                 for l in range(1, _q):
                     # Ensuring out of bound pull indices are properly considered in the missing_mask
-                    if out_of_bound_pull_index(l, index, domain_shape):
+                    if out_of_bound_pull_index(l, index, missing_mask, grid_shape):
                         missing_mask[l, index[0], index[1], index[2]] = wp.uint8(True)
 
         # Construct some helper warp functions
-        if self.compute_backend == ComputeBackend.WARP:
-            self.index_to_position = index_to_position
-            self.is_in_bounds = is_in_bounds
-            self.out_of_bound_pull_index = out_of_bound_pull_index
-            self.mesh_voxel_intersect = mesh_voxel_intersect
-            self.resolve_out_of_bound_kernel = resolve_out_of_bound_kernel
+        self.mesh_voxel_intersect = mesh_voxel_intersect
+        self.resolve_out_of_bound_kernel = resolve_out_of_bound_kernel
 
-    @Operator.register_backend(ComputeBackend.JAX)
-    def jax_implementation(
+    def _prepare_kernel_inputs(
         self,
         bc,
         bc_mask,
-        missing_mask,
-    ):
-        raise NotImplementedError(f"Operation {self.__class__.__name} not implemented in JAX!")
-        # Use Warp backend even for this particular operation.
-        wp.init()
-        bc_mask = wp.from_jax(bc_mask)
-        missing_mask = wp.from_jax(missing_mask)
-        bc_mask, missing_mask = self.warp_implementation(bc, bc_mask, missing_mask)
-        return wp.to_jax(bc_mask), wp.to_jax(missing_mask)
-
-    def warp_implementation_base(
-        self,
-        bc,
-        distances,
-        bc_mask,
-        missing_mask,
     ):
         assert bc.mesh_vertices is not None, f'Please provide the mesh vertices for {bc.__class__.__name__} BC using keyword "mesh_vertices"!'
         assert bc.indices is None, f"Please use IndicesBoundaryMasker operator if {bc.__class__.__name__} is imposed on known indices of the grid!"
@@ -208,14 +185,14 @@ class MeshBoundaryMasker(Operator):
             "Mesh points must be reshaped into an array (N, 3) where N indicates number of points!"
         )
 
-        domain_shape = bc_mask.shape[1:]  # (nx, ny, nz)
+        grid_shape = self.helper_masker.get_grid_shape(bc_mask)  # (nx, ny, nz)
         mesh_vertices = bc.mesh_vertices
         mesh_min = np.min(mesh_vertices, axis=0)
         mesh_max = np.max(mesh_vertices, axis=0)
 
-        if any(mesh_min < 0) or any(mesh_max >= domain_shape):
+        if any(mesh_min < 0) or any(mesh_max >= grid_shape):
             raise ValueError(
-                f"Mesh extents ({mesh_min}, {mesh_max}) exceed domain dimensions {domain_shape}. The mesh must be fully contained within the domain."
+                f"Mesh extents ({mesh_min}, {mesh_max}) exceed domain dimensions {grid_shape}. The mesh must be fully contained within the domain."
             )
 
         # We are done with bc.mesh_vertices. Remove them from BC objects
@@ -228,21 +205,33 @@ class MeshBoundaryMasker(Operator):
         )
         mesh_id = wp.uint64(mesh.id)
         bc_id = bc.id
+        return mesh_id, bc_id
+
+    @Operator.register_backend(ComputeBackend.JAX)
+    def jax_implementation(
+        self,
+        bc,
+        bc_mask,
+        missing_mask,
+    ):
+        raise NotImplementedError(f"Operation {self.__class__.__name__} not implemented in JAX!")
+
+    def warp_implementation_base(
+        self,
+        bc,
+        distances,
+        bc_mask,
+        missing_mask,
+    ):
+        # Prepare inputs
+        mesh_id, bc_id = self._prepare_kernel_inputs(bc, bc_mask)
 
         # Launch the appropriate warp kernel
-        kernel_list = self.warp_kernel
-        if bc.needs_mesh_distance:
-            wp.launch(
-                kernel_list[1],
-                inputs=[mesh_id, bc_id, distances, bc_mask, missing_mask],
-                dim=bc_mask.shape[1:],
-            )
-        else:
-            wp.launch(
-                kernel_list[0],
-                inputs=[mesh_id, bc_id, bc_mask, missing_mask],
-                dim=bc_mask.shape[1:],
-            )
+        wp.launch(
+            self.warp_kernel,
+            inputs=[mesh_id, bc_id, distances, bc_mask, missing_mask, wp.static(bc.needs_mesh_distance)],
+            dim=bc_mask.shape[1:],
+        )
         wp.launch(
             self.resolve_out_of_bound_kernel,
             inputs=[bc_id, bc_mask, missing_mask],

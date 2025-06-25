@@ -73,21 +73,17 @@ class ZouHeBC(BoundaryCondition):
             if profile is not None:
                 raise ValueError("Cannot specify both profile and prescribed_value")
 
-            # Convert input to numpy array for validation
-            if isinstance(prescribed_value, (tuple, list)):
-                prescribed_value = np.array(prescribed_value, dtype=np.float64)
-            elif isinstance(prescribed_value, (int, float)):
-                if bc_type == "pressure":
+            # Ensure prescribed_value is a NumPy array of floats
+            if bc_type == "velocity":
+                if isinstance(prescribed_value, (tuple, list, np.ndarray)):
+                    prescribed_value = np.asarray(prescribed_value, dtype=np.float64)
+                else:
+                    raise ValueError("Velocity prescribed_value must be a tuple, list, or array-like")
+            elif bc_type == "pressure":
+                if isinstance(prescribed_value, (int, float)):
                     prescribed_value = float(prescribed_value)
                 else:
-                    raise ValueError("Velocity prescribed_value must be a tuple or array")
-            elif isinstance(prescribed_value, np.ndarray):
-                prescribed_value = prescribed_value.astype(np.float64)
-
-            # Validate prescribed value
-            if bc_type == "velocity":
-                if not isinstance(prescribed_value, np.ndarray):
-                    raise ValueError("Velocity prescribed_value must be an array-like")
+                    raise ValueError("Pressure prescribed_value must be a scalar (int or float)")
 
                 # Check for non-zero elements - only one element should be non-zero
                 non_zero_count = np.count_nonzero(prescribed_value)

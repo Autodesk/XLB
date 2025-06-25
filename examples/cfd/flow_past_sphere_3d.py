@@ -51,7 +51,7 @@ y = np.arange(grid_shape[1])
 z = np.arange(grid_shape[2])
 X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
 indices = np.where((X - grid_shape[0] // 6) ** 2 + (Y - grid_shape[1] // 2) ** 2 + (Z - grid_shape[2] // 2) ** 2 < sphere_radius**2)
-sphere = [tuple(indices[i]) for i in range(velocity_set.d)]
+sphere = [tuple(indices[i].tolist()) for i in range(velocity_set.d)]
 
 
 # Define Boundary Conditions

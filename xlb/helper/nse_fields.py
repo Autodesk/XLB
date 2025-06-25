@@ -1,6 +1,7 @@
 from xlb import DefaultConfig
 from xlb.grid import grid_factory
 from xlb.precision_policy import Precision
+from xlb.compute_backend import ComputeBackend
 from typing import Tuple
 
 
@@ -35,7 +36,12 @@ def create_nse_fields(
     # Create fields
     f_0 = grid.create_field(cardinality=velocity_set.q, dtype=precision_policy.store_precision)
     f_1 = grid.create_field(cardinality=velocity_set.q, dtype=precision_policy.store_precision)
-    missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=Precision.UINT8)
     bc_mask = grid.create_field(cardinality=1, dtype=Precision.UINT8)
+    if compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
+        # For WARP and NEON, we use UINT8 for missing mask
+        missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=Precision.UINT8)
+    else:
+        # For JAX, we use bool for missing mask
+        missing_mask = grid.create_field(cardinality=velocity_set.q, dtype=Precision.BOOL)
 
     return grid, f_0, f_1, missing_mask, bc_mask

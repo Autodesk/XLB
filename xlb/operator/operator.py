@@ -1,6 +1,8 @@
 import inspect
 import traceback
 import jax
+import warp as wp
+from typing import Any
 
 from xlb.compute_backend import ComputeBackend
 from xlb import DefaultConfig
@@ -25,6 +27,11 @@ class Operator:
         # Check if the compute compute_backend is supported
         if self.compute_backend not in ComputeBackend:
             raise ValueError(f"Compute_backend {compute_backend} is not supported")
+
+        # Construct read/write functions for the compute backend
+        if self.compute_backend in [ComputeBackend.WARP, ComputeBackend.NEON]:
+            self.read_field, self.write_field = self._construct_read_write_functions()
+            self.read_field_neighbor = self._construct_read_field_neighbor()
 
         # Construct the kernel based compute_backend functions TODO: Maybe move this to the register or something
         if self.compute_backend == ComputeBackend.WARP:
@@ -128,6 +135,8 @@ class Operator:
             return self.precision_policy.store_precision.jax_dtype
         elif self.compute_backend == ComputeBackend.WARP:
             return self.precision_policy.store_precision.wp_dtype
+        elif self.compute_backend == ComputeBackend.NEON:
+            return self.precision_policy.store_precision.wp_dtype
 
     def get_precision_policy(self):
         """
@@ -158,3 +167,89 @@ class Operator:
         Leave it for now, as it is not clear how the neon backend will evolve
         """
         return None, None
+
+    def _construct_read_write_functions(self):
+        if self.compute_backend == ComputeBackend.WARP:
+
+            @wp.func
+            def read_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given index and direction.
+                return field[direction, index[0], index[1], index[2]]
+
+            @wp.func
+            def write_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+                value: Any,
+            ):
+                # This function writes a value to a field at a given index and direction.
+                field[direction, index[0], index[1], index[2]] = value
+
+        elif self.compute_backend == ComputeBackend.NEON:
+
+            @wp.func
+            def read_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given index and direction.
+                return wp.neon_read(field, index, direction)
+
+            @wp.func
+            def write_field(
+                field: Any,
+                index: Any,
+                direction: Any,
+                value: Any,
+            ):
+                # This function writes a value to a field at a given index and direction.
+                wp.neon_write(field, index, direction, value)
+
+        else:
+            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
+
+        return read_field, write_field
+
+    def _construct_read_field_neighbor(self):
+        """
+        Construct a function to read a field value at a neighboring index along a given direction.
+        """
+        from neon.multires.mPartition import neon_get_type
+
+        if self.compute_backend == ComputeBackend.WARP:
+
+            @wp.func
+            def read_field_neighbor(
+                field: Any,
+                index: Any,
+                offset: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given neighboring index and direction.
+                neighbor = index + offset
+                return field[direction, neighbor[0], neighbor[1], neighbor[2]]
+
+        elif self.compute_backend == ComputeBackend.NEON:
+
+            @wp.func
+            def read_field_neighbor(
+                field: Any,
+                index: Any,
+                offset: Any,
+                direction: Any,
+            ):
+                # This function reads a field value at a given neighboring index and direction.
+                unused_is_valid = wp.bool(False)
+                dtype = neon_get_type(field)  # This is a placeholder to ensure the dtype is set correctly
+                return wp.neon_read_ngh(field, index, offset, direction, dtype(0.0), unused_is_valid)
+
+        else:
+            raise ValueError(f"Unsupported compute backend: {self.compute_backend}")
+
+        return read_field_neighbor

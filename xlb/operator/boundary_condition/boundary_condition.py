@@ -7,8 +7,7 @@ import warp as wp
 from typing import Any
 from jax import jit
 from functools import partial
-import jax
-import jax.numpy as jnp
+import numpy as np
 
 from xlb.velocity_set.velocity_set import VelocitySet
 from xlb.precision_policy import PrecisionPolicy
@@ -85,7 +84,7 @@ class BoundaryCondition(Operator):
             _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)  # TODO fix vec bool
 
         @wp.func
-        def assemble_dynamic_data(
+        def assemble_auxiliary_data(
             index: Any,
             timestep: Any,
             missing_mask: Any,
@@ -98,10 +97,25 @@ class BoundaryCondition(Operator):
 
         # Construct some helper warp functions for getting tid data
         if self.compute_backend == ComputeBackend.WARP:
-            self.assemble_dynamic_data = assemble_dynamic_data
+            self.assemble_auxiliary_data = assemble_auxiliary_data
+
+    def pad_indices(self):
+        """
+        This method pads the indices to ensure that the boundary condition can be applied correctly.
+        It is used to find missing directions in indices_boundary_masker when the BC is imposed on a
+        geometry that is in the domain interior.
+        """
+        _d = self.velocity_set.d
+        bc_indices = np.array(self.indices)
+        lattice_velocity_np = self.velocity_set._c
+        if self.needs_padding:
+            bc_indices_padded = bc_indices[:, :, None] + lattice_velocity_np[:, None, :]
+            return np.unique(bc_indices_padded.reshape(_d, -1), axis=1)
+        else:
+            return bc_indices
 
     @partial(jit, static_argnums=(0,), inline=True)
-    def assemble_dynamic_data(self, f_pre, f_post, bc_mask, missing_mask):
+    def assemble_auxiliary_data(self, f_pre, f_post, bc_mask, missing_mask):
         """
         A placeholder function for prepare the auxiliary distribution functions for the boundary condition.
         currently being called after collision only.
@@ -236,14 +250,12 @@ class BoundaryCondition(Operator):
                         # wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
                         if l == lattice_central_index:
                             # The first BC auxiliary data is stored in the zero'th index of f_1 associated with its center.
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, l, prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, l, self.store_dtype(prescribed_values[l]))
                             counter += 1
                         elif _missing_mask[l] == wp.uint8(1):
                             # The other remaining BC auxiliary data are stored in missing directions of f_1.
                             # Only store up to num_of_aux_data
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, _opp_indices[l], prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, _opp_indices[l], self.store_dtype(prescribed_values[l]))
                             counter += 1
                         if counter > _num_of_aux_data:
                             # Only store up to num_of_aux_data
@@ -327,14 +339,12 @@ class BoundaryCondition(Operator):
                         # wp.neon_write(f_pn, index, l, self.store_dtype(feq[l]))
                         if l == lattice_central_index:
                             # The first BC auxiliary data is stored in the zero'th index of f_1 associated with its center.
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, l, prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, l, self.store_dtype(prescribed_values[l]))
                             counter += 1
                         elif _missing_mask[l] == wp.uint8(1):
                             # The other remaining BC auxiliary data are stored in missing directions of f_1.
                             # Only store up to num_of_aux_data
-                            # TODO: add self.store_dtype
-                            wp.neon_write(f_1_pn, index, _opp_indices[l], prescribed_values[l])
+                            wp.neon_write(f_1_pn, index, _opp_indices[l], self.store_dtype(prescribed_values[l]))
                             counter += 1
                         if counter > _num_of_aux_data:
                             # Only store up to num_of_aux_data
