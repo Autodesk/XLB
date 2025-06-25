@@ -18,9 +18,9 @@ class MeshMaskerAABBFill(MeshBoundaryMasker):
 
     def __init__(
         self,
-        velocity_set: VelocitySet,
-        precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend.WARP,
+        velocity_set: VelocitySet = None,
+        precision_policy: PrecisionPolicy = None,
+        compute_backend: ComputeBackend = None,
         fill_in_voxels: int = 3,
     ):
         # Call super

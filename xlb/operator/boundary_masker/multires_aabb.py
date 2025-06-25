@@ -19,9 +19,9 @@ class MultiresMeshMaskerAABB(MeshMaskerAABB):
 
     def __init__(
         self,
-        velocity_set: VelocitySet,
-        precision_policy: PrecisionPolicy,
-        compute_backend: ComputeBackend.WARP,
+        velocity_set: VelocitySet = None,
+        precision_policy: PrecisionPolicy = None,
+        compute_backend: ComputeBackend = None,
     ):
         # Call super
         super().__init__(velocity_set, precision_policy, compute_backend)
