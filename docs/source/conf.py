@@ -38,6 +38,8 @@ html_theme_options = {
     "use_edit_page_button": True,
     "use_issues_button": True,
     "use_fullscreen_button": True,
+    "navigation_with_keys": True,
+    "show_navbar_depth": 2,
 }
 
 extensions.append("myst_parser")
@@ -45,3 +47,5 @@ source_suffix = {
     '.rst': 'restructuredtext',
     '.md': 'markdown',
 }
+
+root_doc = 'index'
