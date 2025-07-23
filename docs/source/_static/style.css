@@ -1,0 +1,4 @@
+.bd-main .bd-content .bd-article-container {
+  max-width: none !important;
+  width: 100% !important;
+}

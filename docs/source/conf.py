@@ -32,15 +32,26 @@ exclude_patterns = []
 html_static_path = ['_static']
 
 html_theme = "sphinx_book_theme"
+# html_theme_options = {
+#     "repository_url": "https://github.com/Autodesk/XLB.git",
+#     "use_repository_button": True,
+#     "use_edit_page_button": True,
+#     "use_issues_button": True,
+#     "use_fullscreen_button": True,
+#     "navigation_with_keys": True,
+#     "show_navbar_depth": 2,
+# }
+
 html_theme_options = {
-    "repository_url": "https://github.com/Autodesk/XLB.git",
-    "use_repository_button": True,
-    "use_edit_page_button": True,
-    "use_issues_button": True,
-    "use_fullscreen_button": True,
-    "navigation_with_keys": True,
-    "show_navbar_depth": 2,
+    'show_toc_level': 2,
+    'repository_url': 'https://github.com/Autodesk/XLB.git',
+    'use_repository_button': True,     # add a "link to repository" button
+    'navigation_with_keys': False,
+    'article_header_start': ['toggle-primary-sidebar.html', 'breadcrumbs'],
 }
+
+html_logo = '_static/logo-transparent.png'
+
 
 extensions.append("myst_parser")
 source_suffix = {
@@ -49,3 +60,8 @@ source_suffix = {
 }
 
 root_doc = 'index'
+
+html_static_path = ['_static']
+
+def setup(app):
+    app.add_css_file('style.css')
