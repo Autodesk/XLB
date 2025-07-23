@@ -5,9 +5,9 @@ build:
   tools:
     python: "3.11"
 
-# python:
-#   install:
-#     - requirements: docs/requirements.txt  # or just requirements.txt if it's in root
+python:
+  install:
+    - requirements: docs/requirements.txt  # or just requirements.txt if it's in root
 
 sphinx:
   configuration: docs/source/conf.py  # or conf.py if it's in root
