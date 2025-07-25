@@ -43,9 +43,9 @@ theme:
         name: material
         features:
           - header.autohide
-        logo: assets/logo.svg
+        logo: assets/logo-transparent.png
         # Favicon
-        favicon: assets/logo.svg
+        favicon: assets/logo-transparent.png
         # Directory containing theme customizations
         # custom_dir: theme_customizations/
         font:
@@ -148,3 +148,8 @@ extra_javascript:
 
 nav:
   - XLB's home: index.md
+  - Installation: installation.md
+  - API Reference: api_reference.md
+  - Examples: examples.md
+  - Contributing: contributing.md
+  - Tutorails: tutorials.md
