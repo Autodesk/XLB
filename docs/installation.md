@@ -1,6 +1,6 @@
 # Installation
 
-## Getting Startedd
+## Getting Started
 To get started with XLB, you can install it using pip. There are different installation options depending on your hardware and needs:
 
 ### Basic Installation (CPU-only)
