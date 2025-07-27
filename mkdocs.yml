@@ -41,6 +41,7 @@ site_description: 'Documentation for project XLB'
 theme:
         # Name of the theme
         name: material
+        highlight_theme: default
         features:
           - header.autohide
         logo: assets/logo-transparent.png
@@ -76,8 +77,6 @@ markdown_extensions:
   - admonition
   - codehilite
   - smarty
-  - pymdownx.superfences
-  - pymdownx.highlight
   - markdown.extensions.attr_list
   - markdown.extensions.def_list
   - markdown.extensions.fenced_code
@@ -87,15 +86,15 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
   - attr_list
-  - pymdownx.superfences
   - pymdownx.highlight:
       use_pygments: true
       linenums: true
       anchor_linenums: true
       linenums_style: table
   - pymdownx.snippets
-  - pymdownx.highlight
   - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - toc
 
 # MkDocs supports plugins written in Python to extend the functionality of the site
 # This parameter contains a list of the MkDocs plugins to add to the site
@@ -153,3 +152,9 @@ nav:
   - Examples: examples.md
   - Contributing: contributing.md
   - Tutorails: tutorials.md
+  - Operator: operator.md
+  - Constants: constants.md
+  # - BC: BC.md
+  # - streaming_and_collision: streaming_and_collision.md
+  # - grid: grid.md
+  # - common steps: common_steps.md
