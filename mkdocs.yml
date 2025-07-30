@@ -148,13 +148,13 @@ extra_javascript:
 nav:
   - XLB's home: index.md
   - Installation: installation.md
-  - API Reference: api_reference.md
-  - Examples: examples.md
-  - Contributing: contributing.md
   - Tutorails: tutorials.md
   - Operator: operator.md
   - Constants: constants.md
-  # - BC: BC.md
+  - Boundary Condition: BC.md
+  - Grid: grid.md
+  - Common Steps: common_steps.md
   # - streaming_and_collision: streaming_and_collision.md
-  - grid: grid.md
-  - common steps: common_steps.md
+  # - API Reference: api_reference.md
+  - Examples: examples.md
+  - Contributing: contributing.md
