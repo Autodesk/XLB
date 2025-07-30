@@ -156,5 +156,5 @@ nav:
   - Constants: constants.md
   # - BC: BC.md
   # - streaming_and_collision: streaming_and_collision.md
-  # - grid: grid.md
-  # - common steps: common_steps.md
+  - grid: grid.md
+  - common steps: common_steps.md
