@@ -82,84 +82,25 @@ This BC effectively does nothing to the boundary values — useful for debugging
 
 ## 🚧 **Boundary Condition Subclasses**
 
-## 1. DoNothingBC
-
-The `DoNothingBC` class implements no operation boundary condition that effectively skips streaming step at boundary nodes, leaving distributions unchanged.
-
-- **Step:**  Streaming
-- **Backend:** JAX, Warp
-- **Notes:** Useful for test cases or special boundary handling.
-
----
-
-## 2. EquilibriumBC
-
-The `EquilibriumBC` class implements a boundary condition that enforces the distribution functions to be at their equilibrium state for prescribed density and velocity values.
-
-- **Step:**  Streaming
-- **Backend:** JAX, Warp
-- **Notes:** Constructor requires macroscopic density (`rho`) and velocity (`u`) values
-
----
-
-## 3. ExtrapolationOutflowBC
-
-The `ExtrapolationOutflowBC` class implements an extrapolation-based outflow boundary condition to reduce wave reflections at simulation domain exits.
-
-- **Step:** Streaming
-- **Backend:** JAX, Warp
-- **Notes:** 
-
----
-
-## 4. FullwayBounceBackBC
-
-The `FullwayBounceBackBC` class implements the classic full bounce-back boundary condition, reflecting distribution functions at boundaries.
-
-- **Step:** Collision
-- **Backend:** JAX, Warp
-- **Notes:** Enforces no-slip wall conditions by reversing particle distributions at the boundary during the collision step.
-
----
-
-## 5. GradsApproximationBC
-
-The `GradsApproximationBC` class implements boundary conditions using Grad’s approximation to reconstruct missing distribution functions based on macroscopic moments.
-
-- **Step:** Streaming
-- **Backend:** Warp
-- **Notes:** Requires 3D velocity sets (not implemented in 2D)
----
-
-## 6. HalfwayBounceBackBC
-
-The `HalfwayBounceBackBC` class implements the halfway bounce-back boundary condition, a popular variant of the bounce-back method used in LBM simulations.
-
-- **Step:** Streaming
-- **Backend:** JAX, Warp
-- **Notes:** Enforces no-slip conditions by reflecting distribution functions halfway between fluid and boundary nodes, improving accuracy over fullway bounce-back.
----
-
-## 7. ZouHeBC
-
-The `ZouHeBC` class implements the classical Zou-He boundary condition for prescribed velocity or pressure boundaries using non-equilibrium bounce-back.
-
-- **Step:** Streaming
-- **Backend:** JAX, Warp
-- **Notes:** Supports only normal velocity components (only one non-zero velocity element allowed)
+1. **DoNothingBC**:
+In this boundary condition, the fluid populations are allowed to pass through the boundary without any reflection or modification. Useful for test cases or special boundary handling.
+2. **EquilibriumBC**:
+In this boundary condition, the fluid populations are assumed to be in at equilibrium. Constructor has optional macroscopic density (`rho`) and velocity (`u`) values
+3. **FullwayBounceBackBC**:
+In this boundary condition, the velocity of the fluid populations is reflected back to the fluid side of the boundary, resulting in zero fluid velocity at the boundary. Enforces no-slip wall conditions by reversing particle distributions at the boundary during the collision step.
+4. **HalfwayBounceBackBC**:
+Similar to the `FullwayBounceBackBC`, in this boundary condition, the velocity of the fluid populations is partially reflected back to the fluid side of the boundary, resulting in a non-zero fluid velocity at the boundary. Enforces no-slip conditions by reflecting distribution functions halfway between fluid and boundary nodes, improving accuracy over fullway bounce-back.
+5. **ZouHeBC**:
+This boundary condition is used to impose a prescribed velocity or pressure profile at the boundary. Supports only normal velocity components (only one non-zero velocity element allowed)
+6. **RegularizedBC**:
+This boundary condition is used to impose a prescribed velocity or pressure profile at the boundary. This BC is more stable than `ZouHeBC`, but computationally more expensive.
+7. **ExtrapolationOutflowBC**:
+A type of outflow boundary condition that uses extrapolation to avoid strong wave reflections.
+8. **GradsApproximationBC**:
+Interpolated bounce-back boundary condition for representing curved boundaries. Requires 3D velocity sets (not implemented in 2D)
 
 
----
 
-## 8. RegularizedBC
-
-The `RegularizedBC` class extends the `ZouHeBC` to implement a regularized boundary condition incorporating a non-equilibrium bounce-back with additional second-moment corrections.
-
-- **Step:** Streaming
-- **Backend:** JAX, Warp
-- **Notes:**
-
----
 
 ## Summary Table of Boundary Conditions
 
@@ -167,9 +108,9 @@ The `RegularizedBC` class extends the `ZouHeBC` to implement a regularized bound
 |------------------------|------------------------------------------------------|---------------------|------------------------|-----------------------|
 | `DoNothingBC`           |  Leaves boundary distributions unchanged (no-op)    | STREAMING            | No                     |JAX, Warp              |
 | `EquilibriumBC`         | Prescribe equilibrium populations                    | STREAMING           | No                     | JAX, Warp             |
-| `ExtrapolationOutflowBC`| Smooth outflow via extrapolation                     | STREAMING           | Yes                    | JAX, Warp             |
 | `FullwayBounceBackBC`   | Classic bounce-back (no-slip)                         | COLLISION           | No                     | JAX, Warp             |
-| `GradsApproximationBC`  | Approximate missing populations via Grad's method   | STREAMING           | No                     | Warp only             |
 | `HalfwayBounceBackBC`   | Halfway bounce-back for no-slip walls                | STREAMING           | No                     | JAX, Warp             |
 | `ZouHeBC`               |  Classical Zou-He velocity/pressure BC with non-equilibrium bounce-back | STREAMING | Yes            |JAX, Warp              |
 | `RegularizedBC`         | Non-equilibrium bounce-back with second moment regularization | STREAMING           | No             | JAX, Warp             |
+| `ExtrapolationOutflowBC`| Smooth outflow via extrapolation                     | STREAMING           | Yes                    | JAX, Warp             |
+| `GradsApproximationBC`  | Approximate missing populations via Grad's method   | STREAMING           | No                     | Warp only             |
