@@ -149,14 +149,15 @@ nav:
   - XLB's home: index.md
   - Installation: installation.md
   # - Tutorails: tutorials.md
-  - Operator: operator.md
-  - Constants: constants.md
-  - Boundary Condition: BC.md
-  - Grid: grid.md
-  - Macroscopic: macroscopic.md
-  - Stepper: stepper.md
-  - Common Steps: common_steps.md
-  - Streaming and Collision: streaming_and_collision.md
-  # - API Reference: api_reference.md
+  - API & Modules:
+    - Common Steps: common_steps.md
+    - Constants: constants.md
+    - Grid: grid.md
+    - Operator: operator.md
+    - Boundary Condition: BC.md
+    - Macroscopic: macroscopic.md
+    - Stepper: stepper.md
+    - Streaming and Collision: streaming_and_collision.md
+    # - API Reference: api_reference.md
   - Examples: examples.md
   - Contributing: contributing.md
