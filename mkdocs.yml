@@ -148,16 +148,18 @@ extra_javascript:
 nav:
   - XLB's home: index.md
   - Installation: installation.md
-  # - Tutorails: tutorials.md
   - API & Modules:
     - Common Steps: common_steps.md
     - Constants: constants.md
+    - Velocity set: velocity_set.md
     - Grid: grid.md
     - Operator: operator.md
+    - Distribution: distribution.md
     - Boundary Condition: BC.md
     - Macroscopic: macroscopic.md
     - Stepper: stepper.md
     - Streaming and Collision: streaming_and_collision.md
-    # - API Reference: api_reference.md
+    - Force: force.md
+    - Equilibrium: equilibrium.md
   - Examples: examples.md
   - Contributing: contributing.md
