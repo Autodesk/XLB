@@ -145,21 +145,54 @@ extra_javascript:
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
+# nav:
+#   - XLB's home: index.md
+#   - Installation: installation.md
+#   - API & Modules:
+#     - Common Steps: common_steps.md
+#     - Constants: constants.md
+#     - Velocity set: velocity_set.md
+#     - Grid: grid.md
+#     - Operator: operator.md
+#     - Distribution: distribution.md
+#     - Boundary Condition: BC.md
+#     - Macroscopic: macroscopic.md
+#     - Stepper: stepper.md
+#     - Streaming and Collision: streaming_and_collision.md
+#     - Force: force.md
+#     - Equilibrium: equilibrium.md
+#   - Examples: examples.md
+#   - Contributing: contributing.md
+
+
 nav:
-  - XLB's home: index.md
-  - Installation: installation.md
-  - API & Modules:
-    - Common Steps: common_steps.md
-    - Constants: constants.md
-    - Velocity set: velocity_set.md
-    - Grid: grid.md
-    - Operator: operator.md
-    - Distribution: distribution.md
-    - Boundary Condition: BC.md
-    - Macroscopic: macroscopic.md
-    - Stepper: stepper.md
-    - Streaming and Collision: streaming_and_collision.md
-    - Force: force.md
-    - Equilibrium: equilibrium.md
-  - Examples: examples.md
-  - Contributing: contributing.md
+  - 'Home': 'index.md'
+  - 'User Guide':
+    - 'Introduction': 'guide/introduction.md'
+    - 'Installation': 'guide/installation.md'
+    - 'Getting Started': 'guide/getting_started.md'
+    - 'Core Concepts': 'guide/concepts.md'
+    # - 'How-to Guides':
+    #   - 'Set up Boundary Conditions': 'guides/how-to-bc.md'
+    #   - 'Implement a Forcing Scheme': 'guides/how-to-force.md'
+  # - 'Advanced Guides':
+  #   - 'Parallel Simulations with JAX': 'advanced/parallelism.md'
+  - 'API Reference':
+    - 'Simulation Setup':
+      - 'Constants': 'api/constants.md'
+      - 'Velocity Set': 'api/velocity_set.md'
+      - 'Grid': 'api/grid.md'
+    - 'LBM Kernel':
+      - 'Equilibrium': 'api/equilibrium.md'
+      - 'Operator': 'api/operator.md'
+      - 'Streaming and Collision': 'api/streaming_and_collision.md'
+    - 'Physics & Numerics':
+      - 'Boundary Condition': 'api/BC.md'
+      - 'Force': 'api/force.md'
+    - 'Simulation Control':
+      - 'Stepper': 'api/stepper.md'
+      - 'Macroscopic Variables': 'api/macroscopic.md'
+    - 'Distributed Computing':
+      - 'Distribution': 'api/distribution.md'
+  - 'Examples': examples.md
+  - 'Contributing': 'contributing.md'
