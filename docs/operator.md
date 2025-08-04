@@ -60,3 +60,29 @@ Returns the compute data type (e.g., float32, float64) according to the precisio
 
 `store_dtype`
 Returns the storage data type according to the precision policy and backend.
+
+---
+
+## Precision Caster
+
+The **PrecisionCaster** is a utility operator for converting lattice Boltzmann data between different numeric precisions.
+
+### Overview
+
+Precision plays an important role in balancing **accuracy** and **performance** during simulations.
+For example, some steps may require high precision (`float64`) for stability, while others can run efficiently in lower precision (`float32`).
+
+The `PrecisionCaster` operator handles this conversion seamlessly for both supported backends.
+
+### Features
+
+- Converts distribution functions between precisions (e.g., FP32 → FP64).
+- Available for **JAX** and **Warp** backends.
+- Works transparently with any chosen velocity set (e.g., D2Q9, D3Q19, D3Q27).
+- Can be used before or after key operators to ensure data is in the desired format.
+
+### Use Cases
+
+- **Performance optimization**: Run most of the simulation in FP32 for speed, while critical calculations use FP64.
+- **Mixed-precision workflows**: Adapt precision dynamically depending on stability needs.
+- **GPU acceleration**: Exploit lower-precision compute on GPUs while preserving accuracy where needed.
