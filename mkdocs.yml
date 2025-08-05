@@ -145,25 +145,6 @@ extra_javascript:
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
-# nav:
-#   - XLB's home: index.md
-#   - Installation: installation.md
-#   - API & Modules:
-#     - Common Steps: common_steps.md
-#     - Constants: constants.md
-#     - Velocity set: velocity_set.md
-#     - Grid: grid.md
-#     - Operator: operator.md
-#     - Distribution: distribution.md
-#     - Boundary Condition: BC.md
-#     - Macroscopic: macroscopic.md
-#     - Stepper: stepper.md
-#     - Streaming and Collision: streaming_and_collision.md
-#     - Force: force.md
-#     - Equilibrium: equilibrium.md
-#   - Examples: examples.md
-#   - Contributing: contributing.md
-
 
 nav:
   - 'Home': 'index.md'
@@ -183,8 +164,8 @@ nav:
       - 'Velocity Set': 'api/velocity_set.md'
       - 'Grid': 'api/grid.md'
     - 'LBM Kernel':
-      - 'Equilibrium': 'api/equilibrium.md'
       - 'Operator': 'api/operator.md'
+      - 'Equilibrium': 'api/equilibrium.md'
       - 'Streaming and Collision': 'api/streaming_and_collision.md'
     - 'Physics & Numerics':
       - 'Boundary Condition': 'api/BC.md'
