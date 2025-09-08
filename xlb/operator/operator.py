@@ -1,10 +1,10 @@
-# Base class for all operators, (collision, streaming, equilibrium, etc.)
-import warp as wp
-from typing import Any
+import inspect
+import traceback
+import jax
 
 from xlb.compute_backend import ComputeBackend
-from xlb.precision_policy import PrecisionPolicy, Precision
-from xlb.global_config import GlobalConfig
+from xlb import DefaultConfig
+from xlb.precision_policy import PrecisionPolicy
 
 
 class Operator:
@@ -16,56 +16,62 @@ class Operator:
 
     _backends = {}
 
-    def __init__(self, velocity_set, precision_policy, compute_backend):
+    def __init__(self, velocity_set=None, precision_policy=None, compute_backend=None):
         # Set the default values from the global config
-        self.velocity_set = velocity_set or GlobalConfig.velocity_set
-        self.precision_policy = precision_policy or GlobalConfig.precision_policy
-        self.compute_backend = compute_backend or GlobalConfig.compute_backend
+        self.velocity_set = velocity_set or DefaultConfig.velocity_set
+        self.precision_policy = precision_policy or DefaultConfig.default_precision_policy
+        self.compute_backend = compute_backend or DefaultConfig.default_backend
 
-        # Check if the compute backend is supported
+        # Check if the compute compute_backend is supported
         if self.compute_backend not in ComputeBackend:
-            raise ValueError(f"Compute backend {compute_backend} is not supported")
+            raise ValueError(f"Compute_backend {compute_backend} is not supported")
 
-        # Construct the kernel based backend functions TODO: Maybe move this to the register or something
+        # Construct the kernel based compute_backend functions TODO: Maybe move this to the register or something
         if self.compute_backend == ComputeBackend.WARP:
             self.warp_functional, self.warp_kernel = self._construct_warp()
+
+        # Updating JAX config in case fp64 is requested
+        if self.compute_backend == ComputeBackend.JAX and (
+            precision_policy == PrecisionPolicy.FP64FP64 or precision_policy == PrecisionPolicy.FP64FP32
+        ):
+            jax.config.update("jax_enable_x64", True)
 
     @classmethod
     def register_backend(cls, backend_name):
         """
-        Decorator to register a backend for the operator.
+        Decorator to register a compute_backend for the operator.
         """
 
         def decorator(func):
-            # Use the combination of operator name and backend name as the key
             subclass_name = func.__qualname__.split(".")[0]
-            key = (subclass_name, backend_name)
+            signature = inspect.signature(func)
+            key = (subclass_name, backend_name, str(signature))
             cls._backends[key] = func
             return func
 
         return decorator
 
     def __call__(self, *args, callback=None, **kwargs):
-        """
-        Calls the operator with the compute backend specified in the constructor.
-        If a callback is provided, it is called either with the result of the operation
-        or with the original arguments and keyword arguments if the backend modifies them by reference.
-        """
-        key = (self.__class__.__name__, self.compute_backend)
-        backend_method = self._backends.get(key)
+        method_candidates = [
+            (key, method) for key, method in self._backends.items() if key[0] == self.__class__.__name__ and key[1] == self.compute_backend
+        ]
+        bound_arguments = None
+        for key, backend_method in method_candidates:
+            try:
+                # This attempts to bind the provided args and kwargs to the compute_backend method's signature
+                bound_arguments = inspect.signature(backend_method).bind(self, *args, **kwargs)
+                bound_arguments.apply_defaults()  # This fills in any default values
+                result = backend_method(self, *args, **kwargs)
+                callback_arg = result if result is not None else (args, kwargs)
+                if callback and callable(callback):
+                    callback(callback_arg)
+                return result
+            except Exception as e:
+                error = e
+                traceback_str = traceback.format_exc()
+                continue  # This skips to the next candidate if binding fails
 
-        if backend_method:
-            result = backend_method(self, *args, **kwargs)
-
-            # Determine what to pass to the callback based on the backend behavior
-            callback_arg = result if result is not None else (args, kwargs)
-
-            if callback and callable(callback):
-                callback(callback_arg)
-
-            return result
-        else:
-            raise NotImplementedError(f"Backend {self.compute_backend} not implemented")
+        raise Exception(f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}\n {traceback_str}")
 
     @property
     def supported_compute_backend(self):
@@ -93,10 +99,10 @@ class Operator:
         This should be used with caution as all backends may not have the same API.
         """
         if self.compute_backend == ComputeBackend.JAX:
-            import jax.numpy as backend
+            import jax.numpy as compute_backend
         elif self.compute_backend == ComputeBackend.WARP:
-            import warp as backend
-        return backend
+            import warp as compute_backend
+        return compute_backend
 
     @property
     def compute_dtype(self):
@@ -122,7 +128,7 @@ class Operator:
         """
         Construct the warp functional and kernel of the operator
         TODO: Maybe a better way to do this?
-        Maybe add this to the backend decorator?
-        Leave it for now, as it is not clear how the warp backend will evolve
+        Maybe add this to the compute backend decorator?
+        Leave it for now, as it is not clear how the warp compute backend will evolve
         """
         return None, None

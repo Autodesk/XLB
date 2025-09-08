@@ -1,12 +1,2 @@
-from xlb.operator.boundary_masker.boundary_masker import (
-    BoundaryMasker,
-)
-from xlb.operator.boundary_masker.indices_boundary_masker import (
-    IndicesBoundaryMasker,
-)
-from xlb.operator.boundary_masker.planar_boundary_masker import (
-    PlanarBoundaryMasker,
-)
-from xlb.operator.boundary_masker.stl_boundary_masker import (
-    STLBoundaryMasker,
-)
+from xlb.operator.boundary_masker.indices_boundary_masker import IndicesBoundaryMasker
+from xlb.operator.boundary_masker.mesh_boundary_masker import MeshBoundaryMasker

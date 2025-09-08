@@ -38,3 +38,150 @@ If you would like to contribute your code to XLB, you should:
 
 
 When you submit your code, please include relevant tests as part of the pull request, and ensure that your comments and coding style align with the rest of the project. You can refer to the existing code for examples of the testing and style practices that the project follows.
+
+Important: Ensure that your commits are atomic and self-contained. Each PR should only make a single, cohesive change. You should also squash your commits into a single commit as described below before submitting your PR.
+
+## Detailed Contribution Guidelines
+
+### 1. Setup Your Local Environment
+
+- **Clone Your Fork:**
+  If you haven't yet cloned your copy of the repository, you can do so with the following command:
+
+  ```bash
+  git clone https://github.com/Autodesk/XLB
+  cd XLB
+  ```
+
+- **Add Upstream Remote:** Set up the upstream remote to track the original repository.
+
+  ```bash
+  git remote add upstream https://github.com/Autodesk/XLB
+  ```
+
+  You can check your remotes to ensure everything is set up correctly:
+
+  ```bash
+  git remote -v
+  ```
+
+### 2. Syncing Your Main Branch with Upstream
+
+- **Fetch Updates from Upstream:**
+  To keep your local repository up to date with the upstream `main` branch:
+
+  ```bash
+  git fetch upstream
+  ```
+
+- **Sync Your Main Branch:**
+  Checkout to your local `main` and merge the upstream changes to ensure it's always up to date:
+
+  ```bash
+  git checkout main
+  git merge upstream/main
+  ```
+
+- **Push to Your Fork (Optional):**
+  It is a good practice to also keep the fork on GitHub in sync:
+
+  ```bash
+  git push origin main
+  ```
+
+### 3. Create a Feature Branch for Your Contribution
+
+- **Create and Checkout a New Branch:**
+  Always work on a new branch for each feature or issue to keep things organized:
+  ```bash
+  git checkout -b <feature_branch_name>
+  ```
+  Choose a descriptive branch name that makes it clear what your contribution is.
+
+### 4. Make Your Changes
+
+- **Make Changes and Commit:**
+  Make all the changes you need, then stage and commit them:
+
+  ```bash
+  git add .
+  git commit -m "Description of the changes made"
+  ```
+
+- **Amend or Squash Commits (Optional):**
+  If you need to update the commit message or add more changes before pushing, you can amend your commit:
+
+  ```bash
+  git add .
+  git commit --amend
+  ```
+
+  This will let you update the commit message or include additional changes in a single commit.
+
+  To consolidate your existing commits into a single PR, first, you need to reset your branch to the point where you want the single commit to start from (likely the last commit on origin/main before your work began).
+
+  ```bash
+    git reset --soft <commit-id>
+  ```
+
+  Replace `<commit-id>` with the hash of the commit that should be the base of your PR (it is likely the last commit on origin/main before your changes, use that ID).
+
+  Now, all your work will be staged as if it’s a single set of changes. You can commit this with a new message that represents the combined work.
+
+```bash
+git commit -m "Combined changes"
+```
+
+Finally, you can push your changes to your fork with the following command:
+
+```bash
+git push --force origin <feature_branch_name>
+```
+
+### 5. Pushing Your Branch and Creating a Pull Request
+
+- **Push Your Branch to Your Fork:**
+
+  ```bash
+  git push origin <feature_branch_name>
+  ```
+
+- **Create a Pull Request (PR):**
+  Go to the repository on GitHub, and you should see an option to create a Pull Request from your recently pushed branch. Follow the steps to create the PR.
+
+### 6. Handling Feedback and Updating PR
+
+- **Make Changes Based on Feedback:**
+  If changes are requested in the PR, make those changes in your local branch and amend the commit if needed:
+  ```bash
+  git add .
+  git commit --amend
+  git push --force origin <feature_branch_name>
+  ```
+  The `--force` flag is necessary because you amended an existing commit, and you need to update the remote branch accordingly.
+
+### 7. Finalizing and Merging
+
+- **Squash Commits on Maintainer Side:**
+  When the PR is ready to be merged, the maintainer *will* squash multiple commits into a single one, or you can amend and force push until only a single commit is present.
+
+- **Sync Your Fork Main Branch Again:**
+  Once your PR is merged, make sure to sync your local and forked `main` branch again:
+
+  ```bash
+  git checkout main
+  git fetch upstream
+  git merge upstream/main
+  git push origin main
+  ```
+
+### 8. Start a New Contribution
+
+- **Create a New Branch:**
+  For each new contribution, repeat the branching step:
+  ```bash
+  git checkout main
+  git checkout -b <new_feature_branch>
+  ```
+---
+This workflow ensures every contribution is separate and cleanly managed.

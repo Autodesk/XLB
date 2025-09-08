@@ -14,15 +14,9 @@ class D3Q19(VelocitySet):
     Lattice Boltzmann Method for simulating fluid flows in three dimensions.
     """
 
-    def __init__(self):
+    def __init__(self, precision_policy, compute_backend):
         # Construct the velocity vectors and weights
-        c = np.array(
-            [
-                ci
-                for ci in itertools.product([-1, 0, 1], repeat=3)
-                if np.sum(np.abs(ci)) <= 2
-            ]
-        ).T
+        c = np.array([ci for ci in itertools.product([0, -1, 1], repeat=3) if np.sum(np.abs(ci)) <= 2]).T
         w = np.zeros(19)
         for i in range(19):
             if np.sum(np.abs(c[:, i])) == 0:
@@ -33,4 +27,4 @@ class D3Q19(VelocitySet):
                 w[i] = 1.0 / 36.0
 
         # Initialize the lattice
-        super().__init__(3, 19, c, w)
+        super().__init__(3, 19, c, w, precision_policy=precision_policy, compute_backend=compute_backend)

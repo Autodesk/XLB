@@ -1,9 +1,9 @@
 # Enum for precision policy
 
 from enum import Enum, auto
-
 import jax.numpy as jnp
 import warp as wp
+
 
 class Precision(Enum):
     FP64 = auto()
@@ -42,6 +42,7 @@ class Precision(Enum):
         else:
             raise ValueError("Invalid precision")
 
+
 class PrecisionPolicy(Enum):
     FP64FP64 = auto()
     FP64FP32 = auto()
@@ -54,13 +55,13 @@ class PrecisionPolicy(Enum):
         if self == PrecisionPolicy.FP64FP64:
             return Precision.FP64
         elif self == PrecisionPolicy.FP64FP32:
-            return Precision.FP32
+            return Precision.FP64
         elif self == PrecisionPolicy.FP64FP16:
-            return Precision.FP16
+            return Precision.FP64
         elif self == PrecisionPolicy.FP32FP32:
             return Precision.FP32
         elif self == PrecisionPolicy.FP32FP16:
-            return Precision.FP16
+            return Precision.FP32
         else:
             raise ValueError("Invalid precision policy")
 
@@ -78,3 +79,11 @@ class PrecisionPolicy(Enum):
             return Precision.FP16
         else:
             raise ValueError("Invalid precision policy")
+
+    def cast_to_compute_jax(self, array):
+        compute_precision = self.compute_precision
+        return jnp.array(array, dtype=compute_precision.jax_dtype)
+
+    def cast_to_store_jax(self, array):
+        store_precision = self.store_precision
+        return jnp.array(array, dtype=store_precision.jax_dtype)

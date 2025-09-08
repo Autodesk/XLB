@@ -1,10 +1,10 @@
 # Enum classes
-from xlb.compute_backend import ComputeBackend
-from xlb.precision_policy import PrecisionPolicy, Precision
-from xlb.physics_type import PhysicsType
+from xlb.compute_backend import ComputeBackend as ComputeBackend
+from xlb.precision_policy import PrecisionPolicy as PrecisionPolicy, Precision as Precision
+from xlb.physics_type import PhysicsType as PhysicsType
 
 # Config
-from .global_config import init, current_backend
+from .default_config import init as init, DefaultConfig as DefaultConfig
 
 # Velocity Set
 import xlb.velocity_set
@@ -20,7 +20,10 @@ import xlb.operator.macroscopic
 import xlb.grid
 
 # Solvers
-import xlb.solver
+import xlb.helper
 
 # Utils
 import xlb.utils
+
+# Distributed computing
+import xlb.distribute

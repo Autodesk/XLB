@@ -70,7 +70,7 @@ def _stream_to_backend(stream, backend):
     # Convert stream to backend stream
     if backend == "jax":
         raise ValueError("Jax currently does not support streams")
-    elif backend == "warp":
+    if backend == "warp":
         backend_stream = wp.Stream(cuda_stream=stream.ptr)
     elif backend == "cupy":
         backend_stream = stream

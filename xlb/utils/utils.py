@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pylab as plt
 from matplotlib import cm
-import numpy as np
 from time import time
 #import pyvista as pv
 from jax.image import resize
@@ -38,16 +37,14 @@ def downsample_field(field, factor, method="bicubic"):
     else:
         new_shape = tuple(dim // factor for dim in field.shape[:-1])
         downsampled_components = []
-        for i in range(
-            field.shape[-1]
-        ):  # Iterate over the last dimension (vector components)
+        for i in range(field.shape[-1]):  # Iterate over the last dimension (vector components)
             resized = resize(field[..., i], new_shape, method=method)
             downsampled_components.append(resized)
 
         return jnp.stack(downsampled_components, axis=-1)
 
 
-def save_image(fld, timestep, prefix=None):
+def save_image(fld, timestep=None, prefix=None, **kwargs):
     """
     Save an image of a field at a given timestep.
 
@@ -66,22 +63,28 @@ def save_image(fld, timestep, prefix=None):
 
     Notes
     -----
-    This function saves the field as an image in the PNG format. The filename is based on the name of the main script file, the provided prefix, and the timestep number.
-    If the field is 3D, the magnitude of the field is calculated and saved. The image is saved with the 'nipy_spectral' colormap and the origin set to 'lower'.
+    This function saves the field as an image in the PNG format.
+    The filename is based on the name of the main script file, the provided prefix, and the timestep number.
+    If the field is 3D, the magnitude of the field is calculated and saved.
+    The image is saved with the 'nipy_spectral' colormap and the origin set to 'lower'.
     """
-    fname = os.path.basename(__main__.__file__)
-    fname = os.path.splitext(fname)[0]
-    if prefix is not None:
-        fname = prefix + fname
-    fname = fname + "_" + str(timestep).zfill(4)
+    if prefix is None:
+        fname = os.path.basename(__main__.__file__)
+        fname = os.path.splitext(fname)[0]
+    else:
+        fname = prefix
+
+    if timestep is not None:
+        fname = fname + "_" + str(timestep).zfill(4)
 
     if len(fld.shape) > 3:
         raise ValueError("The input field should be 2D!")
-    elif len(fld.shape) == 3:
+    if len(fld.shape) == 3:
         fld = np.sqrt(fld[0, ...] ** 2 + fld[0, ...] ** 2)
 
     plt.clf()
-    plt.imsave(fname + ".png", fld.T, cmap=cm.nipy_spectral, origin="lower")
+    kwargs.pop("cmap", None)
+    plt.imsave(fname + ".png", fld.T, cmap=cm.nipy_spectral, origin="lower", **kwargs)
 
 
 def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
@@ -116,9 +119,7 @@ def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
         if key == list(fields.keys())[0]:
             dimensions = value.shape
         else:
-            assert (
-                value.shape == dimensions
-            ), "All fields must have the same dimensions!"
+            assert value.shape == dimensions, "All fields must have the same dimensions!"
 
     output_filename = os.path.join(output_dir, prefix + "_" + f"{timestep:07d}.vtk")
 
@@ -229,15 +230,11 @@ def rotate_geometry(indices, origin, axis, angle):
     This function rotates the mesh by applying a rotation matrix to the voxel indices. The rotation matrix is calculated
     using the axis-angle representation of rotations. The origin of the rotation axis is assumed to be at (0, 0, 0).
     """
-    indices_rotated = (jnp.array(indices).T - origin) @ axangle2mat(
-        axis, angle
-    ) + origin
+    indices_rotated = (jnp.array(indices).T - origin) @ axangle2mat(axis, angle) + origin
     return tuple(jnp.rint(indices_rotated).astype("int32").T)
 
 
-def voxelize_stl(
-    stl_filename, length_lbm_unit=None, tranformation_matrix=None, pitch=None
-):
+def voxelize_stl(stl_filename, length_lbm_unit=None, tranformation_matrix=None, pitch=None):
     """
     Converts an STL file to a voxelized mesh.
 
@@ -312,10 +309,8 @@ def axangle2mat(axis, angle, is_normalized=False):
     xyC = x * yC
     yzC = y * zC
     zxC = z * xC
-    return jnp.array(
-        [
-            [x * xC + c, xyC - zs, zxC + ys],
-            [xyC + zs, y * yC + c, yzC - xs],
-            [zxC - ys, yzC + xs, z * zC + c],
-        ]
-    )
+    return jnp.array([
+        [x * xC + c, xyC - zs, zxC + ys],
+        [xyC + zs, y * yC + c, yzC - xs],
+        [zxC - ys, yzC + xs, z * zC + c],
+    ])

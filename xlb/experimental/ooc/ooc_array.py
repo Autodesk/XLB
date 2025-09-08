@@ -3,7 +3,6 @@ import cupy as cp
 
 # from mpi4py import MPI
 import itertools
-from dataclasses import dataclass
 
 from xlb.experimental.ooc.tiles.dense_tile import DenseTile, DenseGPUTile, DenseCPUTile
 from xlb.experimental.ooc.tiles.compressed_tile import (
@@ -63,9 +62,7 @@ class OOCArray:
         if self.codec is None:
             self.Tile = DenseTile
             self.DeviceTile = DenseGPUTile
-            self.HostTile = (
-                DenseCPUTile  # TODO: Possibly make HardDiskTile or something
-            )
+            self.HostTile = DenseCPUTile  # TODO: Possibly make HardDiskTile or something
 
         else:
             self.Tile = CompressedTile
@@ -84,45 +81,33 @@ class OOCArray:
 
         # Get number of tiles per process
         if self.nr_tiles % self.nr_proc != 0:
-            raise ValueError(
-                f"Number of tiles {self.nr_tiles} does not divide number of processes {self.nr_proc}."
-            )
+            raise ValueError(f"Number of tiles {self.nr_tiles} does not divide number of processes {self.nr_proc}.")
         self.nr_tiles_per_proc = self.nr_tiles // self.nr_proc
 
         # Make the tile mapppings
         self.tile_process_map = {}
         self.tile_device_map = {}
-        for i, tile_index in enumerate(
-            itertools.product(*[range(n) for n in self.tile_dims])
-        ):
+        for i, tile_index in enumerate(itertools.product(*[range(n) for n in self.tile_dims])):
             self.tile_process_map[tile_index] = i % self.nr_proc
-            self.tile_device_map[tile_index] = devices[
-                i % len(devices)
-            ]  # Checkoboard pattern, TODO: may not be optimal
+            self.tile_device_map[tile_index] = devices[i % len(devices)]  # Checkoboard pattern, TODO: may not be optimal
 
         # Get my device
         if self.nr_proc != len(self.devices):
-            raise ValueError(
-                f"Number of processes {self.nr_proc} does not equal number of devices {len(self.devices)}."
-            )
+            raise ValueError(f"Number of processes {self.nr_proc} does not equal number of devices {len(self.devices)}.")
         self.device = self.devices[self.pid]
 
         # Make the tiles
         self.tiles = {}
         for tile_index in self.tile_process_map.keys():
             if self.pid == self.tile_process_map[tile_index]:
-                self.tiles[tile_index] = self.HostTile(
-                    self.tile_shape, self.dtype, self.padding, self.codec
-                )
+                self.tiles[tile_index] = self.HostTile(self.tile_shape, self.dtype, self.padding, self.codec)
 
         # Make GPU tiles for copying data between CPU and GPU
         if self.nr_tiles % self.nr_compute_tiles != 0:
             raise ValueError(
                 f"Number of tiles {self.nr_tiles} does not divide number of compute tiles {self.nr_compute_tiles}. This is used for asynchronous copies."
             )
-        compute_array_shape = [
-            s + 2 * p for (s, p) in zip(self.tile_shape, self.padding)
-        ]
+        compute_array_shape = [s + 2 * p for (s, p) in zip(self.tile_shape, self.padding)]
         self.compute_tiles_htd = []
         self.compute_tiles_dth = []
         self.compute_streams_htd = []
@@ -132,13 +117,9 @@ class OOCArray:
         with cp.cuda.Device(self.device):
             for i in range(self.nr_compute_tiles):
                 # Make compute tiles for copying data
-                compute_tile = self.DeviceTile(
-                    self.tile_shape, self.dtype, self.padding, self.codec
-                )
+                compute_tile = self.DeviceTile(self.tile_shape, self.dtype, self.padding, self.codec)
                 self.compute_tiles_htd.append(compute_tile)
-                compute_tile = self.DeviceTile(
-                    self.tile_shape, self.dtype, self.padding, self.codec
-                )
+                compute_tile = self.DeviceTile(self.tile_shape, self.dtype, self.padding, self.codec)
                 self.compute_tiles_dth.append(compute_tile)
 
                 # Make cupy stream
@@ -185,9 +166,7 @@ class OOCArray:
 
     def update_compute_index(self):
         """Update the current compute index."""
-        self.current_compute_index = (
-            self.current_compute_index + 1
-        ) % self.nr_compute_tiles
+        self.current_compute_index = (self.current_compute_index + 1) % self.nr_compute_tiles
 
     def _guess_next_tile_index(self, tile_index):
         """Guess the next tile index to use for the compute array."""
@@ -291,9 +270,7 @@ class OOCArray:
         compute_tile.to_array(self.compute_arrays[self.current_compute_index])
 
         # Return the compute array index in global array
-        global_index = tuple(
-            [i * s - p for (i, s, p) in zip(tile_index, self.tile_shape, self.padding)]
-        )
+        global_index = tuple([i * s - p for (i, s, p) in zip(tile_index, self.tile_shape, self.padding)])
 
         return self.compute_arrays[self.current_compute_index], global_index
 
@@ -339,12 +316,7 @@ class OOCArray:
             # Loop over all padding
             for pad_index in pad_ind:
                 # Get neighboring tile index
-                neigh_tile_index = tuple(
-                    [
-                        (i + p) % s
-                        for (i, p, s) in zip(tile_index, pad_index, self.tile_dims)
-                    ]
-                )
+                neigh_tile_index = tuple([(i + p) % s for (i, p, s) in zip(tile_index, pad_index, self.tile_dims)])
                 neigh_pad_index = tuple([-p for p in pad_index])  # flip
 
                 # 4 cases:
@@ -354,10 +326,7 @@ class OOCArray:
                 # 4. the tile and neighboring tile are on different processes
 
                 # Case 1: the tile and neighboring tile are on the same process
-                if (
-                    self.pid == self.tile_process_map[tile_index]
-                    and self.pid == self.tile_process_map[neigh_tile_index]
-                ):
+                if self.pid == self.tile_process_map[tile_index] and self.pid == self.tile_process_map[neigh_tile_index]:
                     # Get the tile and neighboring tile
                     tile = self.tiles[tile_index]
                     neigh_tile = self.tiles[neigh_tile_index]
@@ -371,10 +340,7 @@ class OOCArray:
                     neigh_tile._buf_padding[neigh_pad_index] = padding
 
                 # Case 2: the tile is on this process and the neighboring tile is on another process
-                if (
-                    self.pid == self.tile_process_map[tile_index]
-                    and self.pid != self.tile_process_map[neigh_tile_index]
-                ):
+                if self.pid == self.tile_process_map[tile_index] and self.pid != self.tile_process_map[neigh_tile_index]:
                     # Get the tile and padding
                     tile = self.tiles[tile_index]
                     padding = tile._padding[pad_index]
@@ -387,10 +353,7 @@ class OOCArray:
                     )
 
                 # Case 3: the tile is on another process and the neighboring tile is on this process
-                if (
-                    self.pid != self.tile_process_map[tile_index]
-                    and self.pid == self.tile_process_map[neigh_tile_index]
-                ):
+                if self.pid != self.tile_process_map[tile_index] and self.pid == self.tile_process_map[neigh_tile_index]:
                     # Get the neighboring tile and padding
                     neigh_tile = self.tiles[neigh_tile_index]
                     neigh_padding = neigh_tile._buf_padding[neigh_pad_index]
@@ -403,10 +366,7 @@ class OOCArray:
                     )
 
                 # Case 4: the tile and neighboring tile are on different processes
-                if (
-                    self.pid != self.tile_process_map[tile_index]
-                    and self.pid != self.tile_process_map[neigh_tile_index]
-                ):
+                if self.pid != self.tile_process_map[tile_index] and self.pid != self.tile_process_map[neigh_tile_index]:
                     pass
 
                 # Increment the communication tag
@@ -429,12 +389,7 @@ class OOCArray:
         comm_tag = 0
         for tile_index in self.tile_process_map.keys():
             # Set the center array in the full array
-            slice_index = tuple(
-                [
-                    slice(i * s, (i + 1) * s)
-                    for (i, s) in zip(tile_index, self.tile_shape)
-                ]
-            )
+            slice_index = tuple([slice(i * s, (i + 1) * s) for (i, s) in zip(tile_index, self.tile_shape)])
 
             # if tile on this process compute the center array
             if self.comm.rank == self.tile_process_map[tile_index]:
@@ -465,18 +420,13 @@ class OOCArray:
             if self.comm.rank == 0 and self.tile_process_map[tile_index] != 0:
                 # Get the data from the other rank
                 center_array = np.empty(self.tile_shape, dtype=self.dtype)
-                self.comm.Recv(
-                    center_array, source=self.tile_process_map[tile_index], tag=comm_tag
-                )
+                self.comm.Recv(center_array, source=self.tile_process_map[tile_index], tag=comm_tag)
 
                 # Set the center array in the full array
                 array[slice_index] = center_array
 
             # Case 3: the tile is on this rank and this process is not rank 0
-            if (
-                self.comm.rank != 0
-                and self.tile_process_map[tile_index] == self.comm.rank
-            ):
+            if self.comm.rank != 0 and self.tile_process_map[tile_index] == self.comm.rank:
                 # Send the data to rank 0
                 self.comm.Send(center_array, dest=0, tag=comm_tag)
 
