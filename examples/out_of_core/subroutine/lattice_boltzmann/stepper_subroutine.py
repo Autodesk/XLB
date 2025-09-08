@@ -2,10 +2,10 @@ from typing import List
 from mpi4py import MPI
 import warp as wp
 
-from ds.amr_grid import MemoryPool
-from operator.operator import Operator
-from subroutine import Subroutine
-from operator.copy.soa_copy import SOACopy
+from ds.ooc_grid import MemoryPool
+from operators.operator import Operator
+from ..subroutine import Subroutine
+from operators.copy.soa_copy import SOACopy
 
 class StepperSubroutine(Subroutine):
 
@@ -58,13 +58,10 @@ class StepperSubroutine(Subroutine):
                     # Get block cardinality
                     q = block.boxes[f_name].cardinality
 
-                    # Get compute amr level
-                    amr_level = min([block.amr_level] + [neighbour_block.amr_level for neighbour_block in block.neighbour_blocks])
-
                     # Get total box offset, extent and shape
                     offset = block.offset_with_ghost
                     extent = block.extent_with_ghost
-                    shape = extent // 2 ** amr_level
+                    shape = extent
 
                     # Get compute arrays
                     f0 = self.memory_pools[stream_idx].get((q, *shape), wp.float32)
@@ -144,12 +141,12 @@ class StepperSubroutine(Subroutine):
                         self.wp_streams[stream_idx].wait_event(event)
 
                     # Copy to compute arrays
-                    start_1 = int(block.offset[0] - offset[0]) // 2 ** amr_level
-                    stop_1 = start_1 + block.extent[0] // 2 ** amr_level
-                    start_2 = int(block.offset[1] - offset[1]) // 2 ** amr_level
-                    stop_2 = start_2 + block.extent[1] // 2 ** amr_level
-                    start_3 = int(block.offset[2] - offset[2]) // 2 ** amr_level
-                    stop_3 = start_3 + block.extent[2] // 2 ** amr_level
+                    start_1 = int(block.offset[0] - offset[0])
+                    stop_1 = start_1 + block.extent[0]
+                    start_2 = int(block.offset[1] - offset[1])
+                    stop_2 = start_2 + block.extent[1]
+                    start_3 = int(block.offset[2] - offset[2])
+                    stop_3 = start_3 + block.extent[2]
                     self.my_copy(
                         f0[
                             :,
@@ -178,12 +175,12 @@ class StepperSubroutine(Subroutine):
                         missing_mask_block
                     )
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        start_1 = int(ghost_boxes["f"].offset[0] - offset[0]) // 2 ** amr_level
-                        stop_1 = start_1 + ghost_boxes["f"].extent[0] // 2 ** amr_level
-                        start_2 = int(ghost_boxes["f"].offset[1] - offset[1]) // 2 ** amr_level
-                        stop_2 = start_2 + ghost_boxes["f"].extent[1] // 2 ** amr_level
-                        start_3 = int(ghost_boxes["f"].offset[2] - offset[2]) // 2 ** amr_level
-                        stop_3 = start_3 + ghost_boxes["f"].extent[2] // 2 ** amr_level
+                        start_1 = int(ghost_boxes["f"].offset[0] - offset[0])
+                        stop_1 = start_1 + ghost_boxes["f"].extent[0]
+                        start_2 = int(ghost_boxes["f"].offset[1] - offset[1])
+                        stop_2 = start_2 + ghost_boxes["f"].extent[1]
+                        start_3 = int(ghost_boxes["f"].offset[2] - offset[2])
+                        stop_3 = start_3 + ghost_boxes["f"].extent[2]
                         self.my_copy(
                             f0[
                                 :,
@@ -220,12 +217,12 @@ class StepperSubroutine(Subroutine):
                         f0, f1 = f1, f0
 
                     # Copy from compute arrays
-                    start_1 = int(block.offset[0] - offset[0]) // 2 ** amr_level
-                    stop_1 = start_1 + block.extent[0] // 2 ** amr_level
-                    start_2 = int(block.offset[1] - offset[1]) // 2 ** amr_level
-                    stop_2 = start_2 + block.extent[1] // 2 ** amr_level
-                    start_3 = int(block.offset[2] - offset[2]) // 2 ** amr_level
-                    stop_3 = start_3 + block.extent[2] // 2 ** amr_level
+                    start_1 = int(block.offset[0] - offset[0])
+                    stop_1 = start_1 + block.extent[0]
+                    start_2 = int(block.offset[1] - offset[1])
+                    stop_2 = start_2 + block.extent[1]
+                    start_3 = int(block.offset[2] - offset[2])
+                    stop_3 = start_3 + block.extent[2]
                     self.my_copy(
                         f_block,
                         f0[
@@ -238,12 +235,12 @@ class StepperSubroutine(Subroutine):
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
 
                         # Get slice start and stop
-                        slice_start = (ghost_boxes["f"].offset - offset) // 2 ** amr_level  
-                        slice_stop = slice_start + ghost_boxes["f"].extent // 2 ** amr_level
+                        slice_start = (ghost_boxes[f_name].offset - block.offset)
+                        slice_stop = slice_start + ghost_boxes[f_name].shape
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
 
-                        # Copy f
+                        # Copy
                         self.my_copy(
                             f_local_ghost[ghost_block],
                             f0[
@@ -266,7 +263,7 @@ class StepperSubroutine(Subroutine):
                     )
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
                         wp.copy(
-                            ghost_boxes["f"].data,
+                            ghost_boxes[f_name].data,
                             f_local_ghost[ghost_block]
                         )
  

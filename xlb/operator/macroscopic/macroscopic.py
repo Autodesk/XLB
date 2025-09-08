@@ -92,7 +92,8 @@ class Macroscopic(Operator):
                         u[d] += f[l]
                     elif _c[d, l] == -1:
                         u[d] -= f[l]
-            u /= rho
+            if rho != wp.float(0.0):
+                u /= rho
 
             return rho, u
 
@@ -121,7 +122,7 @@ class Macroscopic(Operator):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, rho, u):
+    def warp_implementation(self, f, boundary_id, rho, u):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,

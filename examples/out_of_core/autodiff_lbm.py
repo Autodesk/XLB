@@ -24,16 +24,15 @@ import xlb
 from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 
-import pumpkin_pulse
-from pumpkin_pulse.ds import AMRGrid
-from pumpkin_pulse.operator.hydro import QCriterion
-from pumpkin_pulse.subroutine.amr_grid.initialize import (
+from ds import OOCGrid
+from operator.hydro import QCriterion
+from subroutine.amr_grid.initialize import (
     InitializeFieldSubroutine,
 )
-from pumpkin_pulse.subroutine.amr_grid.saver import (
+from subroutine.amr_grid.saver import (
     VolumeSaverSubroutine 
 )
-from pumpkin_pulse.subroutine.amr_grid.lattice_boltzmann import (
+from subroutine.amr_grid.lattice_boltzmann import (
     PrepareFieldsSubroutine,
     ForwardStepperSubroutine,
     BackwardStepperSubroutine,
@@ -42,13 +41,13 @@ from pumpkin_pulse.subroutine.amr_grid.lattice_boltzmann import (
     ForwardVelocityNormLossSubroutine,
     BackwardVelocityNormLossSubroutine,
 )
-from pumpkin_pulse.subroutine.amr_grid.optimize import (
+from subroutine.amr_grid.optimize import (
     GradientDescentSubroutine,
 )
-from pumpkin_pulse.subroutine.amr_grid.lattice_boltzmann import (
+from subroutine.amr_grid.lattice_boltzmann import (
     VolumeSaverSubroutine as LBMVolumeSaverSubroutine,
 )
-from pumpkin_pulse.operator.optimize.clamp_field import ClampField  
+from operator.optimize.clamp_field import ClampField
 from utils import (
     IncompressibleNavierStokesStepper,
     UniformInitializer,
@@ -454,7 +453,7 @@ if __name__ == "__main__":
     )
 
     # Make AMR
-    amr_grid = AMRGrid(
+    amr_grid = OOCGrid(
         shape=shape,
         block_shape=amr_block_shape,
         origin=(-1.0, -1.0, -1.0),

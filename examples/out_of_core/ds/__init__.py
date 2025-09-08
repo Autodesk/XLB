@@ -1,6 +1,6 @@
-from ds.amr_grid import (
+from ds.ooc_grid import (
     Box,
     Block,
-    AMRGrid,
+    OOCGrid,
     MemoryPool,
 )

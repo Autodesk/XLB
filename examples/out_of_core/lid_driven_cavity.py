@@ -16,6 +16,7 @@ mpi4py.rc.thread_level = 'serialized'  # or 'funneled'
 from mpi4py import MPI
 import argparse
 import math
+from typing import Any
 
 wp.clear_kernel_cache()
 wp.init()
@@ -24,23 +25,23 @@ wp.clear_kernel_cache()
 import xlb
 from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
+from xlb.operator.operator import Operator
 
-from ds import AMRGrid
-from operator.hydro import QCriterion
-from subroutine.amr_grid.lattice_boltzmann import (
+from subroutine.lattice_boltzmann import (
     PrepareFieldsSubroutine,
     StepperSubroutine,
     VolumeSaverSubroutine,
     RenderQCriterionSubroutine,
 )
 
+from ds import OOCGrid
+from operators.hydro import QCriterion
+
 # Make command line parser
 parser = argparse.ArgumentParser(description="Lid driven cavity simulation")
 parser.add_argument("--output_directory", type=str, default="output", help="Output directory")
 parser.add_argument("--base_velocity", type=float, default=0.06, help="Base velocity")
-#parser.add_argument("--shape", type=str, default="(1024, 1024, 1024)", help="Shape")
-parser.add_argument("--shape", type=str, default="(1200, 1200, 1200)", help="Shape")
-#parser.add_argument("--shape", type=str, default="(1600, 1600, 1600)", help="Shape")
+parser.add_argument("--shape", type=str, default="(256, 256, 256)", help="Shape")
 parser.add_argument("--tau", type=float, default=0.501, help="Tau")
 parser.add_argument("--nr_steps", type=int, default=4*131072, help="Nr steps")
 parser.add_argument("--save_q_criterion_frequency", type=int, default=128, help="Save q criterion frequency")
@@ -49,7 +50,7 @@ parser.add_argument("--collision", type=str, default="SmagorinskyLESBGK", help="
 parser.add_argument("--equilibrium", type=str, default="Quadratic", help="Equilibrium")
 parser.add_argument("--velocity_set", type=str, default="D3Q19", help="Velocity set")
 parser.add_argument("--use_amr", type=bool, default=True, help="Use AMR")
-parser.add_argument("--amr_block_shape", type=str, default="(400, 400, 400)", help="AMR block shape")
+parser.add_argument("--amr_block_shape", type=str, default="(128, 128, 128)", help="AMR block shape")
 parser.add_argument("--amr_ghost_cell_thickness", type=int, default=16, help="AMR ghost cell thickness")
 parser.add_argument("--nr_streams", type=int, default=2, help="Nr streams")
 parser.add_argument("--comm", type=bool, default=True, help="Comm")
@@ -457,7 +458,7 @@ if __name__ == "__main__":
     )
 
     # Make AMR
-    amr_grid = AMRGrid(
+    amr_grid = OOCGrid(
         shape=shape,
         block_shape=amr_block_shape,
         origin=(0.0, 0.0, 0.0),

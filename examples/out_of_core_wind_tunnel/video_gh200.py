@@ -15,8 +15,9 @@ if __name__ == '__main__':
 
     # Parameters
     output_directory = "./output_video_ldc"
-    shape = 1920
+    #shape = 1920
     #shape = 960
+    shape = 960
     nr_frames = 1024
     save_q_criterion_frequency = 256
     nr_steps = nr_frames * save_q_criterion_frequency
