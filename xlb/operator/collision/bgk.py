@@ -2,7 +2,6 @@ import jax.numpy as jnp
 from jax import jit
 import warp as wp
 from typing import Any
-import numpy as np
 
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.collision.collision import Collision
