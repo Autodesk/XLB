@@ -1,29 +1,30 @@
-from typing import List
+from typing import List, Callable
 from mpi4py import MPI
 import warp as wp
 
 from ds.ooc_grid import MemoryPool
-from operators.operator import Operator
-from ..subroutine import Subroutine
-from operators.copy.soa_copy import SOACopy
+from subroutine.subroutine import Subroutine
+from operators.soa_copy import SOACopy
 
 class StepperSubroutine(Subroutine):
 
     def __init__(
         self,
-        stepper,
-        my_copy: Operator = SOACopy(),
+        stepper: Callable,
+        omega: float,
+        my_copy: Callable = SOACopy(),
         nr_streams: int = 1,
         wp_streams: List[wp.Stream] = None,
         memory_pools: List[MemoryPool] = None,
     ):
         self.stepper = stepper
+        self.omega = omega
         self.my_copy = my_copy
         super().__init__(nr_streams, wp_streams, memory_pools)
 
     def __call__(
         self,
-        amr_grid,
+        ooc_grid,
         nr_steps=None,
         f_name = "f",
         boundary_id_name = "boundary_id",
@@ -33,8 +34,8 @@ class StepperSubroutine(Subroutine):
 
         # Get number of steps
         if nr_steps is None:
-            nr_steps = min(amr_grid.ghost_cell_thickness)
-        assert nr_steps <= min(amr_grid.ghost_cell_thickness)
+            nr_steps = min(ooc_grid.ghost_cell_thickness)
+        assert nr_steps <= min(ooc_grid.ghost_cell_thickness)
 
         # Make stream idx
         stream_idx = 0
@@ -47,13 +48,13 @@ class StepperSubroutine(Subroutine):
         event = None
 
         # Set Perform steps equal to the number of ghost cell thickness
-        for block in amr_grid.blocks.values():
+        for block in ooc_grid.blocks.values():
 
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
 
                 # Check if block matches pid 
-                if block.pid == amr_grid.pid:
+                if block.pid == ooc_grid.pid:
 
                     # Get block cardinality
                     q = block.boxes[f_name].cardinality
@@ -61,16 +62,12 @@ class StepperSubroutine(Subroutine):
                     # Get total box offset, extent and shape
                     offset = block.offset_with_ghost
                     extent = block.extent_with_ghost
-                    shape = extent
 
                     # Get compute arrays
-                    f0 = self.memory_pools[stream_idx].get((q, *shape), wp.float32)
-                    f1 = self.memory_pools[stream_idx].get((q, *shape), wp.float32)
-                    boundary_id = self.memory_pools[stream_idx].get((1, *shape), wp.uint8)
-                    missing_mask = self.memory_pools[stream_idx].get((q, *shape), wp.bool)
-
-                    # Fill boundary_id with -1
-                    #boundary_id.fill_(wp.uint8(-1))
+                    f0 = self.memory_pools[stream_idx].get((q, *extent), wp.float32)
+                    f1 = self.memory_pools[stream_idx].get((q, *extent), wp.float32)
+                    boundary_id = self.memory_pools[stream_idx].get((1, *extent), wp.uint8)
+                    missing_mask = self.memory_pools[stream_idx].get((q, *extent), wp.bool)
 
                     # Get transmit arrays
                     f_block = self.memory_pools[stream_idx].get((q, *block.shape), wp.float32)
@@ -141,70 +138,66 @@ class StepperSubroutine(Subroutine):
                         self.wp_streams[stream_idx].wait_event(event)
 
                     # Copy to compute arrays
-                    start_1 = int(block.offset[0] - offset[0])
-                    stop_1 = start_1 + block.extent[0]
-                    start_2 = int(block.offset[1] - offset[1])
-                    stop_2 = start_2 + block.extent[1]
-                    start_3 = int(block.offset[2] - offset[2])
-                    stop_3 = start_3 + block.extent[2]
+                    slice_start = (block.offset - offset)
+                    slice_stop = slice_start + block.shape
+                    slice_start = tuple([int(s) for s in slice_start])
+                    slice_stop = tuple([int(s) for s in slice_stop])
                     self.my_copy(
                         f0[
                             :,
-                            start_1:stop_1,
-                            start_2:stop_2,
-                            start_3:stop_3,
+                            slice_start[0]:slice_stop[0],
+                            slice_start[1]:slice_stop[1],
+                            slice_start[2]:slice_stop[2],
                         ],
                         f_block
                     )
                     self.my_copy(
                         boundary_id[
                             :,
-                            start_1:stop_1,
-                            start_2:stop_2,
-                            start_3:stop_3,
+                            slice_start[0]:slice_stop[0],
+                            slice_start[1]:slice_stop[1],
+                            slice_start[2]:slice_stop[2],
                         ],
                         boundary_id_block
                     )
                     self.my_copy(
                         missing_mask[
                             :,
-                            start_1:stop_1,
-                            start_2:stop_2,
-                            start_3:stop_3,
+                            slice_start[0]:slice_stop[0],
+                            slice_start[1]:slice_stop[1],
+                            slice_start[2]:slice_stop[2],
                         ],
                         missing_mask_block
                     )
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        start_1 = int(ghost_boxes["f"].offset[0] - offset[0])
-                        stop_1 = start_1 + ghost_boxes["f"].extent[0]
-                        start_2 = int(ghost_boxes["f"].offset[1] - offset[1])
-                        stop_2 = start_2 + ghost_boxes["f"].extent[1]
-                        start_3 = int(ghost_boxes["f"].offset[2] - offset[2])
-                        stop_3 = start_3 + ghost_boxes["f"].extent[2]
+                        slice_start = (ghost_boxes["f"].offset - offset)
+                        slice_stop = slice_start + ghost_boxes["f"].shape
+                        slice_start = tuple([int(s) for s in slice_start])
+                        slice_stop = tuple([int(s) for s in slice_stop])
                         self.my_copy(
                             f0[
                                 :,
-                                start_1:stop_1,
-                                start_2:stop_2,
-                                start_3:stop_3,
+                                slice_start[0]:slice_stop[0],
+                                slice_start[1]:slice_stop[1],
+                                slice_start[2]:slice_stop[2],
                             ],
                             f_neighbour_ghost[ghost_block],
                         )
                         self.my_copy(
                             boundary_id[
                                 :,
-                                start_1:stop_1,
-                                start_2:stop_2,
-                                start_3:stop_3,
+                                slice_start[0]:slice_stop[0],
+                                slice_start[1]:slice_stop[1],
+                                slice_start[2]:slice_stop[2],
                             ],
                             boundary_id_neighbour_ghost[ghost_block],
                         )
                         self.my_copy(
                             missing_mask[
                                 :,
-                                start_1:stop_1,
-                                start_2:stop_2,
-                                start_3:stop_3,
+                                slice_start[0]:slice_stop[0],
+                                slice_start[1]:slice_stop[1],
+                                slice_start[2]:slice_stop[2],
                             ],
                             missing_mask_neighbour_ghost[ghost_block],
                         )
@@ -213,29 +206,27 @@ class StepperSubroutine(Subroutine):
                     for _ in range(nr_steps):
 
                         # Perform stepper
-                        f1 = self.stepper(f0, f1, boundary_id, missing_mask, 0)
+                        f0, f1 = self.stepper(f0, f1, boundary_id, missing_mask, self.omega, 0)
                         f0, f1 = f1, f0
 
                     # Copy from compute arrays
-                    start_1 = int(block.offset[0] - offset[0])
-                    stop_1 = start_1 + block.extent[0]
-                    start_2 = int(block.offset[1] - offset[1])
-                    stop_2 = start_2 + block.extent[1]
-                    start_3 = int(block.offset[2] - offset[2])
-                    stop_3 = start_3 + block.extent[2]
+                    slice_start = (block.offset - offset)
+                    slice_stop = slice_start + block.shape
+                    slice_start = tuple([int(s) for s in slice_start])
+                    slice_stop = tuple([int(s) for s in slice_stop])
                     self.my_copy(
                         f_block,
                         f0[
                             :,
-                            start_1:stop_1,
-                            start_2:stop_2,
-                            start_3:stop_3,
+                            slice_start[0]:slice_stop[0],
+                            slice_start[1]:slice_stop[1],
+                            slice_start[2]:slice_stop[2],
                         ]
                     )
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
 
                         # Get slice start and stop
-                        slice_start = (ghost_boxes[f_name].offset - block.offset)
+                        slice_start = (ghost_boxes[f_name].offset - offset)
                         slice_stop = slice_start + ghost_boxes[f_name].shape
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
@@ -289,23 +280,23 @@ class StepperSubroutine(Subroutine):
 
         # Send blocks
         wp.synchronize()
-        for block in amr_grid.blocks.values():
+        for block in ooc_grid.blocks.values():
             r, comm_tag = block.send_ghost_boxes(
-                amr_grid.comm,
+                ooc_grid.comm,
                 comm_tag=comm_tag,
                 names=["f"],
             )
             requests.extend(r)
 
         # Wait for requests
-        if amr_grid.comm is not None:
-            amr_grid.comm.Barrier()
+        if ooc_grid.comm is not None:
+            ooc_grid.comm.Barrier()
             MPI.Request.Waitall(requests)
             pass
         else:
             assert len(requests) == 0
 
         # Swap neighbour buffers
-        for block in amr_grid.blocks.values():
-            if block.pid == amr_grid.pid:
+        for block in ooc_grid.blocks.values():
+            if block.pid == ooc_grid.pid:
                 block.swap_buffers(names=["f"])

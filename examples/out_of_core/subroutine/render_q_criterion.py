@@ -1,30 +1,26 @@
-from typing import List
-import os
-from mpi4py import MPI
+from typing import List, Callable
 import warp as wp
 import numpy as np
 from PIL import Image
-import matplotlib.pyplot as plt
 
 from ds.ooc_grid import MemoryPool
-from operators.operator import Operator
-from ..subroutine import Subroutine
-from operators.copy.soa_copy import SOACopy
-from operators.grid_to_point_interpolation.trilinear_interpolation import TrilinearInterpolation
-from operators.render.mesh_renderer import MeshRenderer
-from operators.render.color_mapper import ColorMapper
-from operators.mesh.transform_mesh import TransformMesh
+from subroutine.subroutine import Subroutine
+from operators.trilinear_interpolation import TrilinearInterpolation
+from operators.mesh_renderer import MeshRenderer
+from operators.color_mapper import ColorMapper
+from operators.transform_mesh import TransformMesh
+from operators.q_criterion import QCriterion
 
 class RenderQCriterionSubroutine(Subroutine):
 
     def __init__(
         self,
-        macroscopic: Operator,
-        q_criterion: Operator,
-        mesh_renderer: Operator = MeshRenderer(),
-        color_mapper: Operator = ColorMapper(),
-        grid_to_point_interpolator: Operator = TrilinearInterpolation(),
-        mesh_transformer: Operator = TransformMesh(),
+        macroscopic: Callable,
+        q_criterion: Callable = QCriterion(),
+        mesh_renderer: Callable = MeshRenderer(),
+        color_mapper: Callable = ColorMapper(),
+        grid_to_point_interpolator: Callable = TrilinearInterpolation(),
+        mesh_transformer: Callable = TransformMesh(),
         nr_streams: int = 1,
         wp_streams: List[wp.Stream] = None,
         memory_pools: List[MemoryPool] = None,
@@ -39,7 +35,7 @@ class RenderQCriterionSubroutine(Subroutine):
 
     def __call__(
         self,
-        amr_grid,
+        ooc_grid,
         image_name: str,
         pixel_buffer: wp.array(dtype=wp.float32),
         depth_buffer: wp.array(dtype=wp.float32),
@@ -63,13 +59,13 @@ class RenderQCriterionSubroutine(Subroutine):
         stream_idx = 0
 
         # Set Perform steps equal to the number of ghost cell thickness
-        for block in amr_grid.blocks.values():
+        for block in ooc_grid.blocks.values():
 
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
 
                 # Check if block matches pid 
-                if block.pid == amr_grid.pid:
+                if block.pid == ooc_grid.pid:
 
                     # Get block cardinality
                     q = block.boxes[f_name].cardinality
@@ -102,7 +98,7 @@ class RenderQCriterionSubroutine(Subroutine):
                     )
         
                     # Compute q criterion
-                    rho, u = self.macroscopic(f, boundary_id, rho, u)
+                    rho, u = self.macroscopic(f, rho, u)
                     norm_mu, q = self.q_criterion(u, boundary_id, norm_mu, q)
     
                     # Perform marching cubes
@@ -190,30 +186,30 @@ class RenderQCriterionSubroutine(Subroutine):
             )
 
         # Get all the files
-        if amr_grid.comm is not None:
+        if ooc_grid.comm is not None:
 
             # Set barrier
-            amr_grid.comm.Barrier()
+            ooc_grid.comm.Barrier()
             # Send buffers from non-root ranks to root
-            if amr_grid.comm.rank != 0:
-                amr_grid.comm.Send(pixel_buffer.numpy(), dest=0, tag=2*amr_grid.comm.rank)
-                amr_grid.comm.Send(depth_buffer.numpy(), dest=0, tag=2*amr_grid.comm.rank+1)
+            if ooc_grid.comm.rank != 0:
+                ooc_grid.comm.Send(pixel_buffer.numpy(), dest=0, tag=2*ooc_grid.comm.rank)
+                ooc_grid.comm.Send(depth_buffer.numpy(), dest=0, tag=2*ooc_grid.comm.rank+1)
             
             # Root rank receives and combines buffers
-            if amr_grid.comm.rank == 0:
+            if ooc_grid.comm.rank == 0:
                 # Initialize with root rank's buffers
                 np_pixel_buffer = pixel_buffer.numpy()
                 np_depth_buffer = depth_buffer.numpy()
                 
                 # Receive buffers from other ranks
-                for i in range(1, amr_grid.comm.size):
+                for i in range(1, ooc_grid.comm.size):
                     # Create receive buffers with same shape as local buffers
                     other_pixel = np.empty_like(np_pixel_buffer)
                     other_depth = np.empty_like(np_depth_buffer)
                     
                     # Receive pixel and depth buffers
-                    amr_grid.comm.Recv(other_pixel, source=i, tag=2*i)
-                    amr_grid.comm.Recv(other_depth, source=i, tag=2*i+1)
+                    ooc_grid.comm.Recv(other_pixel, source=i, tag=2*i)
+                    ooc_grid.comm.Recv(other_depth, source=i, tag=2*i+1)
                     
                     # Update pixels where other depth is smaller
                     mask = other_depth < np_depth_buffer

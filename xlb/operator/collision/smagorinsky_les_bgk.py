@@ -18,21 +18,18 @@ class SmagorinskyLESBGK(Collision):
 
     def __init__(
         self,
-        omega: float,
-        smagorinsky_coef: float = 0.17,
         velocity_set: VelocitySet = None,
         precision_policy=None,
         compute_backend=None,
+        smagorinsky_coef: float = 0.17,
     ):
         self.smagorinsky_coef = smagorinsky_coef
-        super().__init__(omega, velocity_set, precision_policy, compute_backend)
+        super().__init__(velocity_set, precision_policy, compute_backend)
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _w = self.velocity_set.wp_w
-        _c = self.velocity_set.wp_c
-        _omega = wp.constant(self.compute_dtype(self.omega))
-        _tau = wp.constant(self.compute_dtype(1.0 / self.omega))
+        _w = self.velocity_set.w
+        _c = self.velocity_set.c
         _smagorinsky_coef = wp.constant(self.compute_dtype(self.smagorinsky_coef))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
@@ -43,6 +40,7 @@ class SmagorinskyLESBGK(Collision):
             feq: Any,
             rho: Any,
             u: Any,
+            omega: Any,
         ):
             # Compute the non-equilibrium distribution
             fneq = f - feq
@@ -84,6 +82,7 @@ class SmagorinskyLESBGK(Collision):
                     strain += 2.0 * fneq[l] * fneq[l]
 
             # Compute the Smagorinsky model
+            _tau = self.compute_dtype(1.0 / omega)
             tau = _tau + (
                 0.5 * (wp.sqrt(_tau * _tau + 36.0 * (_smagorinsky_coef ** 2.0) * wp.sqrt(strain)) - _tau)
             )
@@ -100,6 +99,7 @@ class SmagorinskyLESBGK(Collision):
             rho: wp.array4d(dtype=Any),
             u: wp.array4d(dtype=Any),
             fout: wp.array4d(dtype=Any),
+            omega: wp.float32,
         ):
             # Get the global index
             i, j, k = wp.tid()
@@ -117,7 +117,7 @@ class SmagorinskyLESBGK(Collision):
             _rho = rho[0, index[0], index[1], index[2]]
 
             # Compute the collision
-            _fout = functional(_f, _feq, _rho, _u)
+            _fout = functional(_f, _feq, _rho, _u, omega)
 
             # Write the result
             for l in range(self.velocity_set.q):
@@ -126,7 +126,7 @@ class SmagorinskyLESBGK(Collision):
         return functional, kernel
 
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f, feq, rho, u, fout):
+    def warp_implementation(self, f, feq, rho, u, fout, omega):
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,
@@ -136,6 +136,7 @@ class SmagorinskyLESBGK(Collision):
                 rho,
                 u,
                 fout,
+                omega,
             ],
             dim=f.shape[1:],
         )

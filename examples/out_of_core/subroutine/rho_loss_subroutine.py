@@ -1,25 +1,22 @@
-from typing import List
+from typing import List, Callable
 from mpi4py import MPI
 import warp as wp
 
 from ds.ooc_grid import MemoryPool
-from operators.operator import Operator
-from ..subroutine import Subroutine
-from operators.copy.soa_copy import SOACopy
+from subroutine.subroutine import Subroutine
+from operators.soa_copy import SOACopy
 
-class ForwardVelocityNormLossSubroutine(Subroutine):
+class ForwardRhoLossSubroutine(Subroutine):
 
     def __init__(
         self,
-        macroscopic: Operator,
-        velocity_norm: Operator,
-        loss: Operator,
+        macroscopic: Callable,
+        loss: Callable,
         nr_streams: int = 1,
         wp_streams: List[wp.Stream] = None,
         memory_pools: List[MemoryPool] = None,
     ):
         self.macroscopic = macroscopic
-        self.velocity_norm = velocity_norm
         self.loss = loss
         super().__init__(nr_streams, wp_streams, memory_pools)
 
@@ -29,7 +26,7 @@ class ForwardVelocityNormLossSubroutine(Subroutine):
         loss,
         f_name = "f_0000",
         boundary_id_name = "boundary_id",
-        target_velocity_norm_name = "target_velocity_norm",
+        target_rho_name = "target_rho",
         clear_memory_pools = True,
     ):
 
@@ -57,32 +54,27 @@ class ForwardVelocityNormLossSubroutine(Subroutine):
 
                     # Get compute arrays
                     rho = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32)
-                    target_norm_u = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32)
+                    target_rho = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32)
                     u = self.memory_pools[stream_idx].get((3, *block.shape), wp.float32)
-                    norm_u = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32)
                     f = self.memory_pools[stream_idx].get((q, *block.shape), wp.float32)
                     boundary_id = self.memory_pools[stream_idx].get((1, *block.shape), wp.uint8)
 
                     # Copy from block
                     wp.copy(f, block.boxes[f_name].data)
-                    wp.copy(target_norm_u, block.boxes[target_velocity_norm_name].data)
+                    wp.copy(target_rho, block.boxes[target_rho_name].data)
                     wp.copy(boundary_id, block.boxes[boundary_id_name].data)
 
                     # Get rho and u
-                    rho, u = self.macroscopic(f, boundary_id, rho, u)
-
-                    # Get norm_u
-                    norm_u = self.velocity_norm(u, norm_u)
+                    rho, u = self.macroscopic(f, rho, u)
 
                     # Compute loss
-                    loss = self.loss(norm_u, target_norm_u, boundary_id, loss)
+                    loss = self.loss(rho, target_rho, boundary_id, loss)
 
                     # Return arrays
                     self.memory_pools[stream_idx].ret(rho, zero=True)
                     self.memory_pools[stream_idx].ret(u, zero=True)
-                    self.memory_pools[stream_idx].ret(norm_u, zero=True)
                     self.memory_pools[stream_idx].ret(f, zero=True)
-                    self.memory_pools[stream_idx].ret(target_norm_u, zero=True)
+                    self.memory_pools[stream_idx].ret(target_rho, zero=True)
                     self.memory_pools[stream_idx].ret(boundary_id, zero=True)
 
                     # Update stream idx
@@ -96,19 +88,17 @@ class ForwardVelocityNormLossSubroutine(Subroutine):
             for memory_pool in self.memory_pools:
                 memory_pool.clear()
 
-class BackwardVelocityNormLossSubroutine(Subroutine):
+class BackwardRhoLossSubroutine(Subroutine):
 
     def __init__(
         self,
-        macroscopic: Operator,
-        velocity_norm: Operator,
-        loss: Operator,
+        macroscopic: Callable,
+        loss: Callable,
         nr_streams: int = 1,
         wp_streams: List[wp.Stream] = None,
         memory_pools: List[MemoryPool] = None,
     ):
         self.macroscopic = macroscopic
-        self.velocity_norm = velocity_norm
         self.loss = loss
         super().__init__(nr_streams, wp_streams, memory_pools)
 
@@ -119,7 +109,7 @@ class BackwardVelocityNormLossSubroutine(Subroutine):
         f_name = "f",
         adj_f_name = "adj_f",
         boundary_id_name = "boundary_id",
-        target_velocity_norm_name = "target_velocity_norm",
+        target_rho_name = "target_rho",
         clear_memory_pools = True,
     ):
 
@@ -147,9 +137,8 @@ class BackwardVelocityNormLossSubroutine(Subroutine):
 
                     # Get compute arrays
                     rho = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32, requires_grad=True)
-                    target_norm_u = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32, requires_grad=True)
+                    target_rho = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32, requires_grad=True)
                     u = self.memory_pools[stream_idx].get((3, *block.shape), wp.float32, requires_grad=True)
-                    norm_u = self.memory_pools[stream_idx].get((1, *block.shape), wp.float32, requires_grad=True)
                     f = self.memory_pools[stream_idx].get((q, *block.shape), wp.float32, requires_grad=True)
                     boundary_id = self.memory_pools[stream_idx].get((1, *block.shape), wp.uint8)
                     adj_f_ghost = {}
@@ -161,14 +150,13 @@ class BackwardVelocityNormLossSubroutine(Subroutine):
 
                     # Copy from block
                     wp.copy(f, block.boxes[f_name].data)
-                    wp.copy(target_norm_u, block.boxes[target_velocity_norm_name].data)
+                    wp.copy(target_rho, block.boxes[target_rho_name].data)
                     wp.copy(boundary_id, block.boxes[boundary_id_name].data)
 
                     # Make gradient tape
                     with wp.Tape() as tape:
-                        rho, u = self.macroscopic(f, boundary_id, rho, u)
-                        norm_u = self.velocity_norm(u, norm_u)
-                        loss = self.loss(norm_u, target_norm_u, boundary_id, loss)
+                        rho, u = self.macroscopic(f, rho, u)
+                        loss = self.loss(rho, target_rho, boundary_id, loss)
 
                     # Compute gradients
                     tape.backward()
@@ -201,9 +189,8 @@ class BackwardVelocityNormLossSubroutine(Subroutine):
                     # Return arrays
                     self.memory_pools[stream_idx].ret(rho, zero=True)
                     self.memory_pools[stream_idx].ret(u, zero=True)
-                    self.memory_pools[stream_idx].ret(norm_u, zero=True)
                     self.memory_pools[stream_idx].ret(f, zero=True)
-                    self.memory_pools[stream_idx].ret(target_norm_u, zero=True)
+                    self.memory_pools[stream_idx].ret(target_rho, zero=True)
                     self.memory_pools[stream_idx].ret(boundary_id, zero=True)
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
                         self.memory_pools[stream_idx].ret(adj_f_ghost[ghost_block], zero=True)

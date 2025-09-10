@@ -1,4 +1,4 @@
-# Description: Subroutine class
+# Description: Subroutine class, used to execute complex operations on out of core grids
 
 from typing import List
 import warp as wp

@@ -1,29 +1,30 @@
-from typing import List
+from typing import List, Callable
 from mpi4py import MPI
 import warp as wp
 
 from ds.ooc_grid import MemoryPool
-from operators.operator import Operator
-from ..subroutine import Subroutine
-from operators.copy.soa_copy import SOACopy
+from subroutine.subroutine import Subroutine
+from operators.soa_copy import SOACopy
 
 class ForwardStepperSubroutine(Subroutine):
 
     def __init__(
         self,
-        stepper,
-        my_copy: Operator = SOACopy(),
+        stepper: Callable,
+        omega: float,
+        my_copy: Callable = SOACopy(),
         nr_streams: int = 1,
         wp_streams: List[wp.Stream] = None,
         memory_pools: List[MemoryPool] = None,
     ):
         self.stepper = stepper
+        self.omega = omega
         self.my_copy = my_copy
         super().__init__(nr_streams, wp_streams, memory_pools)
 
     def __call__(
         self,
-        amr_grid,
+        ooc_grid,
         nr_steps=None,
         f_input_name = "f_0000",
         f_output_name = "f_0001",
@@ -34,8 +35,8 @@ class ForwardStepperSubroutine(Subroutine):
 
         # Get number of steps
         if nr_steps is None:
-            nr_steps = min(amr_grid.ghost_cell_thickness) // 2
-        assert nr_steps <= min(amr_grid.ghost_cell_thickness) // 2
+            nr_steps = min(ooc_grid.ghost_cell_thickness) // 2
+        assert nr_steps <= min(ooc_grid.ghost_cell_thickness) // 2
 
         # Make stream idx
         stream_idx = 0
@@ -48,24 +49,21 @@ class ForwardStepperSubroutine(Subroutine):
         event = None
 
         # Set Perform steps equal to the number of ghost cell thickness
-        for block in amr_grid.blocks.values():
+        for block in ooc_grid.blocks.values():
 
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
 
                 # Check if block matches pid 
-                if block.pid == amr_grid.pid:
+                if block.pid == ooc_grid.pid:
 
                     # Get block cardinality
                     q = block.boxes[f_input_name].cardinality
 
-                    # Get compute amr level
-                    amr_level = min([block.amr_level] + [neighbour_block.amr_level for neighbour_block in block.neighbour_blocks])
-
                     # Get total box offset, extent and shape
                     offset = block.offset_with_ghost
                     extent = block.extent_with_ghost
-                    shape = extent // 2 ** amr_level
+                    shape = extent
 
                     # Get compute arrays
                     f0 = self.memory_pools[stream_idx].get((q, *shape), wp.float32)
@@ -145,12 +143,12 @@ class ForwardStepperSubroutine(Subroutine):
                         self.wp_streams[stream_idx].wait_event(event)
 
                     # Copy to compute arrays
-                    start_1 = int(block.offset[0] - offset[0]) // 2 ** amr_level
-                    stop_1 = start_1 + block.extent[0] // 2 ** amr_level
-                    start_2 = int(block.offset[1] - offset[1]) // 2 ** amr_level
-                    stop_2 = start_2 + block.extent[1] // 2 ** amr_level
-                    start_3 = int(block.offset[2] - offset[2]) // 2 ** amr_level
-                    stop_3 = start_3 + block.extent[2] // 2 ** amr_level
+                    start_1 = int(block.offset[0] - offset[0])
+                    stop_1 = start_1 + block.extent[0]
+                    start_2 = int(block.offset[1] - offset[1])
+                    stop_2 = start_2 + block.extent[1]
+                    start_3 = int(block.offset[2] - offset[2])
+                    stop_3 = start_3 + block.extent[2]
                     self.my_copy(
                         f0[
                             :,
@@ -179,12 +177,12 @@ class ForwardStepperSubroutine(Subroutine):
                         missing_mask_block
                     )
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        start_1 = int(ghost_boxes[f_input_name].offset[0] - offset[0]) // 2 ** amr_level
-                        stop_1 = start_1 + ghost_boxes[f_input_name].extent[0] // 2 ** amr_level
-                        start_2 = int(ghost_boxes[f_input_name].offset[1] - offset[1]) // 2 ** amr_level
-                        stop_2 = start_2 + ghost_boxes[f_input_name].extent[1] // 2 ** amr_level
-                        start_3 = int(ghost_boxes[f_input_name].offset[2] - offset[2]) // 2 ** amr_level
-                        stop_3 = start_3 + ghost_boxes[f_input_name].extent[2] // 2 ** amr_level
+                        start_1 = int(ghost_boxes[f_input_name].offset[0] - offset[0])
+                        stop_1 = start_1 + ghost_boxes[f_input_name].extent[0]
+                        start_2 = int(ghost_boxes[f_input_name].offset[1] - offset[1])
+                        stop_2 = start_2 + ghost_boxes[f_input_name].extent[1]
+                        start_3 = int(ghost_boxes[f_input_name].offset[2] - offset[2])
+                        stop_3 = start_3 + ghost_boxes[f_input_name].extent[2]
                         self.my_copy(
                             f0[
                                 :,
@@ -216,17 +214,17 @@ class ForwardStepperSubroutine(Subroutine):
                     # Perform update
                     for _ in range(nr_steps):
 
-                        # Perform stepper
-                        f1 = self.stepper(f0, f1, boundary_id, missing_mask, 0)
+                        # Perform steppej
+                        f0, f1 = self.stepper(f0, f1, boundary_id, missing_mask, self.omega, 0)
                         f0, f1 = f1, f0
 
                     # Copy from compute arrays
-                    start_1 = int(block.offset[0] - offset[0]) // 2 ** amr_level
-                    stop_1 = start_1 + block.extent[0] // 2 ** amr_level
-                    start_2 = int(block.offset[1] - offset[1]) // 2 ** amr_level
-                    stop_2 = start_2 + block.extent[1] // 2 ** amr_level
-                    start_3 = int(block.offset[2] - offset[2]) // 2 ** amr_level
-                    stop_3 = start_3 + block.extent[2] // 2 ** amr_level
+                    start_1 = int(block.offset[0] - offset[0])
+                    stop_1 = start_1 + block.extent[0]
+                    start_2 = int(block.offset[1] - offset[1])
+                    stop_2 = start_2 + block.extent[1]
+                    start_3 = int(block.offset[2] - offset[2])
+                    stop_3 = start_3 + block.extent[2]
                     self.my_copy(
                         f_block,
                         f0[
@@ -239,8 +237,8 @@ class ForwardStepperSubroutine(Subroutine):
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
 
                         # Get slice start and stop
-                        slice_start = (ghost_boxes[f_output_name].offset - offset) // 2 ** amr_level  
-                        slice_stop = slice_start + ghost_boxes[f_output_name].extent // 2 ** amr_level
+                        slice_start = (ghost_boxes[f_output_name].offset - offset)
+                        slice_stop = slice_start + ghost_boxes[f_output_name].extent
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
 
@@ -293,44 +291,46 @@ class ForwardStepperSubroutine(Subroutine):
 
         # Send blocks
         wp.synchronize()
-        for block in amr_grid.blocks.values():
+        for block in ooc_grid.blocks.values():
             r, comm_tag = block.send_ghost_boxes(
-                amr_grid.comm,
+                ooc_grid.comm,
                 comm_tag=comm_tag,
                 names=[f_output_name],
             )
             requests.extend(r)
 
         # Wait for requests
-        if amr_grid.comm is not None:
-            amr_grid.comm.Barrier()
+        if ooc_grid.comm is not None:
+            ooc_grid.comm.Barrier()
             MPI.Request.Waitall(requests)
             pass
         else:
             assert len(requests) == 0
 
         # Swap neighbour buffers
-        for block in amr_grid.blocks.values():
-            if block.pid == amr_grid.pid:
+        for block in ooc_grid.blocks.values():
+            if block.pid == ooc_grid.pid:
                 block.swap_buffers(names=[f_output_name])
 
 class BackwardStepperSubroutine(Subroutine):
 
     def __init__(
         self,
-        stepper,
-        my_copy: Operator = SOACopy(),
+        stepper: Callable,
+        omega: float,
+        my_copy: Callable = SOACopy(),
         nr_streams: int = 1,
         wp_streams: List[wp.Stream] = None,
         memory_pools: List[MemoryPool] = None,
     ):
         self.stepper = stepper
+        self.omega = omega
         self.my_copy = my_copy
         super().__init__(nr_streams, wp_streams, memory_pools)
 
     def __call__(
         self,
-        amr_grid,
+        ooc_grid,
         nr_steps=None,
         f_input_name = "f_0000",
         adj_f_name = "adj_f",
@@ -341,8 +341,8 @@ class BackwardStepperSubroutine(Subroutine):
 
         # Get number of steps
         if nr_steps is None:
-            nr_steps = min(amr_grid.ghost_cell_thickness) // 2
-        assert nr_steps <= min(amr_grid.ghost_cell_thickness) // 2
+            nr_steps = min(ooc_grid.ghost_cell_thickness) // 2
+        assert nr_steps <= min(ooc_grid.ghost_cell_thickness) // 2
 
         # Make stream idx
         stream_idx = 0
@@ -355,24 +355,21 @@ class BackwardStepperSubroutine(Subroutine):
         event = None
 
         # Set Perform steps equal to the number of ghost cell thickness
-        for block in amr_grid.blocks.values():
+        for block in ooc_grid.blocks.values():
 
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
 
                 # Check if block matches pid 
-                if block.pid == amr_grid.pid:
+                if block.pid == ooc_grid.pid:
 
                     # Get block cardinality
                     q = block.boxes[f_input_name].cardinality
 
-                    # Get compute amr level
-                    amr_level = min([block.amr_level] + [neighbour_block.amr_level for neighbour_block in block.neighbour_blocks])
-
                     # Get total box offset, extent and shape
                     offset = block.offset_with_ghost
                     extent = block.extent_with_ghost
-                    shape = extent // 2 ** amr_level
+                    shape = extent
 
                     # Get compute arrays
                     fs = [self.memory_pools[stream_idx].get((q, *shape), wp.float32, requires_grad=True) for _ in range(nr_steps + 1)]
@@ -462,12 +459,12 @@ class BackwardStepperSubroutine(Subroutine):
                         self.wp_streams[stream_idx].wait_event(event)
 
                     # Copy to compute arrays
-                    start_1 = int(block.offset[0] - offset[0]) // 2 ** amr_level
-                    stop_1 = start_1 + block.extent[0] // 2 ** amr_level
-                    start_2 = int(block.offset[1] - offset[1]) // 2 ** amr_level
-                    stop_2 = start_2 + block.extent[1] // 2 ** amr_level
-                    start_3 = int(block.offset[2] - offset[2]) // 2 ** amr_level
-                    stop_3 = start_3 + block.extent[2] // 2 ** amr_level
+                    start_1 = int(block.offset[0] - offset[0])
+                    stop_1 = start_1 + block.extent[0]
+                    start_2 = int(block.offset[1] - offset[1])
+                    stop_2 = start_2 + block.extent[1]
+                    start_3 = int(block.offset[2] - offset[2])
+                    stop_3 = start_3 + block.extent[2]
                     self.my_copy(
                         fs[0][
                             :,
@@ -505,12 +502,12 @@ class BackwardStepperSubroutine(Subroutine):
                         missing_mask_block
                     )
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        start_1 = int(ghost_boxes[f_input_name].offset[0] - offset[0]) // 2 ** amr_level
-                        stop_1 = start_1 + ghost_boxes[f_input_name].extent[0] // 2 ** amr_level
-                        start_2 = int(ghost_boxes[f_input_name].offset[1] - offset[1]) // 2 ** amr_level
-                        stop_2 = start_2 + ghost_boxes[f_input_name].extent[1] // 2 ** amr_level
-                        start_3 = int(ghost_boxes[f_input_name].offset[2] - offset[2]) // 2 ** amr_level
-                        stop_3 = start_3 + ghost_boxes[f_input_name].extent[2] // 2 ** amr_level
+                        start_1 = int(ghost_boxes[f_input_name].offset[0] - offset[0])
+                        stop_1 = start_1 + ghost_boxes[f_input_name].extent[0]
+                        start_2 = int(ghost_boxes[f_input_name].offset[1] - offset[1])
+                        stop_2 = start_2 + ghost_boxes[f_input_name].extent[1]
+                        start_3 = int(ghost_boxes[f_input_name].offset[2] - offset[2])
+                        stop_3 = start_3 + ghost_boxes[f_input_name].extent[2]
                         self.my_copy(
                             fs[0][
                                 :,
@@ -548,34 +545,23 @@ class BackwardStepperSubroutine(Subroutine):
                             missing_mask_neighbour_ghost[ghost_block],
                         )
 
-                    ## Plot adj
-                    #import matplotlib.pyplot as plt
-                    #plt.title("adj_f")
-                    #plt.imshow(fs[-1].grad[0, :, 1, :].numpy())
-                    #plt.colorbar()
-                    #plt.show()
-                    #plt.title("boundary_id")
-                    #plt.imshow(boundary_id[0, :, 1, :].numpy())
-                    #plt.colorbar()
-                    #plt.show()
-
                     # Perform update
                     with wp.Tape() as tape:
                         for _ in range(nr_steps):
 
                             # Perform stepper
-                            fs[_ + 1] = self.stepper(fs[_], fs[_ + 1], boundary_id, missing_mask, 0)
+                            fs[_ + 1], fs[_] = self.stepper(fs[_], fs[_ + 1], boundary_id, missing_mask, self.omega, 0)
 
                     # Compute gradients
                     tape.backward()
 
                     # Copy from compute arrays
-                    start_1 = int(block.offset[0] - offset[0]) // 2 ** amr_level
-                    stop_1 = start_1 + block.extent[0] // 2 ** amr_level
-                    start_2 = int(block.offset[1] - offset[1]) // 2 ** amr_level
-                    stop_2 = start_2 + block.extent[1] // 2 ** amr_level
-                    start_3 = int(block.offset[2] - offset[2]) // 2 ** amr_level
-                    stop_3 = start_3 + block.extent[2] // 2 ** amr_level
+                    start_1 = int(block.offset[0] - offset[0])
+                    stop_1 = start_1 + block.extent[0]
+                    start_2 = int(block.offset[1] - offset[1])
+                    stop_2 = start_2 + block.extent[1]
+                    start_3 = int(block.offset[2] - offset[2])
+                    stop_3 = start_3 + block.extent[2]
                     self.my_copy(
                         adj_f_block,
                         fs[0].grad[
@@ -588,8 +574,8 @@ class BackwardStepperSubroutine(Subroutine):
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
 
                         # Get slice start and stop
-                        slice_start = (ghost_boxes[adj_f_name].offset - offset) // 2 ** amr_level  
-                        slice_stop = slice_start + ghost_boxes[adj_f_name].extent // 2 ** amr_level
+                        slice_start = (ghost_boxes[adj_f_name].offset - offset)
+                        slice_stop = slice_start + ghost_boxes[adj_f_name].extent
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
 
@@ -644,23 +630,23 @@ class BackwardStepperSubroutine(Subroutine):
 
         # Send blocks
         wp.synchronize()
-        for block in amr_grid.blocks.values():
+        for block in ooc_grid.blocks.values():
             r, comm_tag = block.send_ghost_boxes(
-                amr_grid.comm,
+                ooc_grid.comm,
                 comm_tag=comm_tag,
                 names=[adj_f_name],
             )
             requests.extend(r)
 
         # Wait for requests
-        if amr_grid.comm is not None:
-            amr_grid.comm.Barrier()
+        if ooc_grid.comm is not None:
+            ooc_grid.comm.Barrier()
             MPI.Request.Waitall(requests)
             pass
         else:
             assert len(requests) == 0
 
         # Swap neighbour buffers
-        for block in amr_grid.blocks.values():
-            if block.pid == amr_grid.pid:
+        for block in ooc_grid.blocks.values():
+            if block.pid == ooc_grid.pid:
                 block.swap_buffers(names=[adj_f_name])
