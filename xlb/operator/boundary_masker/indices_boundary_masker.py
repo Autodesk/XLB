@@ -173,6 +173,9 @@ class IndicesBoundaryMasker(Operator):
             bc_indices = np.asarray(bc.indices)
             num_indices = bc_indices.shape[1]
 
+            # Normalize indices with respect to the start index
+            bc_indices = bc_indices - np.array(start_index)[:, np.newaxis]
+
             # Ensure indices are 3D
             if bc_indices.shape[0] == 2:
                 bc_indices = np.vstack([bc_indices, np.zeros(num_indices, dtype=int)])
@@ -192,7 +195,7 @@ class IndicesBoundaryMasker(Operator):
             current_index += num_indices
 
             # Remove indices from BC objects
-            bc.__dict__.pop("indices", None)
+            #bc.__dict__.pop("indices", None)
 
         # Trim arrays to actual size
         indices = indices[:, :current_index]

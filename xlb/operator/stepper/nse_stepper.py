@@ -10,7 +10,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.precision_policy import Precision
 from xlb.operator import Operator
 from xlb.operator.stream import Stream
-from xlb.operator.collision import BGK, KBC
+from xlb.operator.collision import BGK, KBC, SmagorinskyLESBGK
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.operator.stepper import Stepper
@@ -38,6 +38,8 @@ class IncompressibleNavierStokesStepper(Stepper):
             self.collision = BGK(self.velocity_set, self.precision_policy, self.compute_backend)
         elif collision_type == "KBC":
             self.collision = KBC(self.velocity_set, self.precision_policy, self.compute_backend)
+        elif collision_type == "SmagorinskyLESBGK":
+            self.collision = SmagorinskyLESBGK(self.velocity_set, self.precision_policy, self.compute_backend)
 
         if force_vector is not None:
             self.collision = ForcedCollision(collision_operator=self.collision, forcing_scheme=forcing_scheme, force_vector=force_vector)
