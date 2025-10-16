@@ -1,8 +1,8 @@
 from typing import Any
 import warp as wp
 
-class L2Loss:
 
+class L2Loss:
     @wp.kernel
     def _l2_loss(
         rho: wp.array4d(dtype=Any),
@@ -15,10 +15,9 @@ class L2Loss:
 
         # Compute the loss
         if boundary_id[0, i, j, k] == wp.uint8(0):
-            wp.atomic_add(l2_loss, 0, (rho[0, i, j, k] - target_rho[0, i, j, k])**2.0)
+            wp.atomic_add(l2_loss, 0, (rho[0, i, j, k] - target_rho[0, i, j, k]) ** 2.0)
 
     def __call__(self, rho, target_rho, boundary_id, l2_loss):
-
         # Launch the warp kernel
         wp.launch(
             self._l2_loss,
@@ -27,11 +26,8 @@ class L2Loss:
                 target_rho,
                 boundary_id,
             ],
-            outputs=[
-                l2_loss
-            ],
+            outputs=[l2_loss],
             dim=rho.shape[1:],
         )
 
         return l2_loss
-

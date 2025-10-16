@@ -1,6 +1,7 @@
 from typing import Any
 import warp as wp
 
+
 class SOACopy:
     """
     SOACopy is an operator for copying data from a source array to a destination array.
@@ -54,11 +55,7 @@ class SOACopy:
         # Launch the warp kernel
         wp.launch(
             self.soa_copy_3d,
-            inputs=[
-                dest,
-                src,
-                dest.shape[0]
-            ],
+            inputs=[dest, src, dest.shape[0]],
             dim=dest.shape[1:],
         )
         return dest

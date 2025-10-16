@@ -11,8 +11,8 @@ from operators.color_mapper import ColorMapper
 from operators.transform_mesh import TransformMesh
 from operators.q_criterion import QCriterion
 
-class RenderQCriterionSubroutine(Subroutine):
 
+class RenderQCriterionSubroutine(Subroutine):
     def __init__(
         self,
         macroscopic: Callable,
@@ -51,22 +51,18 @@ class RenderQCriterionSubroutine(Subroutine):
         vmax: float,
         boundary_mesh: wp.Mesh = None,
         boundary_color: wp.vec3f = None,
-        f_name = "f",
-        boundary_id_name = "boundary_id",
+        f_name="f",
+        boundary_id_name="boundary_id",
     ):
-
         # Make stream idx
         stream_idx = 0
 
         # Set Perform steps equal to the number of ghost cell thickness
         for block in ooc_grid.blocks.values():
-
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
-
-                # Check if block matches pid 
+                # Check if block matches pid
                 if block.pid == ooc_grid.pid:
-
                     # Get block cardinality
                     q = block.boxes[f_name].cardinality
 
@@ -86,27 +82,20 @@ class RenderQCriterionSubroutine(Subroutine):
                         max_verts=int(block.extent[0]) * int(block.extent[1]) * int(block.extent[2]) * 5,
                         max_tris=int(block.extent[0]) * int(block.extent[1]) * int(block.extent[2]) * 3,
                     )
-        
+
                     # Copy from block
-                    wp.copy(
-                        f,
-                        block.boxes[f_name].data
-                    )
-                    wp.copy(
-                        boundary_id,
-                        block.boxes[boundary_id_name].data
-                    )
-        
+                    wp.copy(f, block.boxes[f_name].data)
+                    wp.copy(boundary_id, block.boxes[boundary_id_name].data)
+
                     # Compute q criterion
                     rho, u = self.macroscopic(f, rho, u)
                     norm_mu, q = self.q_criterion(u, boundary_id, norm_mu, q)
-    
+
                     # Perform marching cubes
                     mc.surface(q[0], q_criterion_threshold)
 
                     # Check if any vertices found
                     if mc.verts.shape[0] > 0:
-
                         # Make mesh
                         mesh = wp.Mesh(
                             points=mc.verts,
@@ -119,7 +108,7 @@ class RenderQCriterionSubroutine(Subroutine):
                             origin=block.local_origin,
                             scale=block.local_spacing,
                         )
-    
+
                         # Get point data
                         scalars = wp.zeros((1, mc.verts.shape[0]), wp.float32)
                         scalars = self.grid_to_point_interpolator(
@@ -155,7 +144,6 @@ class RenderQCriterionSubroutine(Subroutine):
                             gamma=gamma,
                         )
 
-   
                     # Return arrays
                     self.memory_pools[0].ret(f)
                     self.memory_pools[0].ret(boundary_id)
@@ -187,41 +175,40 @@ class RenderQCriterionSubroutine(Subroutine):
 
         # Get all the files
         if ooc_grid.comm is not None:
-
             # Set barrier
             ooc_grid.comm.Barrier()
             # Send buffers from non-root ranks to root
             if ooc_grid.comm.rank != 0:
-                ooc_grid.comm.Send(pixel_buffer.numpy(), dest=0, tag=2*ooc_grid.comm.rank)
-                ooc_grid.comm.Send(depth_buffer.numpy(), dest=0, tag=2*ooc_grid.comm.rank+1)
-            
+                ooc_grid.comm.Send(pixel_buffer.numpy(), dest=0, tag=2 * ooc_grid.comm.rank)
+                ooc_grid.comm.Send(depth_buffer.numpy(), dest=0, tag=2 * ooc_grid.comm.rank + 1)
+
             # Root rank receives and combines buffers
             if ooc_grid.comm.rank == 0:
                 # Initialize with root rank's buffers
                 np_pixel_buffer = pixel_buffer.numpy()
                 np_depth_buffer = depth_buffer.numpy()
-                
+
                 # Receive buffers from other ranks
                 for i in range(1, ooc_grid.comm.size):
                     # Create receive buffers with same shape as local buffers
                     other_pixel = np.empty_like(np_pixel_buffer)
                     other_depth = np.empty_like(np_depth_buffer)
-                    
+
                     # Receive pixel and depth buffers
-                    ooc_grid.comm.Recv(other_pixel, source=i, tag=2*i)
-                    ooc_grid.comm.Recv(other_depth, source=i, tag=2*i+1)
-                    
+                    ooc_grid.comm.Recv(other_pixel, source=i, tag=2 * i)
+                    ooc_grid.comm.Recv(other_depth, source=i, tag=2 * i + 1)
+
                     # Update pixels where other depth is smaller
                     mask = other_depth < np_depth_buffer
                     np_pixel_buffer[mask] = other_pixel[mask]
                     np_depth_buffer[mask] = other_depth[mask]
-                
+
                 # Convert float buffer (0-1) to uint8 (0-255)
                 np_pixel_buffer = (np_pixel_buffer[..., :3] * 255).astype(np.uint8)
-                
+
                 # Ensure correct shape and remove extra dimensions
                 np_pixel_buffer = np_pixel_buffer.squeeze()
-                
+
                 # Save the combined image
                 Image.fromarray(np_pixel_buffer).save(f"{image_name}.png")
 

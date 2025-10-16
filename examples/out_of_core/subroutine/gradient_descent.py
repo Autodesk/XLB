@@ -6,8 +6,8 @@ from ds.ooc_grid import MemoryPool
 from subroutine.subroutine import Subroutine
 from operators.gradient_descent import GradientDescent
 
-class GradientDescentSubroutine(Subroutine):
 
+class GradientDescentSubroutine(Subroutine):
     def __init__(
         self,
         gradient_descent: Callable = GradientDescent(),
@@ -28,9 +28,8 @@ class GradientDescentSubroutine(Subroutine):
         learning_rate=1e-3,
         min_val=None,
         max_val=None,
-        clear_memory_pools = True,
+        clear_memory_pools=True,
     ):
-
         # Make stream idx
         stream_idx = 0
 
@@ -43,13 +42,10 @@ class GradientDescentSubroutine(Subroutine):
 
         # Set Perform steps equal to the number of ghost cell thickness
         for block in ooc_grid.blocks.values():
-
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
-
-                # Check if block matches pid 
+                # Check if block matches pid
                 if block.pid == ooc_grid.pid:
-
                     # Get block cardinality
                     q = block.boxes[field_name].cardinality
 
@@ -58,10 +54,7 @@ class GradientDescentSubroutine(Subroutine):
                     adj_field = self.memory_pools[stream_idx].get((q, *block.shape), wp.float32)
                     field_ghost = {}
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-                        field_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[field_name].shape),
-                            wp.float32
-                        )
+                        field_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[field_name].shape), wp.float32)
 
                     # Copy from block
                     wp.copy(field, block.boxes[field_name].data)
@@ -76,9 +69,8 @@ class GradientDescentSubroutine(Subroutine):
 
                     # Copy to local ghost boxes
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-                        
                         # Get slice start and stop
-                        slice_start = (ghost_boxes[field_name].offset - block.offset)
+                        slice_start = ghost_boxes[field_name].offset - block.offset
                         slice_stop = slice_start + ghost_boxes[field_name].shape
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
@@ -88,10 +80,10 @@ class GradientDescentSubroutine(Subroutine):
                             field_ghost[ghost_block],
                             field[
                                 :,
-                                slice_start[0]:slice_stop[0],
-                                slice_start[1]:slice_stop[1],
-                                slice_start[2]:slice_stop[2],
-                            ]
+                                slice_start[0] : slice_stop[0],
+                                slice_start[1] : slice_stop[1],
+                                slice_start[2] : slice_stop[2],
+                            ],
                         )
 
                     # Copy to block

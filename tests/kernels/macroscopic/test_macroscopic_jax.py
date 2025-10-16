@@ -8,7 +8,8 @@ from xlb.operator.macroscopic import Macroscopic
 from xlb.grid import grid_factory
 
 # Set JAX to use highest precision for matmul operations
-jax.config.update('jax_default_matmul_precision', 'highest')
+jax.config.update("jax_default_matmul_precision", "highest")
+
 
 def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, compute_backend=ComputeBackend.JAX)

@@ -5,8 +5,9 @@ import numpy as np
 import warp as wp
 from tqdm import tqdm
 import logging
-import mpi4py # TODO: actually learn how mpi works...
-mpi4py.rc.thread_level = 'serialized'  # or 'funneled'
+import mpi4py  # TODO: actually learn how mpi works...
+
+mpi4py.rc.thread_level = "serialized"  # or 'funneled'
 import mpi4py.MPI as MPI
 import argparse
 
@@ -59,6 +60,7 @@ parser.add_argument("--nr_streams", type=int, default=1, help="Nr streams")
 parser.add_argument("--comm", type=bool, default=True, help="Comm")
 args = parser.parse_args()
 
+
 def forward(
     ooc_grid,
     loss,
@@ -72,13 +74,12 @@ def forward(
 
     # Perform forward pass
     for i in range(nr_checkpoints):
-
         # Perform forward step
         forward_stepper_subroutine(
             ooc_grid,
             nr_steps=checkpoint_frequency,
             f_input_name=f"f_{str(i).zfill(4)}",
-            f_output_name=f"f_{str(i+1).zfill(4)}",
+            f_output_name=f"f_{str(i + 1).zfill(4)}",
             boundary_id_name="boundary_id",
             missing_mask_name="missing_mask",
         )
@@ -91,6 +92,7 @@ def forward(
         loss=loss,
     )
 
+
 def backward(
     ooc_grid,
     loss,
@@ -99,7 +101,6 @@ def backward(
     backward_stepper_subroutine,
     backward_rho_loss_subroutine,
 ):
-
     # Set the loss gradient
     loss.grad.fill_(1.0)
 
@@ -113,8 +114,7 @@ def backward(
     )
 
     # Perform backward step
-    for i in range(nr_checkpoints-1, -1, -1):
-
+    for i in range(nr_checkpoints - 1, -1, -1):
         # Perform backward step
         backward_stepper_subroutine(
             ooc_grid,
@@ -127,7 +127,6 @@ def backward(
 
 
 if __name__ == "__main__":
-
     # Set parameters
     output_directory = args.output_directory
     final_stl_file = args.final_stl_file
@@ -151,7 +150,7 @@ if __name__ == "__main__":
         comm = MPI.COMM_WORLD
     else:
         comm = None
-   
+
     # Get fluid properties needed for the simulation
     omega = 1.0 / tau
     density = 1.0
@@ -241,11 +240,7 @@ if __name__ == "__main__":
         initial_rho=density,
         initial_u=(0.0, 0.0, 0.0),
     )
-    initialize_target_density = InitializeTargetDensity(
-        file_path=final_stl_file,
-        background_density=density,
-        mesh_density=density + 0.0025
-    )
+    initialize_target_density = InitializeTargetDensity(file_path=final_stl_file, background_density=density, mesh_density=density + 0.0025)
     l2_loss = L2Loss()
 
     # Make subroutines
@@ -332,7 +327,7 @@ if __name__ == "__main__":
         ordering="SOA",
     )
     ooc_grid.initialize_boxes(
-        name=f"adj_f",
+        name="adj_f",
         dtype=wp.float32,
         cardinality=velocity_set.q,
         ordering="SOA",
@@ -370,7 +365,6 @@ if __name__ == "__main__":
     # Start optimization
     logging.info("Starting optimization")
     for i in tqdm(range(nr_optimization_steps)):
-
         # Perform forward pass
         forward(
             ooc_grid,

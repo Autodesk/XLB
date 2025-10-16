@@ -1,6 +1,7 @@
 from typing import Any
 import warp as wp
 
+
 class UniformInitializer:
     # NOTE: This could be overridden to use more complex initializers
 

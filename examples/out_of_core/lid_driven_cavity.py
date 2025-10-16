@@ -5,8 +5,9 @@ import warp as wp
 import numpy as np
 from tqdm import tqdm
 import logging
-import mpi4py # TODO: actually learn how mpi works...
-mpi4py.rc.thread_level = 'serialized'  # or 'funneled'
+import mpi4py  # TODO: actually learn how mpi works...
+
+mpi4py.rc.thread_level = "serialized"  # or 'funneled'
 import mpi4py.MPI as MPI
 import argparse
 import math
@@ -52,7 +53,6 @@ parser.add_argument("--comm", type=bool, default=True, help="Comm")
 args = parser.parse_args()
 
 if __name__ == "__main__":
-
     # Set parameters
     output_directory = args.output_directory
     base_velocity = args.base_velocity
@@ -74,11 +74,11 @@ if __name__ == "__main__":
         comm = MPI.COMM_WORLD
     else:
         comm = None
-   
+
     # Get fluid properties needed for the simulation
     omega = 1.0 / tau
     density = 1.0
-    nr_steps = (nr_steps // ooc_ghost_cell_thickness) * ooc_ghost_cell_thickness # Make sure steps is divisible by ghost cell thickness
+    nr_steps = (nr_steps // ooc_ghost_cell_thickness) * ooc_ghost_cell_thickness  # Make sure steps is divisible by ghost cell thickness
 
     # Make output directory
     os.makedirs(output_directory, exist_ok=True)
@@ -138,7 +138,7 @@ if __name__ == "__main__":
         precision_policy=precision_policy,
         compute_backend=compute_backend,
     )
-    #bc_walls = HalfwayBounceBackBC(
+    # bc_walls = HalfwayBounceBackBC(
     bc_walls = FullwayBounceBackBC(
         indices=walls,
     )
@@ -243,10 +243,8 @@ if __name__ == "__main__":
     # Start simulation
     logging.info("Starting simulation")
     for i in tqdm(range(nr_steps // ooc_ghost_cell_thickness)):
-
         # Perform stepper
         stepper_subroutine(ooc_grid)
-
 
         # Save volume and render q criterion
         if (i * ooc_ghost_cell_thickness) % save_q_criterion_frequency == 0 and save_q_criterion_frequency != -1:
@@ -254,16 +252,16 @@ if __name__ == "__main__":
             total_frames = nr_steps // save_q_criterion_frequency
             current_frame = i * ooc_ghost_cell_thickness // save_q_criterion_frequency
             angle = (current_frame / total_frames) * 2 * math.pi  # 0 to 2π
-            
+
             # Camera parameters
             radius = 1.3  # Distance from center
             center = (0.5, 0.5, 0.5)  # Center of domain
-            
+
             # Calculate camera position
             camera_x = center[0] + radius * math.cos(angle)
             camera_y = center[1] - radius * math.sin(angle)
             camera_z = center[2]
-            
+
             pixel_buffer.fill_(0.0)
             depth_buffer.fill_(10.0)
             render_q_criterion_subroutine(
@@ -286,7 +284,5 @@ if __name__ == "__main__":
             # Save
             if args.save_volume_debug:
                 volume_saver_subroutine(
-                    ooc_grid,
-                    field_names=["f", "boundary_id", "missing_mask"],
-                    file_name=os.path.join(output_directory, f"time_{str(i).zfill(5)}")
+                    ooc_grid, field_names=["f", "boundary_id", "missing_mask"], file_name=os.path.join(output_directory, f"time_{str(i).zfill(5)}")
                 )

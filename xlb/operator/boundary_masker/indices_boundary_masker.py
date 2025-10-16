@@ -196,7 +196,7 @@ class IndicesBoundaryMasker(Operator):
             current_index += num_indices
 
             # Remove indices from BC objects
-            #bc.__dict__.pop("indices", None)
+            # bc.__dict__.pop("indices", None)
 
         # Trim arrays to actual size
         indices = indices[:, :current_index]

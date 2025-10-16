@@ -11,15 +11,15 @@ from .initialize_target_density import InitializeTargetDensity
 from .l2_loss import L2Loss
 
 __all__ = [
-    'SOACopy',
-    'TrilinearInterpolation',
-    'MeshRenderer',
-    'ColorMapper',
-    'TransformMesh',
-    'QCriterion',
-    'UniformInitializer',
-    'GradientDescent',
-    'ClampField',
-    'InitializeTargetDensity',
-    'L2Loss',
+    "SOACopy",
+    "TrilinearInterpolation",
+    "MeshRenderer",
+    "ColorMapper",
+    "TransformMesh",
+    "QCriterion",
+    "UniformInitializer",
+    "GradientDescent",
+    "ClampField",
+    "InitializeTargetDensity",
+    "L2Loss",
 ]

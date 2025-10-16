@@ -6,8 +6,8 @@ from ds.ooc_grid import MemoryPool
 from subroutine.subroutine import Subroutine
 from operators.soa_copy import SOACopy
 
-class ForwardStepperSubroutine(Subroutine):
 
+class ForwardStepperSubroutine(Subroutine):
     def __init__(
         self,
         stepper: Callable,
@@ -26,13 +26,12 @@ class ForwardStepperSubroutine(Subroutine):
         self,
         ooc_grid,
         nr_steps=None,
-        f_input_name = "f_0000",
-        f_output_name = "f_0001",
-        boundary_id_name = "boundary_id",
-        missing_mask_name = "missing_mask",
-        clear_memory_pools = True,
+        f_input_name="f_0000",
+        f_output_name="f_0001",
+        boundary_id_name="boundary_id",
+        missing_mask_name="missing_mask",
+        clear_memory_pools=True,
     ):
-
         # Get number of steps
         if nr_steps is None:
             nr_steps = min(ooc_grid.ghost_cell_thickness) // 2
@@ -50,13 +49,10 @@ class ForwardStepperSubroutine(Subroutine):
 
         # Set Perform steps equal to the number of ghost cell thickness
         for block in ooc_grid.blocks.values():
-
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
-
-                # Check if block matches pid 
+                # Check if block matches pid
                 if block.pid == ooc_grid.pid:
-
                     # Get block cardinality
                     q = block.boxes[f_input_name].cardinality
 
@@ -82,61 +78,29 @@ class ForwardStepperSubroutine(Subroutine):
                     boundary_id_neighbour_ghost = {}
                     missing_mask_neighbour_ghost = {}
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        f_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[f_input_name].shape),
-                            wp.float32
-                        )
+                        f_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[f_input_name].shape), wp.float32)
                         boundary_id_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (1, *ghost_boxes[boundary_id_name].shape),
-                            wp.uint8
+                            (1, *ghost_boxes[boundary_id_name].shape), wp.uint8
                         )
                         missing_mask_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[missing_mask_name].shape),
-                            wp.bool
+                            (q, *ghost_boxes[missing_mask_name].shape), wp.bool
                         )
                     f_local_ghost = {}
                     boundary_id_local_ghost = {}
                     missing_mask_local_ghost = {}
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-                        f_local_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[f_input_name].shape),
-                            wp.float32
-                        )
-                        boundary_id_local_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (1, *ghost_boxes[boundary_id_name].shape),
-                            wp.uint8
-                        )
-                        missing_mask_local_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[missing_mask_name].shape),
-                            wp.bool
-                        )
+                        f_local_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[f_input_name].shape), wp.float32)
+                        boundary_id_local_ghost[ghost_block] = self.memory_pools[stream_idx].get((1, *ghost_boxes[boundary_id_name].shape), wp.uint8)
+                        missing_mask_local_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[missing_mask_name].shape), wp.bool)
 
                     # Copy from block
-                    wp.copy(
-                        f_block,
-                        block.boxes[f_input_name].data
-                    )
-                    wp.copy(
-                        boundary_id_block,
-                        block.boxes[boundary_id_name].data
-                    )
-                    wp.copy(
-                        missing_mask_block,
-                        block.boxes[missing_mask_name].data
-                    )
+                    wp.copy(f_block, block.boxes[f_input_name].data)
+                    wp.copy(boundary_id_block, block.boxes[boundary_id_name].data)
+                    wp.copy(missing_mask_block, block.boxes[missing_mask_name].data)
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        wp.copy(
-                            f_neighbour_ghost[ghost_block],
-                            ghost_boxes[f_input_name].data
-                        )
-                        wp.copy(
-                            boundary_id_neighbour_ghost[ghost_block],
-                            ghost_boxes[boundary_id_name].data
-                        )
-                        wp.copy(
-                            missing_mask_neighbour_ghost[ghost_block],
-                            ghost_boxes[missing_mask_name].data
-                        )
+                        wp.copy(f_neighbour_ghost[ghost_block], ghost_boxes[f_input_name].data)
+                        wp.copy(boundary_id_neighbour_ghost[ghost_block], ghost_boxes[boundary_id_name].data)
+                        wp.copy(missing_mask_neighbour_ghost[ghost_block], ghost_boxes[missing_mask_name].data)
 
                     # Wait for previous event
                     if event is not None:
@@ -156,7 +120,7 @@ class ForwardStepperSubroutine(Subroutine):
                             start_2:stop_2,
                             start_3:stop_3,
                         ],
-                        f_block
+                        f_block,
                     )
                     self.my_copy(
                         boundary_id[
@@ -165,7 +129,7 @@ class ForwardStepperSubroutine(Subroutine):
                             start_2:stop_2,
                             start_3:stop_3,
                         ],
-                        boundary_id_block
+                        boundary_id_block,
                     )
                     self.my_copy(
                         missing_mask[
@@ -174,7 +138,7 @@ class ForwardStepperSubroutine(Subroutine):
                             start_2:stop_2,
                             start_3:stop_3,
                         ],
-                        missing_mask_block
+                        missing_mask_block,
                     )
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
                         start_1 = int(ghost_boxes[f_input_name].offset[0] - offset[0])
@@ -213,7 +177,6 @@ class ForwardStepperSubroutine(Subroutine):
 
                     # Perform update
                     for _ in range(nr_steps):
-
                         # Perform steppej
                         f0, f1 = self.stepper(f0, f1, boundary_id, missing_mask, self.omega, 0)
                         f0, f1 = f1, f0
@@ -232,12 +195,11 @@ class ForwardStepperSubroutine(Subroutine):
                             start_1:stop_1,
                             start_2:stop_2,
                             start_3:stop_3,
-                        ]
+                        ],
                     )
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-
                         # Get slice start and stop
-                        slice_start = (ghost_boxes[f_output_name].offset - offset)
+                        slice_start = ghost_boxes[f_output_name].offset - offset
                         slice_stop = slice_start + ghost_boxes[f_output_name].extent
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
@@ -247,10 +209,10 @@ class ForwardStepperSubroutine(Subroutine):
                             f_local_ghost[ghost_block],
                             f0[
                                 :,
-                                slice_start[0]:slice_stop[0],
-                                slice_start[1]:slice_stop[1],
-                                slice_start[2]:slice_stop[2],
-                            ]
+                                slice_start[0] : slice_stop[0],
+                                slice_start[1] : slice_stop[1],
+                                slice_start[2] : slice_stop[2],
+                            ],
                         )
 
                     # Wait for previous event
@@ -259,16 +221,10 @@ class ForwardStepperSubroutine(Subroutine):
                     self.wp_streams[stream_idx].record_event(event)
 
                     # Copy to block
-                    wp.copy(
-                        block.boxes[f_output_name].data,
-                        f_block
-                    )
+                    wp.copy(block.boxes[f_output_name].data, f_block)
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-                        wp.copy(
-                            ghost_boxes[f_output_name].data,
-                            f_local_ghost[ghost_block]
-                        )
- 
+                        wp.copy(ghost_boxes[f_output_name].data, f_local_ghost[ghost_block])
+
                     # Return arrays
                     self.memory_pools[stream_idx].ret(f0, zero=False)
                     self.memory_pools[stream_idx].ret(f1, zero=False)
@@ -312,8 +268,8 @@ class ForwardStepperSubroutine(Subroutine):
             if block.pid == ooc_grid.pid:
                 block.swap_buffers(names=[f_output_name])
 
-class BackwardStepperSubroutine(Subroutine):
 
+class BackwardStepperSubroutine(Subroutine):
     def __init__(
         self,
         stepper: Callable,
@@ -332,13 +288,12 @@ class BackwardStepperSubroutine(Subroutine):
         self,
         ooc_grid,
         nr_steps=None,
-        f_input_name = "f_0000",
-        adj_f_name = "adj_f",
-        boundary_id_name = "boundary_id",
-        missing_mask_name = "missing_mask",
-        clear_memory_pools = True,
+        f_input_name="f_0000",
+        adj_f_name="adj_f",
+        boundary_id_name="boundary_id",
+        missing_mask_name="missing_mask",
+        clear_memory_pools=True,
     ):
-
         # Get number of steps
         if nr_steps is None:
             nr_steps = min(ooc_grid.ghost_cell_thickness) // 2
@@ -356,13 +311,10 @@ class BackwardStepperSubroutine(Subroutine):
 
         # Set Perform steps equal to the number of ghost cell thickness
         for block in ooc_grid.blocks.values():
-
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
-
-                # Check if block matches pid 
+                # Check if block matches pid
                 if block.pid == ooc_grid.pid:
-
                     # Get block cardinality
                     q = block.boxes[f_input_name].cardinality
 
@@ -386,73 +338,32 @@ class BackwardStepperSubroutine(Subroutine):
                     boundary_id_neighbour_ghost = {}
                     missing_mask_neighbour_ghost = {}
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        f_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[f_input_name].shape),
-                            wp.float32
-                        )
-                        adj_f_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[adj_f_name].shape),
-                            wp.float32
-                        )
+                        f_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[f_input_name].shape), wp.float32)
+                        adj_f_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[adj_f_name].shape), wp.float32)
                         boundary_id_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (1, *ghost_boxes[boundary_id_name].shape),
-                            wp.uint8
+                            (1, *ghost_boxes[boundary_id_name].shape), wp.uint8
                         )
                         missing_mask_neighbour_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[missing_mask_name].shape),
-                            wp.bool
+                            (q, *ghost_boxes[missing_mask_name].shape), wp.bool
                         )
                     adj_f_local_ghost = {}
                     boundary_id_local_ghost = {}
                     missing_mask_local_ghost = {}
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-                        adj_f_local_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[adj_f_name].shape),
-                            wp.float32
-                        )
-                        boundary_id_local_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (1, *ghost_boxes[boundary_id_name].shape),
-                            wp.uint8
-                        )
-                        missing_mask_local_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[missing_mask_name].shape),
-                            wp.bool
-                        )
+                        adj_f_local_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[adj_f_name].shape), wp.float32)
+                        boundary_id_local_ghost[ghost_block] = self.memory_pools[stream_idx].get((1, *ghost_boxes[boundary_id_name].shape), wp.uint8)
+                        missing_mask_local_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[missing_mask_name].shape), wp.bool)
 
                     # Copy from block
-                    wp.copy(
-                        f_block,
-                        block.boxes[f_input_name].data
-                    )
-                    wp.copy(
-                        adj_f_block,
-                        block.boxes[adj_f_name].data
-                    )
-                    wp.copy(
-                        boundary_id_block,
-                        block.boxes[boundary_id_name].data
-                    )
-                    wp.copy(
-                        missing_mask_block,
-                        block.boxes[missing_mask_name].data
-                    )
+                    wp.copy(f_block, block.boxes[f_input_name].data)
+                    wp.copy(adj_f_block, block.boxes[adj_f_name].data)
+                    wp.copy(boundary_id_block, block.boxes[boundary_id_name].data)
+                    wp.copy(missing_mask_block, block.boxes[missing_mask_name].data)
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
-                        wp.copy(
-                            f_neighbour_ghost[ghost_block],
-                            ghost_boxes[f_input_name].data
-                        )
-                        wp.copy(
-                            adj_f_neighbour_ghost[ghost_block],
-                            ghost_boxes[adj_f_name].data
-                        )
-                        wp.copy(
-                            boundary_id_neighbour_ghost[ghost_block],
-                            ghost_boxes[boundary_id_name].data
-                        )
-                        wp.copy(
-                            missing_mask_neighbour_ghost[ghost_block],
-                            ghost_boxes[missing_mask_name].data
-                        )
+                        wp.copy(f_neighbour_ghost[ghost_block], ghost_boxes[f_input_name].data)
+                        wp.copy(adj_f_neighbour_ghost[ghost_block], ghost_boxes[adj_f_name].data)
+                        wp.copy(boundary_id_neighbour_ghost[ghost_block], ghost_boxes[boundary_id_name].data)
+                        wp.copy(missing_mask_neighbour_ghost[ghost_block], ghost_boxes[missing_mask_name].data)
 
                     # Wait for previous event
                     if event is not None:
@@ -472,7 +383,7 @@ class BackwardStepperSubroutine(Subroutine):
                             start_2:stop_2,
                             start_3:stop_3,
                         ],
-                        f_block
+                        f_block,
                     )
                     self.my_copy(
                         fs[-1].grad[
@@ -481,7 +392,7 @@ class BackwardStepperSubroutine(Subroutine):
                             start_2:stop_2,
                             start_3:stop_3,
                         ],
-                        adj_f_block
+                        adj_f_block,
                     )
                     self.my_copy(
                         boundary_id[
@@ -490,7 +401,7 @@ class BackwardStepperSubroutine(Subroutine):
                             start_2:stop_2,
                             start_3:stop_3,
                         ],
-                        boundary_id_block
+                        boundary_id_block,
                     )
                     self.my_copy(
                         missing_mask[
@@ -499,7 +410,7 @@ class BackwardStepperSubroutine(Subroutine):
                             start_2:stop_2,
                             start_3:stop_3,
                         ],
-                        missing_mask_block
+                        missing_mask_block,
                     )
                     for ghost_block, ghost_boxes in block.neighbour_ghost_boxes.items():
                         start_1 = int(ghost_boxes[f_input_name].offset[0] - offset[0])
@@ -548,7 +459,6 @@ class BackwardStepperSubroutine(Subroutine):
                     # Perform update
                     with wp.Tape() as tape:
                         for _ in range(nr_steps):
-
                             # Perform stepper
                             fs[_ + 1], fs[_] = self.stepper(fs[_], fs[_ + 1], boundary_id, missing_mask, self.omega, 0)
 
@@ -569,12 +479,11 @@ class BackwardStepperSubroutine(Subroutine):
                             start_1:stop_1,
                             start_2:stop_2,
                             start_3:stop_3,
-                        ]
+                        ],
                     )
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-
                         # Get slice start and stop
-                        slice_start = (ghost_boxes[adj_f_name].offset - offset)
+                        slice_start = ghost_boxes[adj_f_name].offset - offset
                         slice_stop = slice_start + ghost_boxes[adj_f_name].extent
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
@@ -584,10 +493,10 @@ class BackwardStepperSubroutine(Subroutine):
                             adj_f_local_ghost[ghost_block],
                             fs[0].grad[
                                 :,
-                                slice_start[0]:slice_stop[0],
-                                slice_start[1]:slice_stop[1],
-                                slice_start[2]:slice_stop[2],
-                            ]
+                                slice_start[0] : slice_stop[0],
+                                slice_start[1] : slice_stop[1],
+                                slice_start[2] : slice_stop[2],
+                            ],
                         )
 
                     # Wait for previous event
@@ -596,16 +505,10 @@ class BackwardStepperSubroutine(Subroutine):
                     self.wp_streams[stream_idx].record_event(event)
 
                     # Copy to block
-                    wp.copy(
-                        block.boxes[adj_f_name].data,
-                        adj_f_block
-                    )
+                    wp.copy(block.boxes[adj_f_name].data, adj_f_block)
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-                        wp.copy(
-                            ghost_boxes[adj_f_name].data,
-                            adj_f_local_ghost[ghost_block]
-                        )
- 
+                        wp.copy(ghost_boxes[adj_f_name].data, adj_f_local_ghost[ghost_block])
+
                     # Return arrays
                     for f in fs:
                         self.memory_pools[stream_idx].ret(f, zero=True)
