@@ -6,8 +6,8 @@ from ds.ooc_grid import MemoryPool
 from subroutine.subroutine import Subroutine
 from operators.soa_copy import SOACopy
 
-class ForwardRhoLossSubroutine(Subroutine):
 
+class ForwardRhoLossSubroutine(Subroutine):
     def __init__(
         self,
         macroscopic: Callable,
@@ -24,12 +24,11 @@ class ForwardRhoLossSubroutine(Subroutine):
         self,
         amr_grid,
         loss,
-        f_name = "f_0000",
-        boundary_id_name = "boundary_id",
-        target_rho_name = "target_rho",
-        clear_memory_pools = True,
+        f_name="f_0000",
+        boundary_id_name="boundary_id",
+        target_rho_name="target_rho",
+        clear_memory_pools=True,
     ):
-
         # Make stream idx
         stream_idx = 0
 
@@ -42,13 +41,10 @@ class ForwardRhoLossSubroutine(Subroutine):
 
         # Set Perform steps equal to the number of ghost cell thickness
         for block in amr_grid.blocks.values():
-
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
-
-                # Check if block matches pid 
+                # Check if block matches pid
                 if block.pid == amr_grid.pid:
-
                     # Get block cardinality
                     q = block.boxes[f_name].cardinality
 
@@ -88,8 +84,8 @@ class ForwardRhoLossSubroutine(Subroutine):
             for memory_pool in self.memory_pools:
                 memory_pool.clear()
 
-class BackwardRhoLossSubroutine(Subroutine):
 
+class BackwardRhoLossSubroutine(Subroutine):
     def __init__(
         self,
         macroscopic: Callable,
@@ -106,13 +102,12 @@ class BackwardRhoLossSubroutine(Subroutine):
         self,
         amr_grid,
         loss,
-        f_name = "f",
-        adj_f_name = "adj_f",
-        boundary_id_name = "boundary_id",
-        target_rho_name = "target_rho",
-        clear_memory_pools = True,
+        f_name="f",
+        adj_f_name="adj_f",
+        boundary_id_name="boundary_id",
+        target_rho_name="target_rho",
+        clear_memory_pools=True,
     ):
-
         # Make stream idx
         stream_idx = 0
 
@@ -125,13 +120,10 @@ class BackwardRhoLossSubroutine(Subroutine):
 
         # Set Perform steps equal to the number of ghost cell thickness
         for block in amr_grid.blocks.values():
-
             # Set warp stream
             with wp.ScopedStream(self.wp_streams[stream_idx]):
-
-                # Check if block matches pid 
+                # Check if block matches pid
                 if block.pid == amr_grid.pid:
-
                     # Get block cardinality
                     q = block.boxes[f_name].cardinality
 
@@ -143,10 +135,7 @@ class BackwardRhoLossSubroutine(Subroutine):
                     boundary_id = self.memory_pools[stream_idx].get((1, *block.shape), wp.uint8)
                     adj_f_ghost = {}
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-                        adj_f_ghost[ghost_block] = self.memory_pools[stream_idx].get(
-                            (q, *ghost_boxes[f_name].shape),
-                            wp.float32
-                        )
+                        adj_f_ghost[ghost_block] = self.memory_pools[stream_idx].get((q, *ghost_boxes[f_name].shape), wp.float32)
 
                     # Copy from block
                     wp.copy(f, block.boxes[f_name].data)
@@ -163,9 +152,8 @@ class BackwardRhoLossSubroutine(Subroutine):
 
                     # Copy to local ghost boxes
                     for ghost_block, ghost_boxes in block.local_ghost_boxes.items():
-
                         # Get slice start and stop
-                        slice_start = (ghost_boxes[f_name].offset - block.offset)
+                        slice_start = ghost_boxes[f_name].offset - block.offset
                         slice_stop = slice_start + ghost_boxes[f_name].shape
                         slice_start = tuple([int(s) for s in slice_start])
                         slice_stop = tuple([int(s) for s in slice_stop])
@@ -175,10 +163,10 @@ class BackwardRhoLossSubroutine(Subroutine):
                             adj_f_ghost[ghost_block],
                             f.grad[
                                 :,
-                                slice_start[0]:slice_stop[0],
-                                slice_start[1]:slice_stop[1],
-                                slice_start[2]:slice_stop[2],
-                            ]
+                                slice_start[0] : slice_stop[0],
+                                slice_start[1] : slice_stop[1],
+                                slice_start[2] : slice_stop[2],
+                            ],
                         )
 
                     # Copy to block

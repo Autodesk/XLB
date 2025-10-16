@@ -1,16 +1,17 @@
 import warp as wp
 
+
 class TrilinearInterpolation:
     """
     Operator for trilinear interpolation from a grid to points in space.
-    
+
     The grid is assumed to be a 4D array with shape (q, nx, ny, nz) where:
     - q: number of quantities to interpolate
     - nx, ny, nz: grid dimensions in each direction
-    
+
     Values are assumed to be cell-centered.
     """
-    
+
     @wp.kernel
     def _trilinear_interpolation(
         grid: wp.array4d(dtype=float),
@@ -24,7 +25,7 @@ class TrilinearInterpolation:
 
         # Get the point
         point = points[i]
-        
+
         # Convert point to grid coordinates (cell-centered)
         x = (point[0] - origin[0]) / spacing[0] - 0.5
         y = (point[1] - origin[1]) / spacing[1] - 0.5
@@ -34,14 +35,14 @@ class TrilinearInterpolation:
         nx = grid.shape[1] - 1
         ny = grid.shape[2] - 1
         nz = grid.shape[3] - 1
-        
+
         x = wp.clamp(x, 0.0, float(nx))
         y = wp.clamp(y, 0.0, float(ny))
         z = wp.clamp(z, 0.0, float(nz))
-        
+
         # Get lower and upper bounds
         lower_0_0_0 = wp.vec3i(wp.int32(x), wp.int32(y), wp.int32(z))
-        
+
         # Ensure we don't exceed grid bounds
         lower_0_0_0[0] = wp.min(lower_0_0_0[0], nx - 1)
         lower_0_0_0[1] = wp.min(lower_0_0_0[1], ny - 1)
@@ -82,8 +83,14 @@ class TrilinearInterpolation:
 
             # Compute the interpolated value
             point_value = (
-                w_000 * grid_0_0_0 + w_001 * grid_0_0_1 + w_010 * grid_0_1_0 + w_011 * grid_0_1_1 +
-                w_100 * grid_1_0_0 + w_101 * grid_1_0_1 + w_110 * grid_1_1_0 + w_111 * grid_1_1_1
+                w_000 * grid_0_0_0
+                + w_001 * grid_0_0_1
+                + w_010 * grid_0_1_0
+                + w_011 * grid_0_1_1
+                + w_100 * grid_1_0_0
+                + w_101 * grid_1_0_1
+                + w_110 * grid_1_1_0
+                + w_111 * grid_1_1_1
             )
 
             # Set the output
@@ -99,7 +106,7 @@ class TrilinearInterpolation:
     ) -> wp.array2d:
         """
         Interpolate values from a grid to points in space.
-        
+
         Parameters
         ----------
         grid : wp.array4d(dtype=float)
@@ -112,7 +119,7 @@ class TrilinearInterpolation:
             Grid spacing in each direction
         point_values : wp.array2d(dtype=float)
             Output array with shape (q, num_points).
-            
+
         Returns
         -------
         wp.array2d

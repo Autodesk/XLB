@@ -28,6 +28,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         grid,
         boundary_conditions=[],
         collision_type="BGK",
+        streaming_scheme="pull",
         forcing_scheme="exact_difference",
         force_vector=None,
     ):
@@ -43,6 +44,11 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         if force_vector is not None:
             self.collision = ForcedCollision(collision_operator=self.collision, forcing_scheme=forcing_scheme, force_vector=force_vector)
+
+        # Choose the implementation based on backend and streaming scheme
+        self.streaming_scheme = streaming_scheme
+        if self.compute_backend != ComputeBackend.JAX:
+            assert streaming_scheme == "pull", f"Unknown or unimplemented streaming scheme for backend: {self.compute_backend}"
 
         # Construct the operators
         self.stream = Stream(self.velocity_set, self.precision_policy, self.compute_backend)
@@ -131,10 +137,19 @@ class IncompressibleNavierStokesStepper(Stepper):
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
     def jax_implementation(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
+        if self.streaming_scheme == "pull":
+            return self.jax_implementation_pull(f_0, f_1, bc_mask, missing_mask, omega, timestep)
+        elif self.streaming_scheme == "push":
+            return self.jax_implementation_push(f_0, f_1, bc_mask, missing_mask, omega, timestep)
+        else:
+            raise ValueError(f"Unknown streaming scheme: {self.streaming_scheme}")
+
+    @partial(jit, static_argnums=(0,))
+    def jax_implementation_pull(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
         """
         Perform a single step of the lattice boltzmann method
         """
-        # Cast to compute precisioni
+        # Cast to compute precision
         f_0 = self.precision_policy.cast_to_compute_jax(f_0)
         f_1 = self.precision_policy.cast_to_compute_jax(f_1)
 
@@ -173,6 +188,57 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         # Copy back to store precision
         f_1 = self.precision_policy.cast_to_store_jax(f_post_collision)
+
+        return f_0, f_1
+
+    @partial(jit, static_argnums=(0,))
+    def jax_implementation_push(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
+        """
+        Perform a single step of the lattice boltzmann method
+        """
+        # Cast to compute precision
+        f_0 = self.precision_policy.cast_to_compute_jax(f_0)
+        f_1 = self.precision_policy.cast_to_compute_jax(f_1)
+
+        # Assign f_post_stream
+        f_post_stream = f_0
+
+        # Compute the macroscopic variables
+        rho, u = self.macroscopic(f_post_stream)
+
+        # Compute equilibrium
+        feq = self.equilibrium(rho, u)
+
+        # Apply collision
+        f_post_collision = self.collision(f_post_stream, feq, rho, u, omega)
+
+        # Apply collision type boundary conditions
+        for bc in self.boundary_conditions:
+            f_post_collision = bc.update_bc_auxilary_data(f_post_stream, f_post_collision, bc_mask, missing_mask)
+            if bc.implementation_step == ImplementationStep.COLLISION:
+                f_post_collision = bc(
+                    f_post_stream,
+                    f_post_collision,
+                    bc_mask,
+                    missing_mask,
+                )
+
+        # Apply streaming
+        f_post_stream = self.stream(f_post_collision)
+
+        # Apply boundary conditions
+        for bc in self.boundary_conditions:
+            if bc.implementation_step == ImplementationStep.STREAMING:
+                f_post_stream = bc(
+                    f_post_collision,
+                    f_post_stream,
+                    bc_mask,
+                    missing_mask,
+                )
+
+        # Copy back to store precision
+        f_0 = self.precision_policy.cast_to_store_jax(f_post_collision)
+        f_1 = self.precision_policy.cast_to_store_jax(f_post_stream)
 
         return f_0, f_1
 

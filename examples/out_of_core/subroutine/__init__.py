@@ -8,7 +8,7 @@ from subroutine.rho_loss_subroutine import ForwardRhoLossSubroutine, BackwardRho
 from subroutine.gradient_descent import GradientDescentSubroutine
 from subroutine.initialize_field import InitializeFieldSubroutine
 
-all = [
+__all__ = [
     Subroutine,
     PrepareFieldsSubroutine,
     StepperSubroutine,

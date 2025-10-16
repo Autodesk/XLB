@@ -9,8 +9,8 @@ import xml.etree.ElementTree as ET
 from ds.ooc_grid import MemoryPool
 from subroutine.subroutine import Subroutine
 
-class VolumeSaverSubroutine(Subroutine):
 
+class VolumeSaverSubroutine(Subroutine):
     def __init__(
         self,
         nr_streams: int = 1,
@@ -21,27 +21,28 @@ class VolumeSaverSubroutine(Subroutine):
 
     @staticmethod
     def combine_vtks(files, output_file):
-    
         # Create the root element
-        vtk_file = ET.Element('VTKFile', type="vtkMultiBlockDataSet", version="1.0", byte_order="LittleEndian", header_type="UInt32", compressor="vtkZLibDataCompressor")
-        vtk_multi_block_data_set = ET.SubElement(vtk_file, 'vtkMultiBlockDataSet')
-    
+        vtk_file = ET.Element(
+            "VTKFile", type="vtkMultiBlockDataSet", version="1.0", byte_order="LittleEndian", header_type="UInt32", compressor="vtkZLibDataCompressor"
+        )
+        vtk_multi_block_data_set = ET.SubElement(vtk_file, "vtkMultiBlockDataSet")
+
         # Create the DataSet elements
         for i, file in enumerate(files):
-            data_set = ET.SubElement(vtk_multi_block_data_set, 'DataSet', index=str(i), name=f'Block-{str(i).zfill(5)}', file=file)
-    
+            data_set = ET.SubElement(vtk_multi_block_data_set, "DataSet", index=str(i), name=f"Block-{str(i).zfill(5)}", file=file)
+
         # Create the tree
         tree = ET.ElementTree(vtk_file)
-    
+
         # Write the tree to a file
-        tree.write(output_file, encoding='utf-8', xml_declaration=True, method='xml')
+        tree.write(output_file, encoding="utf-8", xml_declaration=True, method="xml")
 
     def __call__(
         self,
         ooc_grid,
         field_names: List[str],
-        file_name: str="initial.vtm",
-        clear_memory_pools = True,
+        file_name: str = "initial.vtm",
+        clear_memory_pools=True,
     ):
         """
         Save the solid id array.
@@ -59,8 +60,7 @@ class VolumeSaverSubroutine(Subroutine):
 
         # Loop over blocks
         for idx, block in enumerate(ooc_grid.blocks.values()):
-
-            # Check if block matches pid 
+            # Check if block matches pid
             if block.pid != ooc_grid.pid:
                 continue
 
@@ -75,7 +75,7 @@ class VolumeSaverSubroutine(Subroutine):
             def _convert_data(data):
                 np_data = data.numpy()
                 np_data = np.stack([np_data[i, ...] for i in range(np_data.shape[0])], axis=-1)
-                return np_data.reshape((-1, np_data.shape[-1]), order='F')
+                return np_data.reshape((-1, np_data.shape[-1]), order="F")
 
             # Add fields
             for field_name in field_names:

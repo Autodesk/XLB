@@ -28,7 +28,7 @@ class SmagorinskyLESBGK(Collision):
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _w = self.velocity_set.w
+        _d = self.velocity_set.d
         _c = self.velocity_set.c
         _smagorinsky_coef = wp.constant(self.compute_dtype(self.smagorinsky_coef))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
@@ -46,7 +46,7 @@ class SmagorinskyLESBGK(Collision):
             fneq = f - feq
 
             # Sailfish implementation
-            #{
+            # {
             #  float tmp, strain;
 
             #  strain = 0.0f;
@@ -68,13 +68,13 @@ class SmagorinskyLESBGK(Collision):
             #  %endfor
 
             #  tau0 += 0.5f * (sqrtf(tau0 * tau0 + 36.0f * ${cex(smagorinsky_const**2)} * sqrtf(strain)) - tau0);
-            #}
+            # }
 
             # Compute strain
             strain = wp.float32(0.0)
             for l in range(self.velocity_set.q):
                 # diagonal terms
-                if (_c[0, l] + _c[1, l] + _c[2, l]) == 1: 
+                if (_c[0, l] + _c[1, l] + _c[2, l]) == 1:
                     strain += fneq[l] * fneq[l]
 
                 # Off-diagonal terms
@@ -83,9 +83,7 @@ class SmagorinskyLESBGK(Collision):
 
             # Compute the Smagorinsky model
             _tau = self.compute_dtype(1.0 / omega)
-            tau = _tau + (
-                0.5 * (wp.sqrt(_tau * _tau + 36.0 * (_smagorinsky_coef ** 2.0) * wp.sqrt(strain)) - _tau)
-            )
+            tau = _tau + (0.5 * (wp.sqrt(_tau * _tau + 36.0 * (_smagorinsky_coef**2.0) * wp.sqrt(strain)) - _tau))
 
             # Compute the collision
             fout = f - (1.0 / tau) * fneq

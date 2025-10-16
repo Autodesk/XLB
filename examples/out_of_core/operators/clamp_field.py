@@ -1,6 +1,7 @@
 from typing import Any
 import warp as wp
 
+
 class ClampField:
     """
     Clamp field operator.
@@ -25,7 +26,6 @@ class ClampField:
         min_val: wp.array(dtype=Any),
         max_val: wp.array(dtype=Any),
     ):
-
         # Launch the warp kernel
         wp.launch(
             self.clamp_field,
@@ -37,4 +37,3 @@ class ClampField:
             dim=field.shape[1:],
         )
         return field
-

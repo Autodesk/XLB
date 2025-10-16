@@ -4,14 +4,10 @@ from tqdm import tqdm
 import logging
 import itertools
 import pyvista as pv
-from dataclasses import dataclass
-from mpi4py import MPI
-import matplotlib.pyplot as plt
-from hilbertcurve.hilbertcurve import HilbertCurve
 import gc
 
-class Box:
 
+class Box:
     def __init__(
         self,
         extent,
@@ -23,7 +19,6 @@ class Box:
         dtype,
         device,
     ):
-
         # Check valid ordering
         assert ordering in ["AOS", "SOA"], f"Unknown ordering {ordering}, must be 'AOS' or 'SOA'."
 
@@ -50,7 +45,7 @@ class Box:
 
     @property
     def shape(self):
-        return tuple([s for s in self.extent])
+        return tuple(self.extent)
 
     @property
     def data_shape(self):
@@ -69,14 +64,12 @@ class Box:
     def allocate(
         self,
     ):
-
         # Delete data if exists
         if self.data is not None:
             del self.data
 
         # Allocate data
         if not np.any([s == 0 for s in self.data_shape]):
-
             self.data = wp.zeros(
                 self.data_shape,
                 dtype=self.dtype,
@@ -92,24 +85,23 @@ class Box:
         offset_2,
         global_extent,
     ):
-    
         # Get min and max of boxes
         min_1 = offset_1
         max_1 = offset_1 + extent_1
         min_2 = offset_2
         max_2 = offset_2 + extent_2
-    
+
         # Get intersection
         min_intersection = np.maximum(min_1, min_2)
         max_intersection = np.minimum(max_1, max_2)
         extent_intersection = np.maximum(max_intersection - min_intersection, 0)
         offset_intersection = min_intersection
-    
+
         # Check if intersection is valid
         return extent_intersection, offset_intersection
 
-class Block:
 
+class Block:
     def __init__(
         self,
         extent,
@@ -120,7 +112,6 @@ class Block:
         device,
         pid=0,
     ):
-
         # Set the parameters
         self.extent = np.array(extent, dtype=np.int32)
         self.offset = np.array(offset, dtype=np.int32)
@@ -128,7 +119,7 @@ class Block:
         self.spacing = np.array(spacing, dtype=np.float32)
         self.ghost_cell_thickness = np.array(ghost_cell_thickness, dtype=np.int32)
         self.device = device
-        self.pid = pid 
+        self.pid = pid
 
         # Make set for neighbour blocks
         self.neighbour_blocks = set()
@@ -140,9 +131,9 @@ class Block:
         self.particles = {}
 
         # Make list for ghost boxes/cells
-        self.local_ghost_boxes = {} # Ghost boxes from local edges, these will be sent to neighbours
-        self.neighbour_ghost_boxes = {} # Neighbour blocks
-        self.neighbour_ghost_boxes_buffer = {} # Buffer for receiving ghost boxes
+        self.local_ghost_boxes = {}  # Ghost boxes from local edges, these will be sent to neighbours
+        self.neighbour_ghost_boxes = {}  # Neighbour blocks
+        self.neighbour_ghost_boxes_buffer = {}  # Buffer for receiving ghost boxes
 
     @property
     def extent_with_ghost(self):
@@ -150,11 +141,11 @@ class Block:
 
     @property
     def shape(self):
-        return tuple([s for s in self.extent])
+        return tuple(self.extent)
 
     @property
     def shape_with_ghost(self):
-        return tuple([s for s in self.extent_with_ghost])
+        return tuple(self.extent_with_ghost)
 
     @property
     def offset_with_ghost(self):
@@ -207,7 +198,6 @@ class Block:
         extent=None,
         offset=None,
     ):
-
         # Get extent and offset, if None use whole domain
         extent = extent if extent is not None else global_extent
         offset = offset if offset is not None else np.zeros(len(global_extent), dtype=np.int32)
@@ -235,7 +225,6 @@ class Block:
 
         # Initialize local ghost boxes
         for neighbour_block in self.neighbour_blocks:
-
             # Get intersections
             local_ghost_extent, local_ghost_offset = Box._box_intersection(
                 extent,
@@ -300,7 +289,6 @@ class Block:
                 device=self.device,
             )
 
-
     def initialize_particles(
         self,
     ):
@@ -321,13 +309,7 @@ class Block:
             for box in boxes.values():
                 box.allocate()
 
-    def send_ghost_boxes(
-        self,
-        comm=None,
-        comm_tag=0,
-        names=None
-    ):
-
+    def send_ghost_boxes(self, comm=None, comm_tag=0, names=None):
         # Get names if None
         if names is None:
             names = list(self.boxes.keys())
@@ -343,10 +325,8 @@ class Block:
 
         # Loop over neighbour blocks
         for neighbour_block, ghost_boxes in self.local_ghost_boxes.items():
-
             # Loop over ghost boxes
             for name, ghost_box in ghost_boxes.items():
-
                 # Check if required to send
                 if name not in names:
                     continue
@@ -358,16 +338,14 @@ class Block:
                 # 4. Current pid is different than block and neighbour
                 # Case 1
                 if (pid == self.pid) and (pid == neighbour_block.pid):
-
                     # Swap data
                     local_data = self.local_ghost_boxes[neighbour_block][name].data
                     neighbour_data = neighbour_block.neighbour_ghost_boxes_buffer[self][name].data
                     self.local_ghost_boxes[neighbour_block][name].data = neighbour_data
                     neighbour_block.neighbour_ghost_boxes_buffer[self][name].data = local_data
-            
+
                 # Case 2
                 if (pid == self.pid) and (pid != neighbour_block.pid):
-
                     # Send data
                     requests.append(
                         comm.Isend(
@@ -379,13 +357,11 @@ class Block:
 
                 # Case 3
                 if (pid != self.pid) and (pid == neighbour_block.pid):
-
                     # Receive data
                     requests.append(
                         comm.Irecv(
                             neighbour_block.neighbour_ghost_boxes_buffer[self][name].data,
                             source=self.pid,
-
                             tag=comm_tag,
                         )
                     )
@@ -401,9 +377,8 @@ class Block:
 
     def to_image_data(
         self,
-        include_ghost=False, # Just for debugging
+        include_ghost=False,  # Just for debugging
     ):
-
         # Return grids
         grids = []
 
@@ -411,11 +386,11 @@ class Block:
         def _convert_data(box):
             if box.data is not None:
                 if box.ordering == "AOS":
-                    return box.data.numpy().reshape((-1, box.cardinality), order='F')
+                    return box.data.numpy().reshape((-1, box.cardinality), order="F")
                 elif box.ordering == "SOA":
                     np_data = box.data.numpy()
                     aos_data = np.stack([np_data[i, ...] for i in range(box.cardinality)], axis=-1)
-                    return aos_data.reshape((-1, box.cardinality), order='F')
+                    return aos_data.reshape((-1, box.cardinality), order="F")
 
         # Make center image data
         grid = pv.ImageData(
@@ -433,7 +408,6 @@ class Block:
 
         # Add ghost data
         if include_ghost:
-
             # Add local ghost data
             for ghost_boxes in self.local_ghost_boxes.values():
                 for ghost_name, ghost_box in ghost_boxes.items():
@@ -455,20 +429,16 @@ class Block:
                         grids.append(grid)
         return grids
 
-    def swap_buffers(
-        self,
-        names=None
-    ):
-
+    def swap_buffers(self, names=None):
         for neighbour_boxes, neighbour_boxes_buffer in zip(self.neighbour_ghost_boxes.values(), self.neighbour_ghost_boxes_buffer.values()):
             if names is None:
                 names = list(neighbour_boxes.keys())
             for name in names:
                 neighbour_boxes[name].data, neighbour_boxes_buffer[name].data = neighbour_boxes_buffer[name].data, neighbour_boxes[name].data
 
+
 class OOCGrid:
-    """An out-of-core Adaptive Mesh Refinement grid data structure.
-    """
+    """An out-of-core Adaptive Mesh Refinement grid data structure."""
 
     def __init__(
         self,
@@ -480,8 +450,7 @@ class OOCGrid:
         comm=None,
         pid_device_mapping=None,
     ):
-        """Initialize the out-of-core data structure.
-        """
+        """Initialize the out-of-core data structure."""
 
         # Set the parameters
         self.shape = shape
@@ -506,26 +475,19 @@ class OOCGrid:
         if pid_device_mapping is None:
             pid_device_mapping = ["cpu" for _ in range(self.size)]
 
-        # Make hilbert curb
-        hilb = HilbertCurve(
-            p=int(np.log2(max(self.block_dims))) + 1,
-            n=len(shape)
-        )
-
-        #dist = np.arange(self.block_dims[0] * self.block_dims[1] * self.block_dims[2])
-        #np.random.shuffle(dist)
+        # dist = np.arange(self.block_dims[0] * self.block_dims[1] * self.block_dims[2])
+        # np.random.shuffle(dist)
 
         # Initialize blocks and connections
         logging.info("Initializing blocks and connections...")
         self.blocks = {}
         for index, block_index in tqdm(enumerate(itertools.product(*[range(n) for n in self.block_dims]))):
-
             # Get dist
-            #dist = hilb.distance_from_point([block_index[2], block_index[1], block_index[0]])
+            # dist = hilb.distance_from_point([block_index[2], block_index[1], block_index[0]])
             dist = index
 
             # Get block pid
-            #block_pid = (dist // self.size) % self.size
+            # block_pid = (dist // self.size) % self.size
             block_pid = (dist) % self.size
 
             # Get device
@@ -547,16 +509,14 @@ class OOCGrid:
 
         # Initialize connections
         for block_index in self.blocks.keys():
-
             # Get neighbour block indices
             for direction in itertools.product(*[range(-1, 2) for _ in self.block_dims]):
-
                 # Skip if no neighbour
                 if np.all([d == 0 for d in direction]):
                     continue
 
                 # Get neighbour block index
-                #neigh_block_index = tuple([(i + d) % n for i, d, n in zip(block_index, direction, self.block_dims)])
+                # neigh_block_index = tuple([(i + d) % n for i, d, n in zip(block_index, direction, self.block_dims)])
                 neigh_block_index = tuple([(i + d) for i, d in zip(block_index, direction)])
 
                 # Add neighbour block to block
@@ -567,13 +527,12 @@ class OOCGrid:
         if self.comm is not None:
             self.comm.Barrier()
 
-
     @property
     def nbytes(self):
         nbytes = 0
         for block in self.blocks.values():
             nbytes += block.nbytes
-        #if self.comm is not None:
+        # if self.comm is not None:
         #    nbytes = self.comm.allreduce(nbytes, op=MPI.SUM)
         return nbytes
 
@@ -586,10 +545,8 @@ class OOCGrid:
         extent=None,
         offset=None,
     ):
-
         # Initialize boxes
         for block in self.blocks.values():
-
             # Initialize box
             block.initialize_box(
                 name=name,
@@ -617,21 +574,19 @@ class OOCGrid:
         self,
         filename,
     ):
-
         # Create multi block dataset
         mb = pv.MultiBlock()
 
         # Loop over blocks
         for block in self.blocks.values():
-
             # Add block to multi block
             mb.extend(block.to_image_data())
 
         # Save multi block
         mb.save(filename)
 
-class MemoryPool:
 
+class MemoryPool:
     def __init__(self):
         self.pool = {}
 

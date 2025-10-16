@@ -1,6 +1,7 @@
 from typing import Any
 import warp as wp
 
+
 class GradientDescent:
     """
     Gradient descent operator.
@@ -25,7 +26,6 @@ class GradientDescent:
         adj_field: wp.array4d(dtype=Any),
         learning_rate: float,
     ):
-
         # Launch the warp kernel
         wp.launch(
             self.gradient_decent,
