@@ -173,8 +173,9 @@ class IndicesBoundaryMasker(Operator):
             bc_indices = np.asarray(bc.indices)
             num_indices = bc_indices.shape[1]
 
-            # Normalize indices with respect to the start index
-            bc_indices = bc_indices - np.array(start_index)[:, np.newaxis]
+            # Normalize indices with respect to the start index if applicable
+            if start_index is not None:
+                bc_indices = bc_indices - np.array(start_index)[:, np.newaxis]
 
             # Ensure indices are 3D
             if bc_indices.shape[0] == 2:
