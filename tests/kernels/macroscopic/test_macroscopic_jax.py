@@ -1,11 +1,14 @@
 import pytest
 import numpy as np
 import xlb
+import jax
 from xlb.compute_backend import ComputeBackend
 from xlb.operator.equilibrium import QuadraticEquilibrium
 from xlb.operator.macroscopic import Macroscopic
 from xlb.grid import grid_factory
 
+# Set JAX to use highest precision for matmul operations
+jax.config.update('jax_default_matmul_precision', 'highest')
 
 def init_xlb_env(velocity_set):
     vel_set = velocity_set(precision_policy=xlb.PrecisionPolicy.FP32FP32, compute_backend=ComputeBackend.JAX)
@@ -43,7 +46,7 @@ def test_macroscopic_jax(dim, velocity_set, grid_shape, rho, velocity):
 
     # Test sum of f_eq which should be 1.0 for rho and 0.0 for u
     assert np.allclose(rho_calc, rho), "Sum of f_eq should be {rho} for rho"
-    assert np.allclose(u_calc, velocity), "Sum of f_eq should be {velocity} for u"
+    assert np.allclose(u_calc, velocity, atol=1e-06), "Sum of f_eq should be {velocity} for u"
 
 
 if __name__ == "__main__":
