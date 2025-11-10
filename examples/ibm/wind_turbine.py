@@ -10,7 +10,14 @@ from xlb.operator.boundary_condition import (
     ExtrapolationOutflowBC,
 )
 from xlb.operator.macroscopic import Macroscopic
-from xlb.utils import save_fields_vtk, save_image
+from xlb.utils import (
+    save_fields_vtk,
+    save_image,
+    save_usd_vorticity,
+    save_usd_q_criterion,
+    update_usd_lagrangian_parts,
+    plot_object_placement,
+)
 import warp as wp
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,264 +25,6 @@ from xlb.helper.ibm_helper import prepare_immersed_boundary
 from xlb.grid import grid_factory
 from pxr import Usd, UsdGeom, Vt
 from xlb.operator.postprocess import QCriterion, Vorticity, GridToPoint
-
-
-@wp.kernel
-def get_color(
-    low: float,
-    high: float,
-    values: wp.array(dtype=float),
-    out_color: wp.array(dtype=wp.vec3),
-):
-    tid = wp.tid()
-    v = values[tid]
-    r = 1.0
-    g = 1.0
-    b = 1.0
-
-    if v < low:
-        v = low
-    if v > high:
-        v = high
-
-    dv = high - low
-    if v < (low + 0.25 * dv):
-        r = 0.0
-        g = 4.0 * (v - low) / dv
-    elif v < (low + 0.5 * dv):
-        r = 0.0
-        b = 1.0 + 4.0 * (low + 0.25 * dv - v) / dv
-    elif v < (low + 0.75 * dv):
-        r = 4.0 * (v - low - 0.5 * dv) / dv
-        b = 0.0
-    else:
-        g = 1.0 + 4.0 * (low + 0.75 * dv - v) / dv
-        b = 0.0
-
-    out_color[tid] = wp.vec3(r, g, b)
-
-
-def grid_to_point(field, verts, out):
-    verts_np = verts.numpy()
-    nx, ny, nz = field.shape
-    out_np = out.numpy()
-    for i, v in enumerate(verts_np):
-        x = int(round(v[0]))
-        y = int(round(v[1]))
-        z = int(round(v[2]))
-        x = min(max(x, 0), nx - 1)
-        y = min(max(y, 0), ny - 1)
-        z = min(max(z, 0), nz - 1)
-        out_np[i] = field[x, y, z]
-    return wp.array(out_np, dtype=wp.float32, device=out.device)
-
-
-def save_usd_vorticity(
-    timestep,
-    post_process_interval,
-    bc_mask,
-    f_current,
-    grid_shape,
-    usd_mesh,
-    vorticity_operator,
-    precision_policy,
-    vorticity_threshold,
-    usd_stage,
-):
-    device = "cuda:1"
-    f_current_new = wp.clone(f_current, device=device)
-    bc_mask_new = wp.clone(bc_mask, device=device)
-    with wp.ScopedDevice(device):
-        macro_wp = Macroscopic(
-            compute_backend=ComputeBackend.WARP,
-            precision_policy=precision_policy,
-            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
-        )
-        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
-        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
-        rho, u = macro_wp(f_current_new, rho, u)
-        # Clip a boundary slice just for clarity in visualization
-        u = u[:, 20:-20, 20:-20, 5:-20]
-
-        vorticity = wp.zeros((3, *u.shape[1:]), dtype=wp.float32, device=device)
-        vorticity_magnitude = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-        vorticity, vorticity_magnitude = vorticity_operator(u, bc_mask_new, vorticity, vorticity_magnitude)
-
-        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
-        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
-        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
-        mc.surface(vorticity_magnitude[0], vorticity_threshold)
-        if mc.verts.shape[0] == 0:
-            print(f"Warning: No vertices found for vorticity at timestep {timestep}.")
-            return
-
-        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
-        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
-        scalars = grid_to_point_op(vorticity_magnitude, mc.verts, scalars)
-
-        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
-        scalars_np = scalars.numpy()
-        vorticity_min = float(np.percentile(scalars_np, 5))
-        vorticity_max = float(np.percentile(scalars_np, 95))
-        if abs(vorticity_max - vorticity_min) < 1e-6:
-            vorticity_max = vorticity_min + 1e-6
-
-        wp.launch(
-            get_color,
-            dim=mc.verts.shape[0],
-            inputs=(vorticity_min, vorticity_max, scalars),
-            outputs=(colors,),
-            device=device,
-        )
-
-        vertices = mc.verts.numpy()
-        indices = mc.indices.numpy()
-        tri_count = len(indices) // 3
-
-    usd_mesh.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
-    UsdGeom.Primvar(usd_mesh.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-    print(f"Vorticity visualization at timestep {timestep}:")
-    print(f"  Number of vertices: {len(vertices)}")
-    print(f"  Number of triangles: {tri_count}")
-    print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
-
-
-def save_usd_q_criterion(
-    timestep,
-    post_process_interval,
-    bc_mask,
-    f_current,
-    grid_shape,
-    usd_mesh,
-    q_criterion_operator,
-    precision_policy,
-    q_threshold,
-    usd_stage,
-):
-    device = "cuda:1"
-    f_current_new = wp.clone(f_current, device=device)
-    bc_mask_new = wp.clone(bc_mask, device=device)
-    with wp.ScopedDevice(device):
-        macro_wp = Macroscopic(
-            compute_backend=ComputeBackend.WARP,
-            precision_policy=precision_policy,
-            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
-        )
-        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
-        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
-        rho, u = macro_wp(f_current_new, rho, u)
-        # Clip a boundary slice just for clarity
-        u = u[:, 20:-20, 20:-20, 5:-20]
-
-        norm_mu = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-        q_field = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-        norm_mu, q_field = q_criterion_operator(u, bc_mask_new, norm_mu, q_field)
-
-        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
-        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
-        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
-        mc.surface(q_field[0], q_threshold)
-        if mc.verts.shape[0] == 0:
-            print(f"Warning: No vertices found for Q-criterion at timestep {timestep}.")
-            return
-
-        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
-        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
-        scalars = grid_to_point_op(norm_mu, mc.verts, scalars)
-
-        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
-        vorticity_min = 0.0
-        vorticity_max = 0.1
-        wp.launch(
-            get_color,
-            dim=mc.verts.shape[0],
-            inputs=(vorticity_min, vorticity_max, scalars),
-            outputs=(colors,),
-            device=device,
-        )
-
-    vertices = mc.verts.numpy()
-    indices = mc.indices.numpy()
-    tri_count = len(indices) // 3
-
-    usd_mesh.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
-    UsdGeom.Primvar(usd_mesh.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-    print(f"Q-criterion visualization at timestep {timestep}:")
-    print(f"  Number of vertices: {len(vertices)}")
-    print(f"  Number of triangles: {tri_count}")
-    print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
-
-
-def save_usd_turbine_parts(
-    timestep,
-    post_process_interval,
-    vertices_wp,
-    num_body_vertices,
-    body_faces_np,
-    rotor_faces_np,
-    usd_turbine_body,
-    usd_turbine_rotor,
-    usd_stage,
-    lag_forces=None,
-):
-    offset = np.array([20, 20, 5])
-    body_vertices = vertices_wp.numpy()[:num_body_vertices] - offset
-    rotor_vertices = vertices_wp.numpy()[num_body_vertices:] - offset
-    body_tri_count = len(body_faces_np)
-
-    usd_turbine_body.GetPointsAttr().Set(body_vertices.tolist(), time=timestep // post_process_interval)
-    usd_turbine_body.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * body_tri_count), time=timestep // post_process_interval)
-    usd_turbine_body.GetFaceVertexIndicesAttr().Set(Vt.IntArray(body_faces_np.flatten().tolist()), time=timestep // post_process_interval)
-
-    rotor_faces_np_corrected = rotor_faces_np - num_body_vertices
-    rotor_tri_count = len(rotor_faces_np_corrected)
-
-    usd_turbine_rotor.GetPointsAttr().Set(rotor_vertices.tolist(), time=timestep // post_process_interval)
-    usd_turbine_rotor.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * rotor_tri_count), time=timestep // post_process_interval)
-    usd_turbine_rotor.GetFaceVertexIndicesAttr().Set(Vt.IntArray(rotor_faces_np_corrected.flatten().tolist()), time=timestep // post_process_interval)
-
-    if lag_forces is not None:
-        body_force_np = lag_forces.numpy()[:num_body_vertices, 0]
-        rotor_force_np = lag_forces.numpy()[num_body_vertices:, 0]
-
-        min_body_force = np.min(body_force_np)
-        max_body_force = np.max(body_force_np)
-        min_rotor_force = np.min(rotor_force_np)
-        max_rotor_force = np.max(rotor_force_np)
-
-        body_colors = wp.zeros(num_body_vertices, dtype=wp.vec3)
-        rotor_colors = wp.zeros(vertices_wp.shape[0] - num_body_vertices, dtype=wp.vec3)
-
-        wp.launch(
-            kernel=get_color,
-            dim=num_body_vertices,
-            inputs=[min_body_force, max_body_force, wp.from_numpy(body_force_np), body_colors],
-        )
-
-        wp.launch(
-            kernel=get_color,
-            dim=vertices_wp.shape[0] - num_body_vertices,
-            inputs=[min_rotor_force, max_rotor_force, wp.from_numpy(rotor_force_np), rotor_colors],
-        )
-
-        body_colors_np = body_colors.numpy()
-        rotor_colors_np = rotor_colors.numpy()
-
-        usd_turbine_body.GetDisplayColorAttr().Set(body_colors_np.tolist(), time=timestep // post_process_interval)
-        UsdGeom.Primvar(usd_turbine_body.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-        usd_turbine_rotor.GetDisplayColorAttr().Set(rotor_colors_np.tolist(), time=timestep // post_process_interval)
-        UsdGeom.Primvar(usd_turbine_rotor.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-    print(f"Turbine mesh updated at timestep {timestep}")
 
 
 def define_boundary_indices(grid, velocity_set):
@@ -291,11 +40,13 @@ def define_boundary_indices(grid, velocity_set):
 def bc_profile(precision_policy, grid_shape, u_max):
     _dtype = precision_policy.store_precision.wp_dtype
     u_max_d = _dtype(u_max)
+
     @wp.func
     def bc_profile_warp(index: wp.vec3i):
         return wp.vec(u_max_d, length=1)
 
     return bc_profile_warp
+
 
 def setup_boundary_conditions(grid, velocity_set, precision_policy, grid_shape, inlet_speed):
     inlet, outlet, walls = define_boundary_indices(grid, velocity_set)
@@ -313,32 +64,8 @@ def setup_stepper(grid, boundary_conditions, lbm_omega):
     )
 
 
-def visualize_turbine_placement(vertices_wp, grid_shape):
-    verts = vertices_wp.numpy()
-    turbine_min = verts.min(axis=0)
-    turbine_max = verts.max(axis=0)
-
-    plt.figure(figsize=(10, 5))
-    domain_x = [0, grid_shape[0], grid_shape[0], 0, 0]
-    domain_y = [0, 0, grid_shape[1], grid_shape[1], 0]
-    plt.plot(domain_x, domain_y, "k-", label="Domain", linewidth=1)
-
-    # Show the bounding box of the turbine in X-Y plane (ignore Z)
-    tx = [turbine_min[0], turbine_max[0], turbine_max[0], turbine_min[0], turbine_min[0]]
-    ty = [turbine_min[1], turbine_min[1], turbine_max[1], turbine_max[1], turbine_min[1]]
-    plt.plot(tx, ty, "r-", linewidth=2, label="Turbine bounding box")
-
-    plt.title("Turbine Placement (X-Y Top View)")
-    plt.xlabel("X (left→right)")
-    plt.ylabel("Y (front→back)")
-    plt.grid(True, linestyle="--", alpha=0.3)
-    plt.axis("equal")
-    plt.legend()
-
-    plt.savefig("turbine_placement.png", dpi=150, bbox_inches="tight")
-    plt.close()
-
-
+# You must download the stl files from the following link: https://www.cgtrader.com/free-3d-models/industrial/industrial-machine/offshore-wind-turbine-235-m-radius
+# and separate them into two files: turbine_wind_turbine.stl and body_wind_turbine.stl. Put them in the same directory as this script.
 def load_and_prepare_meshes_turbine(grid_shape, stl_dir="./examples/ibm/wind_turbine/"):
     rotor_stl = os.path.join(stl_dir, "turbine_wind_turbine.stl")
     body_stl = os.path.join(stl_dir, "body_wind_turbine.stl")
@@ -410,7 +137,7 @@ def load_and_prepare_meshes_turbine(grid_shape, stl_dir="./examples/ibm/wind_tur
     num_body_vertices = len(body_v_wp)
     num_rotor_vertices = len(rotor_v_wp)
     body_faces_np = body_faces
-    rotor_faces_np = faces_np[len(body_faces_np):]
+    rotor_faces_np = faces_np[len(body_faces_np) :]
 
     print("\nTurbine mesh preparation summary:")
     print(f"  Scale factor: {scale_factor:.4f}")
@@ -522,42 +249,61 @@ def post_process(
     # save_fields_vtk(fields, i)
 
     save_usd_vorticity(
-        i,
-        post_process_interval,
-        bc_mask,
-        f_current,
-        grid_shape,
-        usd_mesh_vorticity,
-        vorticity_operator,
+        timestep=i,
+        post_process_interval=post_process_interval,
+        bc_mask=bc_mask,
+        f_current=f_current,
+        grid_shape=grid_shape,
+        usd_mesh=usd_mesh_vorticity,
+        vorticity_operator=vorticity_operator,
         precision_policy=precision_policy,
         vorticity_threshold=1e-2,
         usd_stage=usd_stage,
+        device="cuda:1",
+        clip_lower=(20, 20, 5),
+        clip_upper=(20, 20, 20),
     )
 
     save_usd_q_criterion(
-        i,
-        post_process_interval,
-        bc_mask,
-        f_current,
-        grid_shape,
-        usd_mesh_q_criterion,
-        q_criterion_operator,
+        timestep=i,
+        post_process_interval=post_process_interval,
+        bc_mask=bc_mask,
+        f_current=f_current,
+        grid_shape=grid_shape,
+        usd_mesh=usd_mesh_q_criterion,
+        q_criterion_operator=q_criterion_operator,
         precision_policy=precision_policy,
         q_threshold=5e-6,
         usd_stage=usd_stage,
+        device="cuda:1",
+        clip_lower=(20, 20, 5),
+        clip_upper=(20, 20, 20),
+        color_range=(0.0, 0.1),
     )
 
-    save_usd_turbine_parts(
-        i,
-        post_process_interval,
-        vertices_wp,
-        num_body_vertices,
-        body_faces_np,
-        rotor_faces_np,
-        turbine_body_mesh,
-        turbine_rotor_mesh,
-        usd_stage,
+    update_usd_lagrangian_parts(
+        timestep=i,
+        post_process_interval=post_process_interval,
+        vertices_wp=vertices_wp,
+        parts=[
+            {
+                "start": 0,
+                "end": num_body_vertices,
+                "faces": body_faces_np,
+                "usd_mesh": turbine_body_mesh,
+                "colorize": True,
+            },
+            {
+                "start": num_body_vertices,
+                "end": vertices_wp.shape[0],
+                "faces": rotor_faces_np,
+                "usd_mesh": turbine_rotor_mesh,
+                "colorize": True,
+            },
+        ],
+        vertex_offset=(20, 20, 5),
         lag_forces=lag_forces,
+        device="cuda:1",
     )
 
 
@@ -565,12 +311,12 @@ def post_process(
 # Main simulation
 #
 
-grid_shape = (256, 450, 256)            # example domain size (Nx, Ny, Nz)
-u_inlet = 0.05                          # inlet flow speed
+grid_shape = (256, 450, 256)  # example domain size (Nx, Ny, Nz)
+u_inlet = 0.05  # inlet flow speed
 num_steps = 25000
 post_process_interval = 100
 print_interval = 100
-turbine_rotation_speed = -0.0005         # user-controlled rotor speed (radians per timestep)
+turbine_rotation_speed = -0.0005  # user-controlled rotor speed (radians per timestep)
 Re = 5e5
 
 clength = grid_shape[0] - 1
@@ -612,7 +358,13 @@ num_rotor_vertices = mesh_data["num_rotor_vertices"]
 body_faces_np = mesh_data["body_faces_np"]
 rotor_faces_np = mesh_data["rotor_faces_np"]
 
-visualize_turbine_placement(vertices_wp, grid_shape)
+plot_object_placement(
+    vertices_wp,
+    grid_shape,
+    "turbine_placement.png",
+    "Turbine Placement (X-Y Top View)",
+    "Turbine bounding box",
+)
 
 # Calculate rotor center (simple approach: average rotor vertex positions)
 rotor_center_np = vertices_wp.numpy()[num_body_vertices:].mean(axis=0)
@@ -697,8 +449,9 @@ except KeyboardInterrupt:
     usd_stage.SetEndTimeCode(current_time_code)
     usd_stage.SetTimeCodesPerSecond(30)
     usd_stage.Save()
-    print(f"USD file saved with {current_time_code+1} frames. Exiting.")
+    print(f"USD file saved with {current_time_code + 1} frames. Exiting.")
     import sys
+
     sys.exit(0)
 
 usd_stage.SetStartTimeCode(0)

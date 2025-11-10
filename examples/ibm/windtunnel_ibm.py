@@ -12,7 +12,14 @@ from xlb.operator.boundary_condition import (
     ExtrapolationOutflowBC,
 )
 from xlb.operator.macroscopic import Macroscopic
-from xlb.utils import save_fields_vtk, save_image
+from xlb.utils import (
+    save_fields_vtk,
+    save_image,
+    save_usd_vorticity,
+    save_usd_q_criterion,
+    update_usd_lagrangian_parts,
+    plot_object_placement,
+)
 import warp as wp
 import numpy as np
 import jax.numpy as jnp
@@ -22,296 +29,6 @@ from xlb.helper.ibm_helper import prepare_immersed_boundary
 from xlb.grid import grid_factory
 from pxr import Usd, UsdGeom, Sdf, Vt
 from xlb.operator.postprocess import QCriterion, Vorticity, GridToPoint
-
-
-@wp.kernel
-def get_color(
-    low: float,
-    high: float,
-    values: wp.array(dtype=float),
-    out_color: wp.array(dtype=wp.vec3),
-):
-    tid = wp.tid()
-    v = values[tid]
-    r = 1.0
-    g = 1.0
-    b = 1.0
-
-    if v < low:
-        v = low
-    if v > high:
-        v = high
-
-    dv = high - low
-    if v < (low + 0.25 * dv):
-        r = 0.0
-        g = 4.0 * (v - low) / dv
-    elif v < (low + 0.5 * dv):
-        r = 0.0
-        b = 1.0 + 4.0 * (low + 0.25 * dv - v) / dv
-    elif v < (low + 0.75 * dv):
-        r = 4.0 * (v - low - 0.5 * dv) / dv
-        b = 0.0
-    else:
-        g = 1.0 + 4.0 * (low + 0.75 * dv - v) / dv
-        b = 0.0
-
-    out_color[tid] = wp.vec3(r, g, b)
-
-
-def grid_to_point(field, verts, out):
-    verts_np = verts.numpy()
-    nx, ny, nz = field.shape
-    out_np = out.numpy()
-    for i, v in enumerate(verts_np):
-        x = int(round(v[0]))
-        y = int(round(v[1]))
-        z = int(round(v[2]))
-        x = min(max(x, 0), nx - 1)
-        y = min(max(y, 0), ny - 1)
-        z = min(max(z, 0), nz - 1)
-        out_np[i] = field[x, y, z]
-    return wp.array(out_np, dtype=wp.float32, device=out.device)
-
-
-def save_usd_vorticity(
-    timestep,
-    post_process_interval,
-    bc_mask,
-    f_current,
-    grid_shape,
-    usd_mesh,
-    vorticity_operator,
-    precision_policy,
-    vorticity_threshold,
-    usd_stage,
-):
-    device = "cuda:1"
-    f_current_new = wp.clone(f_current, device=device)
-    bc_mask_new = wp.clone(bc_mask, device=device)
-    with wp.ScopedDevice(device):
-        macro_wp = Macroscopic(
-            compute_backend=ComputeBackend.WARP,
-            precision_policy=precision_policy,
-            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
-        )
-        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
-        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
-        rho, u = macro_wp(f_current_new, rho, u)
-        u = u[:, 20:-20, 20:-20, 0:-20]
-
-        vorticity = wp.zeros((3, *u.shape[1:]), dtype=wp.float32, device=device)
-        vorticity_magnitude = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-        vorticity, vorticity_magnitude = vorticity_operator(u, bc_mask_new, vorticity, vorticity_magnitude)
-
-        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
-        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
-        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
-        mc.surface(vorticity_magnitude[0], vorticity_threshold)
-        if mc.verts.shape[0] == 0:
-            print(f"Warning: No vertices found for vorticity at timestep {timestep}.")
-            return
-
-        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
-        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
-        scalars = grid_to_point_op(vorticity_magnitude, mc.verts, scalars)
-
-        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
-        scalars_np = scalars.numpy()
-        vorticity_min = float(np.percentile(scalars_np, 5))
-        vorticity_max = float(np.percentile(scalars_np, 95))
-        if abs(vorticity_max - vorticity_min) < 1e-6:
-            vorticity_max = vorticity_min + 1e-6
-
-        wp.launch(
-            get_color,
-            dim=mc.verts.shape[0],
-            inputs=(vorticity_min, vorticity_max, scalars),
-            outputs=(colors,),
-            device=device,
-        )
-
-        vertices = mc.verts.numpy()
-        indices = mc.indices.numpy()
-        tri_count = len(indices) // 3
-
-    usd_mesh.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
-    UsdGeom.Primvar(usd_mesh.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-    print(f"Vorticity visualization at timestep {timestep}:")
-    print(f"  Number of vertices: {len(vertices)}")
-    print(f"  Number of triangles: {tri_count}")
-    print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
-
-
-def save_usd_q_criterion(
-    timestep,
-    post_process_interval,
-    bc_mask,
-    f_current,
-    grid_shape,
-    usd_mesh,
-    q_criterion_operator,
-    precision_policy,
-    q_threshold,
-    usd_stage,
-):
-    device = "cuda:1"
-    f_current_new = wp.clone(f_current, device=device)
-    bc_mask_new = wp.clone(bc_mask, device=device)
-    with wp.ScopedDevice(device):
-        macro_wp = Macroscopic(
-            compute_backend=ComputeBackend.WARP,
-            precision_policy=precision_policy,
-            velocity_set=xlb.velocity_set.D3Q27(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP),
-        )
-        rho = wp.zeros((1, *grid_shape), dtype=wp.float32, device=device)
-        u = wp.zeros((3, *grid_shape), dtype=wp.float32, device=device)
-        rho, u = macro_wp(f_current_new, rho, u)
-        u = u[:, 20:-20, 20:-20, 0:-20]
-
-        norm_mu = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-        q_field = wp.zeros((1, *u.shape[1:]), dtype=wp.float32, device=device)
-        norm_mu, q_field = q_criterion_operator(u, bc_mask_new, norm_mu, q_field)
-
-        max_verts = grid_shape[0] * grid_shape[1] * grid_shape[2] * 5
-        max_tris = grid_shape[0] * grid_shape[1] * grid_shape[2] * 3
-        mc = wp.MarchingCubes(nx=u.shape[1], ny=u.shape[2], nz=u.shape[3], max_verts=max_verts, max_tris=max_tris, device=device)
-        mc.surface(q_field[0], q_threshold)
-        if mc.verts.shape[0] == 0:
-            print(f"Warning: No vertices found for Q-criterion at timestep {timestep}.")
-            return
-
-        grid_to_point_op = GridToPoint(precision_policy=precision_policy, compute_backend=ComputeBackend.WARP)
-        scalars = wp.zeros(mc.verts.shape[0], dtype=wp.float32, device=device)
-        scalars = grid_to_point_op(norm_mu, mc.verts, scalars)
-
-        colors = wp.empty(mc.verts.shape[0], dtype=wp.vec3, device=device)
-        vorticity_min = 0.0
-        vorticity_max = 0.1
-        wp.launch(
-            get_color,
-            dim=mc.verts.shape[0],
-            inputs=(vorticity_min, vorticity_max, scalars),
-            outputs=(colors,),
-            device=device,
-        )
-
-    vertices = mc.verts.numpy()
-    indices = mc.indices.numpy()
-    tri_count = len(indices) // 3
-
-    usd_mesh.GetPointsAttr().Set(vertices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexCountsAttr().Set([3] * tri_count, time=timestep // post_process_interval)
-    usd_mesh.GetFaceVertexIndicesAttr().Set(indices.tolist(), time=timestep // post_process_interval)
-    usd_mesh.GetDisplayColorAttr().Set(colors.numpy().tolist(), time=timestep // post_process_interval)
-    UsdGeom.Primvar(usd_mesh.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-    print(f"Q-criterion visualization at timestep {timestep}:")
-    print(f"  Number of vertices: {len(vertices)}")
-    print(f"  Number of triangles: {tri_count}")
-    print(f"  Vorticity range: [{vorticity_min:.6f}, {vorticity_max:.6f}]")
-
-
-def save_usd_car_parts(
-    timestep,
-    post_process_interval,
-    vertices_wp,
-    num_body_vertices,
-    body_faces_np,
-    wheels_faces_np,
-    usd_car_body,
-    usd_car_wheels,
-    usd_stage,
-    lag_forces=None,
-):
-    # Apply offset to match velocity field slicing:
-    offset = np.array([20.0, 20.0, 0.0])
-
-    body_vertices = vertices_wp.numpy()[:num_body_vertices] - offset
-    wheels_vertices = vertices_wp.numpy()[num_body_vertices:] - offset
-    car_body_tri_count = len(body_faces_np)
-
-    usd_car_body.GetPointsAttr().Set(body_vertices.tolist(), time=timestep // post_process_interval)
-    usd_car_body.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * car_body_tri_count), time=timestep // post_process_interval)
-    usd_car_body.GetFaceVertexIndicesAttr().Set(Vt.IntArray(body_faces_np.flatten().tolist()), time=timestep // post_process_interval)
-
-    wheels_faces_np_corrected = wheels_faces_np - num_body_vertices
-    car_wheels_tri_count = len(wheels_faces_np_corrected)
-
-    usd_car_wheels.GetPointsAttr().Set(wheels_vertices.tolist(), time=timestep // post_process_interval)
-    usd_car_wheels.GetFaceVertexCountsAttr().Set(Vt.IntArray([3] * car_wheels_tri_count), time=timestep // post_process_interval)
-    usd_car_wheels.GetFaceVertexIndicesAttr().Set(Vt.IntArray(wheels_faces_np_corrected.flatten().tolist()), time=timestep // post_process_interval)
-
-    # Apply coloring based on lagrangian forces
-    if lag_forces is not None:
-        body_force_np = lag_forces.numpy()[:num_body_vertices, 0]
-        wheels_force_np = lag_forces.numpy()[num_body_vertices:, 0]
-
-        min_body_force = np.min(body_force_np)
-        max_body_force = np.max(body_force_np)
-
-        min_wheels_force = np.min(wheels_force_np)
-        max_wheels_force = np.max(wheels_force_np)
-
-        # Generate colors using the get_color kernel
-        body_colors = wp.zeros(num_body_vertices, dtype=wp.vec3)
-        wheels_colors = wp.zeros(vertices_wp.shape[0] - num_body_vertices, dtype=wp.vec3)
-
-        # Colors for body - using body-specific min/max range
-        wp.launch(
-            kernel=get_color,
-            dim=num_body_vertices,
-            inputs=[min_body_force, max_body_force, wp.from_numpy(body_force_np), body_colors],
-        )
-
-        # Colors for wheels - using wheels-specific min/max range
-        wp.launch(
-            kernel=get_color,
-            dim=vertices_wp.shape[0] - num_body_vertices,
-            inputs=[min_wheels_force, max_wheels_force, wp.from_numpy(wheels_force_np), wheels_colors],
-        )
-
-        # Convert to USD color format and set attributes
-        body_colors_np = body_colors.numpy()
-        wheels_colors_np = wheels_colors.numpy()
-
-        # Set colors directly to DisplayColorAttr and set interpolation to "vertex"
-        usd_car_body.GetDisplayColorAttr().Set(body_colors_np.tolist(), time=timestep // post_process_interval)
-        UsdGeom.Primvar(usd_car_body.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-        usd_car_wheels.GetDisplayColorAttr().Set(wheels_colors_np.tolist(), time=timestep // post_process_interval)
-        UsdGeom.Primvar(usd_car_wheels.GetDisplayColorAttr()).SetInterpolation("vertex")
-
-    print(f"Car body and wheels USD updated at timestep {timestep}")
-
-
-def visualize_car_placement(vertices_wp, grid_shape):
-    verts = vertices_wp.numpy()
-    car_min = verts.min(axis=0)
-    car_max = verts.max(axis=0)
-
-    plt.figure(figsize=(10, 5))
-    domain_x = [0, grid_shape[0], grid_shape[0], 0, 0]
-    domain_y = [0, 0, grid_shape[1], grid_shape[1], 0]
-    plt.plot(domain_x, domain_y, "k-", label="Domain", linewidth=1)
-
-    car_x = [car_min[0], car_max[0], car_max[0], car_min[0], car_min[0]]
-    car_y = [car_min[1], car_min[1], car_max[1], car_max[1], car_min[1]]
-    plt.plot(car_x, car_y, "r-", linewidth=2, label="Car")
-
-    plt.title("Car Placement (Top View)")
-    plt.xlabel("X (Flow Direction →)")
-    plt.ylabel("Y (Width)")
-    plt.grid(True, linestyle="--", alpha=0.3)
-    plt.axis("equal")
-    plt.legend()
-
-    plt.savefig("car_placement.png", dpi=150, bbox_inches="tight")
-    plt.close()
 
 
 def load_and_prepare_meshes_car(grid_shape, stl_dir="/home/mehdi/Repos/stl-files/car"):
@@ -679,42 +396,61 @@ def post_process(
         save_drag_coefficient(cd_values, "drag_coefficient.csv")
 
     save_usd_vorticity(
-        i,
-        post_process_interval,
-        bc_mask,
-        f_current,
-        grid_shape,
-        usd_mesh_vorticity,
-        vorticity_operator,
+        timestep=i,
+        post_process_interval=post_process_interval,
+        bc_mask=bc_mask,
+        f_current=f_current,
+        grid_shape=grid_shape,
+        usd_mesh=usd_mesh_vorticity,
+        vorticity_operator=vorticity_operator,
         precision_policy=precision_policy,
         vorticity_threshold=1e-2,
         usd_stage=usd_stage,
+        device="cuda:1",
+        clip_lower=(20, 20, 0),
+        clip_upper=(20, 20, 20),
     )
 
     save_usd_q_criterion(
-        i,
-        post_process_interval,
-        bc_mask,
-        f_current,
-        grid_shape,
-        usd_mesh_q_criterion,
-        q_criterion_operator,
+        timestep=i,
+        post_process_interval=post_process_interval,
+        bc_mask=bc_mask,
+        f_current=f_current,
+        grid_shape=grid_shape,
+        usd_mesh=usd_mesh_q_criterion,
+        q_criterion_operator=q_criterion_operator,
         precision_policy=precision_policy,
         q_threshold=5e-6,
         usd_stage=usd_stage,
+        device="cuda:1",
+        clip_lower=(20, 20, 0),
+        clip_upper=(20, 20, 20),
+        color_range=(0.0, 0.1),
     )
 
-    save_usd_car_parts(
-        i,
-        post_process_interval,
-        vertices_wp,
-        num_body_vertices,
-        body_faces_np,
-        wheels_faces_np,
-        usd_car_body,
-        usd_car_wheels,
-        usd_stage,
+    update_usd_lagrangian_parts(
+        timestep=i,
+        post_process_interval=post_process_interval,
+        vertices_wp=vertices_wp,
+        parts=[
+            {
+                "start": 0,
+                "end": num_body_vertices,
+                "faces": body_faces_np,
+                "usd_mesh": usd_car_body,
+                "colorize": True,
+            },
+            {
+                "start": num_body_vertices,
+                "end": vertices_wp.shape[0],
+                "faces": wheels_faces_np,
+                "usd_mesh": usd_car_wheels,
+                "colorize": True,
+            },
+        ],
+        vertex_offset=(20.0, 20.0, 0.0),
         lag_forces=lag_forces,
+        device="cuda:1",
     )
 
 
@@ -804,7 +540,13 @@ body_faces_np = mesh_data["body_faces_np"]
 wheels_faces_np = mesh_data["wheels_faces_np"]
 frontal_area = mesh_data["frontal_area"]
 
-visualize_car_placement(vertices_wp, grid_shape)
+plot_object_placement(
+    vertices_wp,
+    grid_shape,
+    "car_placement.png",
+    "Car Placement (Top View)",
+    "Car",
+)
 
 _num_body_vertices = wp.constant(num_body_vertices)
 _num_wheels = wp.constant(num_wheels)
