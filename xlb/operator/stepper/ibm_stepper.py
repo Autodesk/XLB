@@ -12,12 +12,24 @@ from warp.utils import ScopedTimer
 
 
 class IBMStepper(IncompressibleNavierStokesStepper):
-    def __init__(self, grid, boundary_conditions=[], collision_type="BGK", use_scoped_timer=False):
+    def __init__(
+        self,
+        grid,
+        boundary_conditions=[],
+        collision_type="BGK",
+        use_scoped_timer=False,
+        ibm_max_iterations=4,
+        ibm_tolerance=1e-5,
+        ibm_relaxation=1.0,
+    ):
         super().__init__(grid, boundary_conditions, collision_type)
-        # Initialize timer context based on the flag
         self.timer_context = (
             ScopedTimer("IBM_Stepper", use_nvtx=True, synchronize=True, cuda_filter=wp.TIMING_ALL) if use_scoped_timer else nullcontext()
         )
+
+        self.ibm_max_iterations = ibm_max_iterations
+        self.ibm_tolerance = ibm_tolerance
+        self.ibm_relaxation = ibm_relaxation
 
         self.grid_dim = grid.shape
         dim_x, dim_y, dim_z = self.grid_dim
@@ -304,28 +316,35 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         # Add this to the constructor
         self.improved_interpolate_force_to_eulerian = improved_interpolate_force_to_eulerian
 
+        _ibm_relaxation = self.compute_dtype(self.ibm_relaxation)
+
         @wp.kernel
         def physics_based_normalize_and_correct(
-            eul_forces: wp.array(dtype=wp.vec3),  # Contains accumulated weighted velocities
-            eul_weights: wp.array(dtype=Any),  # Contains sum of weights
-            eul_velocities: wp.array(dtype=wp.vec3),  # Current velocities
+            eul_forces: wp.array(dtype=wp.vec3),
+            eul_weights: wp.array(dtype=Any),
+            eul_velocities: wp.array(dtype=wp.vec3),
         ):
             tid = wp.tid()
             weight_sum = eul_weights[tid]
 
             if weight_sum > self.compute_dtype(0.0):
-                # Calculate the physically correct target velocity at this Eulerian point
-                # by taking the weighted average of all desired velocities from influencing Lagrangian points
                 target_velocity = eul_forces[tid] / weight_sum
-
-                # The force we need to apply is the difference between the target and current velocity
-                # This is the minimal force needed to satisfy the boundary conditions collectively
                 correction_force = target_velocity - eul_velocities[tid]
+                eul_forces[tid] = _ibm_relaxation * correction_force
 
-                # Store the correction force back in eul_forces for use in later steps
-                eul_forces[tid] = correction_force
+        @wp.kernel
+        def compute_force_residual(
+            lag_forces: wp.array(dtype=wp.vec3),
+            lag_forces_prev: wp.array(dtype=wp.vec3),
+            residual: wp.array(dtype=Any),
+        ):
+            tid = wp.tid()
+            diff = lag_forces[tid] - lag_forces_prev[tid]
+            squared_norm = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]
+            wp.atomic_add(residual, 0, squared_norm)
 
         self.physics_based_normalize_and_correct = physics_based_normalize_and_correct
+        self.compute_force_residual = compute_force_residual
 
         self.initialize_lagr_force = initialize_lagr_force
         self.compute_eulerian_velocity_from_f_1 = compute_eulerian_velocity_from_f_1
@@ -349,18 +368,18 @@ class IBMStepper(IncompressibleNavierStokesStepper):
     ):
         self.s_lagr_forces = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
         self.f_lagr_velocities = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
+        s_lagr_forces_prev = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
 
         with self.timer_context:
-            # Step 1: Perform LBM step
             wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
 
-            num_iterations = 1
-            for _ in range(num_iterations):
+            for iteration in range(self.ibm_max_iterations):
+                wp.copy(s_lagr_forces_prev, self.s_lagr_forces)
+
                 self.f_eulerian_forces.zero_()
                 self.f_eulerian_weights.zero_()
                 wp.launch(kernel=self.compute_eulerian_velocity_from_f_1, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_velocities])
 
-                # Step 2: Use our improved interpolation that accumulates forces with the proper weighting
                 wp.launch(
                     kernel=self.improved_interpolate_force_to_eulerian,
                     dim=s_lagr_vertices_wp.shape[0],
@@ -375,14 +394,12 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                     ],
                 )
 
-                # Step 3: Use our physics-based normalization and correction
                 wp.launch(
                     kernel=self.physics_based_normalize_and_correct,
                     dim=self.f_eulerian_forces.shape[0],
                     inputs=[self.f_eulerian_forces, self.f_eulerian_weights, self.f_eulerian_velocities],
                 )
 
-                # Step 4: Interpolate corrected velocities back to Lagrangian points
                 wp.launch(
                     kernel=self.interpolate_velocity_to_lagrangian,
                     dim=s_lagr_vertices_wp.shape[0],
@@ -395,14 +412,23 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                     ],
                 )
 
-                # Step 5: Update Lagrangian forces
                 wp.launch(
                     kernel=self.update_lagr_force,
                     dim=s_lagr_vertices_wp.shape[0],
                     inputs=[lagr_solid_velocities_wp, self.f_lagr_velocities, self.s_lagr_forces],
                 )
 
-            # Step 6: Correct populations
+                if iteration > 0 and self.ibm_tolerance > 0:
+                    residual = wp.zeros(1, dtype=self.compute_dtype)
+                    wp.launch(
+                        kernel=self.compute_force_residual,
+                        dim=s_lagr_vertices_wp.shape[0],
+                        inputs=[self.s_lagr_forces, s_lagr_forces_prev, residual],
+                    )
+                    residual_norm = float(residual.numpy()[0]) ** 0.5
+                    if residual_norm < self.ibm_tolerance:
+                        break
+
             wp.launch(kernel=self.correct_population_ibm, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_forces])
 
         return f_0, f_1, self.s_lagr_forces
