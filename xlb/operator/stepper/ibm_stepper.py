@@ -177,53 +177,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                 delta_f = Fk * w * Ak
                 wp.atomic_add(eul_forces, index, delta_f)
 
-        # Kernel to interpolate corrected velocities back to Lagrangian points (Step 4)
-        @wp.kernel
-        def interpolate_velocity_to_lagrangian(
-            lag_positions: wp.array(dtype=wp.vec3),
-            eul_positions: wp.array(dtype=wp.vec3),
-            eul_velocities: wp.array(dtype=wp.vec3),
-            lag_fluid_velocities: wp.array(dtype=wp.vec3),
-            grid: wp.uint64,
-        ):
-            tid = wp.tid()
-            Xk = lag_positions[tid]
-
-            # Initialize numerator and denominator for interpolation
-            numerator = wp.vec3(self.compute_dtype(0.0), self.compute_dtype(0.0), self.compute_dtype(0.0))
-            denominator = self.compute_dtype(0.0)
-
-            # Query neighboring Eulerian points
-            query = wp.hash_grid_query(grid, Xk, 2.0)
-            index = int(0)
-
-            while wp.hash_grid_query_next(query, index):
-                x_pos = eul_positions[index]
-                u = eul_velocities[index]
-                w = weight(x_pos, Xk)
-                numerator += u * w
-                denominator += w
-
-            if denominator > self.compute_dtype(0.0):
-                u_interp = numerator / denominator
-            else:
-                u_interp = wp.vec3(0.0, 0.0, 0.0)
-
-            lag_fluid_velocities[tid] = u_interp
-
-        # Kernel to update the force at Lagrangian points (Step 5)
-        @wp.kernel
-        def update_lagr_force(
-            solid_lagr_velocities: wp.array(dtype=wp.vec3),
-            fluid_lagr_velocities: wp.array(dtype=wp.vec3),
-            lag_forces: wp.array(dtype=wp.vec3),
-        ):
-            tid = wp.tid()
-            vk = solid_lagr_velocities[tid]
-            uk = fluid_lagr_velocities[tid]
-            delta_F = vk - uk
-            lag_forces[tid] += delta_F
-
         @wp.kernel
         def compute_eulerian_velocity_from_f_1(f_1: wp.array4d(dtype=Any), eul_velocities: wp.array(dtype=wp.vec3)):
             i, j, k = wp.tid()
@@ -264,23 +217,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
             for l in range(self.velocity_set.q):
                 f_1[l, index[0], index[1], index[2]] += self.store_dtype(feq_force[l] - feq[l])
 
-        # Add a new kernel for conservation-aware force normalization
-        @wp.kernel
-        def conservation_aware_normalize_forces(
-            eul_forces: wp.array(dtype=wp.vec3),
-            eul_weights: wp.array(dtype=Any),
-            eul_velocities: wp.array(dtype=wp.vec3),
-        ):
-            tid = wp.tid()
-            weight_sum = eul_weights[tid]
-
-            if weight_sum > self.compute_dtype(0.0):
-                # The accumulated forces contain the weighted sum of desired velocity changes
-                # We normalize by weight_sum to get the average desired velocity change
-                # This ensures that we're applying just the right amount of force to achieve
-                # the collective boundary condition, not over-enforcing it
-                eul_forces[tid] = eul_forces[tid] / weight_sum
-
         # Add a new kernel that combines force interpolation and conservation in one step
         @wp.kernel
         def improved_interpolate_force_to_eulerian(
@@ -319,38 +255,79 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         _ibm_relaxation = self.compute_dtype(self.ibm_relaxation)
 
         @wp.kernel
-        def physics_based_normalize_and_correct(
+        def compute_velocity_and_correct(
+            f_1: wp.array4d(dtype=Any),
             eul_forces: wp.array(dtype=wp.vec3),
             eul_weights: wp.array(dtype=Any),
             eul_velocities: wp.array(dtype=wp.vec3),
         ):
-            tid = wp.tid()
-            weight_sum = eul_weights[tid]
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            _f1_thread = _f_vec()
+
+            for l in range(self.velocity_set.q):
+                _f1_thread[l] = self.compute_dtype(f_1[l, index[0], index[1], index[2]])
+
+            _rho, _u = self.macroscopic.warp_functional(_f1_thread)
+
+            hash_idx = grid_to_hash_idx(i, j, k, _dim_x, _dim_y)
+            eul_velocities[hash_idx] = _u
+
+            weight_sum = eul_weights[hash_idx]
 
             if weight_sum > self.compute_dtype(0.0):
-                target_velocity = eul_forces[tid] / weight_sum
-                correction_force = target_velocity - eul_velocities[tid]
-                eul_forces[tid] = _ibm_relaxation * correction_force
+                target_velocity = eul_forces[hash_idx] / weight_sum
+                correction_force = target_velocity - _u
+                eul_forces[hash_idx] = _ibm_relaxation * correction_force
 
         @wp.kernel
-        def compute_force_residual(
+        def interpolate_velocity_and_update_force(
+            lag_positions: wp.array(dtype=wp.vec3),
+            eul_positions: wp.array(dtype=wp.vec3),
+            eul_velocities: wp.array(dtype=wp.vec3),
+            solid_lagr_velocities: wp.array(dtype=wp.vec3),
             lag_forces: wp.array(dtype=wp.vec3),
             lag_forces_prev: wp.array(dtype=wp.vec3),
             residual: wp.array(dtype=Any),
+            compute_residual: int,
+            grid: wp.uint64,
         ):
             tid = wp.tid()
-            diff = lag_forces[tid] - lag_forces_prev[tid]
-            squared_norm = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]
-            wp.atomic_add(residual, 0, squared_norm)
+            Xk = lag_positions[tid]
 
-        self.physics_based_normalize_and_correct = physics_based_normalize_and_correct
-        self.compute_force_residual = compute_force_residual
+            numerator = wp.vec3(self.compute_dtype(0.0), self.compute_dtype(0.0), self.compute_dtype(0.0))
+            denominator = self.compute_dtype(0.0)
+
+            query = wp.hash_grid_query(grid, Xk, 2.0)
+            index = int(0)
+
+            while wp.hash_grid_query_next(query, index):
+                x_pos = eul_positions[index]
+                u = eul_velocities[index]
+                w_val = weight(x_pos, Xk)
+                numerator += u * w_val
+                denominator += w_val
+
+            if denominator > self.compute_dtype(0.0):
+                u_interp = numerator / denominator
+            else:
+                u_interp = wp.vec3(self.compute_dtype(0.0), self.compute_dtype(0.0), self.compute_dtype(0.0))
+
+            delta_F = solid_lagr_velocities[tid] - u_interp
+            lag_forces[tid] += delta_F
+
+            if compute_residual != 0:
+                diff = lag_forces[tid] - lag_forces_prev[tid]
+                squared_norm = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]
+                wp.atomic_add(residual, 0, squared_norm)
+
+        self.compute_velocity_and_correct = compute_velocity_and_correct
+        self.interpolate_velocity_and_update_force = interpolate_velocity_and_update_force
 
         self.initialize_lagr_force = initialize_lagr_force
-        self.compute_eulerian_velocity_from_f_1 = compute_eulerian_velocity_from_f_1
         self.interpolate_force_to_eulerian_atomic = interpolate_force_to_eulerian_atomic
-        self.interpolate_velocity_to_lagrangian = interpolate_velocity_to_lagrangian
-        self.update_lagr_force = update_lagr_force
+        self.compute_eulerian_velocity_from_f_1 = compute_eulerian_velocity_from_f_1
         self.correct_population_ibm = correct_population_ibm
 
     @Operator.register_backend(ComputeBackend.WARP)
@@ -367,18 +344,28 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         timestep,
     ):
         self.s_lagr_forces = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
-        self.f_lagr_velocities = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
         s_lagr_forces_prev = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
+        residual_buffer = wp.zeros(1, dtype=self.compute_dtype)
+        residual_host_wp = wp.zeros(1, dtype=self.compute_dtype, device="cpu", pinned=True)
+        residual_host = residual_host_wp.numpy()
+        residual_pending = False  # Tracks whether an async device->host copy is outstanding
 
         with self.timer_context:
             wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
 
             for iteration in range(self.ibm_max_iterations):
+                if residual_pending:
+                    # Complete any in-flight residual transfer before using the host value
+                    wp.synchronize_stream()
+                    residual_norm = float(residual_host[0]) ** 0.5
+                    residual_pending = False
+                    if residual_norm < self.ibm_tolerance:
+                        break
+
                 wp.copy(s_lagr_forces_prev, self.s_lagr_forces)
 
                 self.f_eulerian_forces.zero_()
                 self.f_eulerian_weights.zero_()
-                wp.launch(kernel=self.compute_eulerian_velocity_from_f_1, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_velocities])
 
                 wp.launch(
                     kernel=self.improved_interpolate_force_to_eulerian,
@@ -395,39 +382,38 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                 )
 
                 wp.launch(
-                    kernel=self.physics_based_normalize_and_correct,
-                    dim=self.f_eulerian_forces.shape[0],
-                    inputs=[self.f_eulerian_forces, self.f_eulerian_weights, self.f_eulerian_velocities],
+                    kernel=self.compute_velocity_and_correct,
+                    dim=f_1.shape[1:],
+                    inputs=[f_1, self.f_eulerian_forces, self.f_eulerian_weights, self.f_eulerian_velocities],
                 )
 
+                compute_residual_flag = 1 if (iteration > 0 and self.ibm_tolerance > 0) else 0
+                if compute_residual_flag:
+                    residual_buffer.zero_()
+
                 wp.launch(
-                    kernel=self.interpolate_velocity_to_lagrangian,
+                    kernel=self.interpolate_velocity_and_update_force,
                     dim=s_lagr_vertices_wp.shape[0],
                     inputs=[
                         s_lagr_vertices_wp,
                         self.f_eulerian_points,
                         self.f_eulerian_velocities,
-                        self.f_lagr_velocities,
+                        lagr_solid_velocities_wp,
+                        self.s_lagr_forces,
+                        s_lagr_forces_prev,
+                        residual_buffer,
+                        compute_residual_flag,
                         wp.uint64(self.hash_grid.id),
                     ],
                 )
 
-                wp.launch(
-                    kernel=self.update_lagr_force,
-                    dim=s_lagr_vertices_wp.shape[0],
-                    inputs=[lagr_solid_velocities_wp, self.f_lagr_velocities, self.s_lagr_forces],
-                )
+                if compute_residual_flag:
+                    # Kick off the async copy and result will be checked at the start of the next iteration
+                    wp.copy(residual_host_wp, residual_buffer)
+                    residual_pending = True
 
-                if iteration > 0 and self.ibm_tolerance > 0:
-                    residual = wp.zeros(1, dtype=self.compute_dtype)
-                    wp.launch(
-                        kernel=self.compute_force_residual,
-                        dim=s_lagr_vertices_wp.shape[0],
-                        inputs=[self.s_lagr_forces, s_lagr_forces_prev, residual],
-                    )
-                    residual_norm = float(residual.numpy()[0]) ** 0.5
-                    if residual_norm < self.ibm_tolerance:
-                        break
+            if residual_pending:
+                wp.synchronize_stream()
 
             wp.launch(kernel=self.correct_population_ibm, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_forces])
 
