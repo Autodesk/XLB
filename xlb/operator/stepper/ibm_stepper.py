@@ -289,8 +289,9 @@ class IBMStepper(IncompressibleNavierStokesStepper):
             solid_lagr_velocities: wp.array(dtype=wp.vec3),
             lag_forces: wp.array(dtype=wp.vec3),
             lag_forces_prev: wp.array(dtype=wp.vec3),
-            residual: wp.array(dtype=Any),
+            convergence_flag: wp.array(dtype=wp.int32),
             compute_residual: int,
+            tolerance_sq: Any,
             grid: wp.uint64,
         ):
             tid = wp.tid()
@@ -320,7 +321,8 @@ class IBMStepper(IncompressibleNavierStokesStepper):
             if compute_residual != 0:
                 diff = lag_forces[tid] - lag_forces_prev[tid]
                 squared_norm = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]
-                wp.atomic_add(residual, 0, squared_norm)
+                if squared_norm > tolerance_sq:
+                    wp.atomic_max(convergence_flag, 0, 1)
 
         self.compute_velocity_and_correct = compute_velocity_and_correct
         self.interpolate_velocity_and_update_force = interpolate_velocity_and_update_force
@@ -345,21 +347,33 @@ class IBMStepper(IncompressibleNavierStokesStepper):
     ):
         self.s_lagr_forces = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
         s_lagr_forces_prev = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
-        residual_buffer = wp.zeros(1, dtype=self.compute_dtype)
-        residual_host_wp = wp.zeros(1, dtype=self.compute_dtype, device="cpu", pinned=True)
-        residual_host = residual_host_wp.numpy()
-        residual_pending = False  # Tracks whether an async device->host copy is outstanding
+        convergence_flag_host_wp = wp.zeros(1, dtype=wp.int32, device="cpu", pinned=True)
+        device = f_0.device
+        if device.is_cuda:
+            # Warp recommends zero-copy by aliasing pinned host memory instead of issuing explicit copies
+            convergence_flag = wp.array(
+                ptr=convergence_flag_host_wp.ptr,
+                dtype=wp.int32,
+                shape=convergence_flag_host_wp.shape,
+                strides=convergence_flag_host_wp.strides,
+                device=device,
+            )
+        else:
+            convergence_flag = convergence_flag_host_wp
+        convergence_flag_host = convergence_flag_host_wp.numpy()
+        flag_pending = False  # Tracks whether an async convergence check is outstanding
+        tolerance_sq = self.compute_dtype(self.ibm_tolerance * self.ibm_tolerance)
 
         with self.timer_context:
             wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
 
             for iteration in range(self.ibm_max_iterations):
-                if residual_pending:
-                    # Complete any in-flight residual transfer before using the host value
+                if flag_pending:
+                    # Complete any in-flight convergence update before using the host flag
                     wp.synchronize_stream()
-                    residual_norm = float(residual_host[0]) ** 0.5
-                    residual_pending = False
-                    if residual_norm < self.ibm_tolerance:
+                    needs_more_iterations = bool(convergence_flag_host[0])
+                    flag_pending = False
+                    if not needs_more_iterations:
                         break
 
                 wp.copy(s_lagr_forces_prev, self.s_lagr_forces)
@@ -389,7 +403,7 @@ class IBMStepper(IncompressibleNavierStokesStepper):
 
                 compute_residual_flag = 1 if (iteration > 0 and self.ibm_tolerance > 0) else 0
                 if compute_residual_flag:
-                    residual_buffer.zero_()
+                    convergence_flag.zero_()
 
                 wp.launch(
                     kernel=self.interpolate_velocity_and_update_force,
@@ -401,18 +415,18 @@ class IBMStepper(IncompressibleNavierStokesStepper):
                         lagr_solid_velocities_wp,
                         self.s_lagr_forces,
                         s_lagr_forces_prev,
-                        residual_buffer,
+                        convergence_flag,
                         compute_residual_flag,
+                        tolerance_sq,
                         wp.uint64(self.hash_grid.id),
                     ],
                 )
 
                 if compute_residual_flag:
-                    # Kick off the async copy and result will be checked at the start of the next iteration
-                    wp.copy(residual_host_wp, residual_buffer)
-                    residual_pending = True
+                    # Device flag will be read at the start of the next iteration
+                    flag_pending = True
 
-            if residual_pending:
+            if flag_pending:
                 wp.synchronize_stream()
 
             wp.launch(kernel=self.correct_population_ibm, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_forces])

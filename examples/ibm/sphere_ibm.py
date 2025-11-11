@@ -1,5 +1,5 @@
 """
-Flow past a sphere (IBM) — validated setup and references
+Flow past a sphere (IBM) — Drag coefficient validation
 
 References
 - Johnson, T. A., & Patel, V. C. (1999). Flow past a sphere up to Re = 300.
@@ -12,19 +12,6 @@ References
 - Achenbach, E. (1972). Experiments on the flow past spheres at very high
   Reynolds numbers. Journal of Fluid Mechanics, 54(3), 565–575.
   (experimental Cd curve)
-
-Setup notes
-- External flow box: ~10D upstream, ~20D downstream, ~5D lateral/vertical
-  clearance
-- Sphere center at ~10D downstream of inlet; uniform inlet; pressure/zero-
-  gradient outlet
-- Reference area A = πR²; Cd = F/(0.5 U² A); expected Cd (Re ≈ 100) ≈ 1.0–1.1
-
-IBM convergence parameters
-- ibm_max_iterations: max iterative force corrections per timestep (default 2-4)
-- ibm_tolerance: L2 residual threshold for early stopping (default 1e-5)
-- ibm_relaxation: relaxation factor (0,1]; lower = more stable, slower
-  convergence
 """
 
 import os
@@ -172,18 +159,15 @@ def save_drag_coefficient(cd_values, filename):
     plt.close()
 
 
-sphere_radius = 25.0  # keep sphere large (relative to domain)
+sphere_radius = 25.0
 
-# Domain must be sufficiently large to contain the sphere and some surrounding fluid
 diameter = 2.0 * sphere_radius
-# Use at least 3 diameters in all directions so the sphere is well-resolved and visible
-upstream = int(1.5 * diameter)        # 1.5D upstream
-downstream = int(7 * diameter)      # 2.5D downstream
-ly = int(3.0 * diameter)              # 3D lateral
-lz = int(3.0 * diameter)              # 3D vertical
+upstream = int(1.5 * diameter)  # 1.5D upstream
+downstream = int(7 * diameter)  # 2.5D downstream
+ly = int(3.0 * diameter)  # 3D lateral
+lz = int(3.0 * diameter)  # 3D vertical
 lx = upstream + downstream
 grid_shape = (lx, ly, lz)
-
 
 
 # Uniform inlet velocity
@@ -192,7 +176,7 @@ u_max = 0.02
 # Place sphere at 1/3 from entrance
 sphere_center = [float(lx / 3), grid_shape[1] / 2.0, grid_shape[2] / 2.0]
 
-Re = 10000
+Re = 300
 visc = u_max * (2.0 * sphere_radius) / Re
 omega = 1.0 / (3.0 * visc + 0.5)
 
