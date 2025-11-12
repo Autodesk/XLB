@@ -8,3 +8,4 @@ warp-lang
 numpy-stl
 pydantic
 ruff
+usd-core

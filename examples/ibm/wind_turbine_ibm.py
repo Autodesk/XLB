@@ -66,7 +66,7 @@ def setup_stepper(grid, boundary_conditions, lbm_omega):
 
 # You must download the stl files from the following link: https://www.cgtrader.com/free-3d-models/industrial/industrial-machine/offshore-wind-turbine-235-m-radius
 # and separate them into two files: turbine_wind_turbine.stl and body_wind_turbine.stl. Put them in the same directory as this script.
-def load_and_prepare_meshes_turbine(grid_shape, stl_dir="./examples/ibm/wind_turbine/"):
+def load_and_prepare_meshes_turbine(grid_shape, stl_dir="./examples/ibm/"):
     rotor_stl = os.path.join(stl_dir, "turbine_wind_turbine.stl")
     body_stl = os.path.join(stl_dir, "body_wind_turbine.stl")
     if not os.path.isfile(rotor_stl):
