@@ -75,9 +75,16 @@ class GridToPoint(Operator):
             w_111 = dx * dy * dz
 
             # Compute the interpolated value
+            # Trilinear interpolation: sum contributions from each corner of the cube
             point_value = (
-                w_000 * grid_0_0_0 + w_001 * grid_0_0_1 + w_010 * grid_0_1_0 + w_011 * grid_0_1_1 +
-                w_100 * grid_1_0_0 + w_101 * grid_1_0_1 + w_110 * grid_1_1_0 + w_111 * grid_1_1_1
+                (w_000 * grid_0_0_0) +  # (0,0,0) corner
+                (w_001 * grid_0_0_1) +  # (0,0,1) corner
+                (w_010 * grid_0_1_0) +  # (0,1,0) corner
+                (w_011 * grid_0_1_1) +  # (0,1,1) corner
+                (w_100 * grid_1_0_0) +  # (1,0,0) corner
+                (w_101 * grid_1_0_1) +  # (1,0,1) corner
+                (w_110 * grid_1_1_0) +  # (1,1,0) corner
+                (w_111 * grid_1_1_1)    # (1,1,1) corner
             )
 
             # Set the output
