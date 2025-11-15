@@ -6,4 +6,9 @@ from .utils import (
     rotate_geometry,
     voxelize_stl,
     axangle2mat,
+    save_usd_vorticity,
+    save_usd_q_criterion,
+    update_usd_lagrangian_parts,
+    plot_object_placement,
+    colorize_scalars,
 )
