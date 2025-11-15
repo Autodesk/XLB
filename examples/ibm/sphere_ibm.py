@@ -65,7 +65,9 @@ def bc_profile(precision_policy, grid_shape, u_max):
 def calculate_drag_coefficient(lag_forces, reference_velocity, frontal_area, areas_wp):
     forces_np = lag_forces.numpy()
     drag_forces = forces_np[:, 0]
-
+    # The negative sign is necessary because drag is defined as the force opposing the flow direction.
+    # In this simulation, the computed force may be positive in the flow direction, so we negate it
+    # to obtain the drag (force acting against the flow).
     total_drag = -np.sum(drag_forces * areas_wp.numpy())
 
     dynamic_pressure = 0.5 * reference_velocity**2
