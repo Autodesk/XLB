@@ -1,3 +1,10 @@
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("xlb")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
+
 # Enum classes
 from xlb.compute_backend import ComputeBackend as ComputeBackend
 from xlb.precision_policy import PrecisionPolicy as PrecisionPolicy, Precision as Precision
@@ -15,7 +22,6 @@ import xlb.operator.collision
 import xlb.operator.stream
 import xlb.operator.boundary_condition
 import xlb.operator.macroscopic
-import xlb.operator.immersed_boundary
 import xlb.operator.postprocess
 
 # Grids
