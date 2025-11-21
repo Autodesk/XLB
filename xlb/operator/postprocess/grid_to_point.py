@@ -76,8 +76,14 @@ class GridToPoint(Operator):
 
             # Compute the interpolated value
             point_value = (
-                w_000 * grid_0_0_0 + w_001 * grid_0_0_1 + w_010 * grid_0_1_0 + w_011 * grid_0_1_1 +
-                w_100 * grid_1_0_0 + w_101 * grid_1_0_1 + w_110 * grid_1_1_0 + w_111 * grid_1_1_1
+                w_000 * grid_0_0_0
+                + w_001 * grid_0_0_1
+                + w_010 * grid_0_1_0
+                + w_011 * grid_0_1_1
+                + w_100 * grid_1_0_0
+                + w_101 * grid_1_0_1
+                + w_110 * grid_1_1_0
+                + w_111 * grid_1_1_1
             )
 
             # Set the output
