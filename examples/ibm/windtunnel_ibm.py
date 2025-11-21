@@ -31,7 +31,7 @@ from pxr import Usd, UsdGeom, Sdf, Vt
 from xlb.operator.postprocess import QCriterion, Vorticity, GridToPoint
 
 
-def load_and_prepare_meshes_car(grid_shape, stl_dir="/home/mehdi/Repos/stl-files/car"):
+def load_and_prepare_meshes_car(grid_shape, stl_dir):
     if not os.path.exists(stl_dir):
         raise FileNotFoundError(f"STL directory {stl_dir} does not exist.")
 

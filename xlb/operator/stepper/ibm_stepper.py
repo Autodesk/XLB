@@ -95,7 +95,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         # Group active boundary conditions
         active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
 
-        _opp_indices = self.velocity_set.opp_indices
 
         @wp.func
         def hash_to_grid_idx(hash_idx: int, dim_x: int, dim_y: int) -> wp.vec3i:
