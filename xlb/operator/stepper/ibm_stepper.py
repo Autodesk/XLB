@@ -1,0 +1,476 @@
+from functools import partial
+from jax import jit
+import warp as wp
+from typing import Any
+from contextlib import nullcontext
+
+from xlb.compute_backend import ComputeBackend
+from xlb.operator import Operator
+from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
+from xlb.operator.stepper.nse_stepper import IncompressibleNavierStokesStepper
+from warp.utils import ScopedTimer
+
+
+class IBMStepper(IncompressibleNavierStokesStepper):
+    """
+    Incompressible Navier-Stokes stepper with immersed boundary coupling.
+
+    Note:
+        The iterative IBM loop follows the spirit of multi-direct forcing schemes
+        such as those discussed by Inamuro (2012) and Ataei et al. (2022). The flow
+        field is corrected multiple times within a single fluid step so that the
+        no-slip constraint on immersed surfaces is satisfied more accurately. This
+        implementation differs in three ways:
+
+        1) Velocity-based target field instead of direct force spreading. Classical
+           IBM spreads the Lagrangian forces F_k with
+
+                    f(x_i) ~= sum_k F_k delta_h(x_i - X_k) * DeltaA_k.
+
+           Here we accumulate a target Eulerian velocity using a partition of unity:
+
+                    eul_forces[i] <- sum_k w_ik A_k U*_k
+                    eul_weights[i] <- sum_k w_ik
+                    target_u[i] = eul_forces[i] / eul_weights[i]  (if the weight sum is > 0)
+                    correction_force[i] = target_u[i] - u[i]
+
+           Normalizing by eul_weights keeps the constraint consistent for nonuniform
+           marker spacing and avoids over-forcing when many markers map to one node.
+
+        2) Relaxed fixed point iteration. Lagrangian forces are updated from the
+           mismatch between solid and interpolated fluid velocities, and the
+           resulting IBM correction on the Eulerian grid is under-relaxed via
+           ibm_relaxation inside compute_velocity_and_correct. This turns the IBM
+           loop into a relaxed fixed point iteration which improves robustness for
+           for fine Lagrangian resolution and high Reynolds number flows.
+
+        3) Residual-based stopping instead of a fixed iteration count. The loop
+           monitors the maximum incremental change in Lagrangian forces and stops
+           early when it falls below ibm_tolerance, avoiding unnecessary sweeps when
+           the constraint is already well satisfied. A pinned host flag is aliased on
+           the device so kernels can report residual breaches without extra copies,
+           and the host only synchronizes when that flag is read, keeping the final
+           check inexpensive while still guaranteeing correctness.
+
+           The Eulerian-Lagrangian coupling is implemented with a hash grid so that
+           interpolation and spreading share the same neighbor search, which keeps the
+           method efficient on GPUs and compatible with multi-resolution meshes.
+    """
+
+    def __init__(
+        self,
+        grid,
+        boundary_conditions=[],
+        collision_type="BGK",
+        use_scoped_timer=False,
+        ibm_max_iterations=4,
+        ibm_tolerance=1e-5,
+        ibm_relaxation=1.0,
+    ):
+        super().__init__(grid, boundary_conditions, collision_type)
+        self.timer_context = (
+            ScopedTimer("IBM_Stepper", use_nvtx=True, synchronize=True, cuda_filter=wp.TIMING_ALL) if use_scoped_timer else nullcontext()
+        )
+
+        self.ibm_max_iterations = ibm_max_iterations
+        self.ibm_tolerance = ibm_tolerance
+        self.ibm_relaxation = ibm_relaxation
+
+        self.grid_dim = grid.shape
+        dim_x, dim_y, dim_z = self.grid_dim
+
+        # Initialize Eulerian points array
+        self.f_eulerian_points = wp.zeros(shape=(dim_x * dim_y * dim_z), dtype=wp.vec3)
+        self.f_eulerian_forces = wp.zeros(shape=(dim_x * dim_y * dim_z), dtype=wp.vec3)
+        self.f_eulerian_velocities = wp.zeros(shape=(dim_x * dim_y * dim_z), dtype=wp.vec3)
+        self.f_eulerian_weights = wp.zeros(shape=(dim_x * dim_y * dim_z), dtype=self.compute_dtype)
+
+        @wp.func
+        def hash_to_grid_idx(hash_idx: int, dim_x: int, dim_y: int) -> wp.vec3i:
+            """Convert hash grid index to 3D grid coordinates"""
+            k = hash_idx // (dim_x * dim_y)
+            j = (hash_idx % (dim_x * dim_y)) // dim_x
+            i = hash_idx % dim_x
+            return wp.vec3i(i, j, k)
+
+        @wp.func
+        def grid_to_hash_idx(i: int, j: int, k: int, dim_x: int, dim_y: int) -> int:
+            """Convert 3D grid coordinates to hash grid index"""
+            return k * (dim_x * dim_y) + j * dim_x + i
+
+        @wp.kernel
+        def init_eulerian_points(points: wp.array(dtype=wp.vec3), dim_x: int, dim_y: int, dim_z: int):
+            idx = wp.tid()
+            grid_pos = hash_to_grid_idx(idx, dim_x, dim_y)
+            points[idx] = wp.vec3(float(grid_pos[0]) + 0.5, float(grid_pos[1]) + 0.5, float(grid_pos[2]) + 0.5)
+
+        # Launch kernel to initialize points
+        wp.launch(kernel=init_eulerian_points, dim=dim_x * dim_y * dim_z, inputs=[self.f_eulerian_points, dim_x, dim_y, dim_z])
+
+        self.hash_grid = wp.HashGrid(dim_x=dim_x, dim_y=dim_y, dim_z=dim_z)
+        self.hash_grid.build(self.f_eulerian_points, 2.0)  # 2.0 is the radius
+
+        self.s_lagr_forces_initialized = False
+
+        self._construct_ibm_warp()
+
+    @Operator.register_backend(ComputeBackend.JAX)
+    @partial(jit, static_argnums=(0))
+    def jax_implementation(self, f_0, f_1, bc_mask, missing_mask, timestep):
+        raise NotImplementedError("IBM stepper is not implemented in JAX backend. Please use WARP backend.")
+
+    def _construct_ibm_warp(self):
+        # Set local constants
+        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
+        _opp_indices = self.velocity_set.opp_indices
+        _weights = self.velocity_set.w
+        _c = self.velocity_set.c
+        _dim_x = self.grid_dim[0]
+        _dim_y = self.grid_dim[1]
+
+        # Read the list of bc_to_id created upon instantiation
+        bc_to_id = boundary_condition_registry.bc_to_id
+
+        # Gather IDs of ExtrapolationOutflowBC boundary conditions
+        extrapolation_outflow_bc_ids = []
+        for bc_name, bc_id in bc_to_id.items():
+            if bc_name.startswith("ExtrapolationOutflowBC"):
+                extrapolation_outflow_bc_ids.append(bc_id)
+        # Group active boundary conditions
+        active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
+
+        @wp.func
+        def hash_to_grid_idx(hash_idx: int, dim_x: int, dim_y: int) -> wp.vec3i:
+            """Convert hash grid index to 3D grid coordinates"""
+            k = hash_idx // (dim_x * dim_y)
+            j = (hash_idx % (dim_x * dim_y)) // dim_x
+            i = hash_idx % dim_x
+            return wp.vec3i(i, j, k)
+
+        @wp.func
+        def grid_to_hash_idx(i: int, j: int, k: int, dim_x: int, dim_y: int) -> int:
+            """Convert 3D grid coordinates to hash grid index"""
+            return k * (dim_x * dim_y) + j * dim_x + i
+
+        # Smoothing function as proposed by Peskin
+        @wp.func
+        def peskin_weight(r: float):
+            abs_r = wp.abs(r)
+            if abs_r <= 1.0:
+                return self.compute_dtype(0.125) * (
+                    self.compute_dtype(3.0)
+                    - 2.0 * abs_r
+                    + wp.sqrt(self.compute_dtype(1.0) + self.compute_dtype(4.0) * abs_r - self.compute_dtype(4.0) * abs_r * abs_r)
+                )
+            elif abs_r <= 2.0:
+                return self.compute_dtype(0.125) * (
+                    self.compute_dtype(5.0)
+                    - 2.0 * abs_r
+                    - wp.sqrt(self.compute_dtype(-7.0) + self.compute_dtype(12.0) * abs_r - self.compute_dtype(4.0) * abs_r * abs_r)
+                )
+            else:
+                return self.compute_dtype(0.0)
+
+        @wp.func
+        def weight(x: wp.vec3, Xk: wp.vec3):
+            r = x - Xk
+            return peskin_weight(r[0]) * peskin_weight(r[1]) * peskin_weight(r[2])
+
+        # Kernel to initialize the force on Lagrangian points (Step 1)
+        @wp.kernel
+        def initialize_lagr_force(
+            solid_lagr_velocities: wp.array(dtype=wp.vec3),
+            fluid_lagr_velocities: wp.array(dtype=wp.vec3),
+            lag_forces: wp.array(dtype=wp.vec3),
+        ):
+            tid = wp.tid()
+            vk = solid_lagr_velocities[tid]
+            u_Xk = fluid_lagr_velocities[tid]
+
+            # Initialize force
+            lag_forces[tid] = vk - u_Xk
+
+        # Kernel to interpolate force from Lagrangian to Eulerian grid (Step 2)
+        @wp.kernel
+        def interpolate_force_to_eulerian_atomic(
+            lag_positions: wp.array(dtype=wp.vec3),
+            lag_forces: wp.array(dtype=wp.vec3),
+            lag_areas: wp.array(dtype=Any),
+            eul_positions: wp.array(dtype=wp.vec3),
+            eul_forces: wp.array(dtype=wp.vec3),
+            eul_weights: wp.array(dtype=Any),  # Accumulator for weights
+            grid: wp.uint64,
+        ):
+            tid = wp.tid()
+            Xk = lag_positions[tid]
+            Fk = lag_forces[tid]
+            Ak = lag_areas[tid]
+
+            # Query neighboring Eulerian points
+            query = wp.hash_grid_query(grid, Xk, 2.0)
+            index = int(0)
+
+            while wp.hash_grid_query_next(query, index):
+                x_pos = eul_positions[index]
+                w = weight(x_pos, Xk)
+                # First accumulate the weight
+                wp.atomic_add(eul_weights, index, w)
+                # Then accumulate the weighted force
+                delta_f = Fk * w * Ak
+                wp.atomic_add(eul_forces, index, delta_f)
+
+        @wp.kernel
+        def compute_eulerian_velocity_from_f_1(f_1: wp.array4d(dtype=Any), eul_velocities: wp.array(dtype=wp.vec3)):
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+            # Read from thread local memory
+            _f_1_thread = _f_vec()
+
+            for l in range(self.velocity_set.q):
+                _f_1_thread[l] = self.compute_dtype(f_1[l, index[0], index[1], index[2]])
+
+            _rho, _u = self.macroscopic.warp_functional(_f_1_thread)
+
+            eul_velocities[grid_to_hash_idx(i, j, k, _dim_x, _dim_y)] = _u
+
+        @wp.kernel
+        def correct_population_ibm(f_1: wp.array4d(dtype=Any), eul_forces: wp.array(dtype=wp.vec3)):
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            # Initialize thread-local storage for populations
+            _f1_thread = _f_vec()
+
+            # Retrieve f_1 values for the current grid point
+            for l in range(self.velocity_set.q):
+                _f1_thread[l] = self.compute_dtype(f_1[l, index[0], index[1], index[2]])
+
+            # Compute macroscopic quantities (rho, u) from f_1
+            _rho, _u = self.macroscopic.warp_functional(_f1_thread)
+
+            # Retrieve the force at the current grid point
+            force = eul_forces[grid_to_hash_idx(i, j, k, _dim_x, _dim_y)]
+
+            # Compute equilibrium with force applied
+            feq_force = self.equilibrium.warp_functional(_rho, _u + force)
+            feq = self.equilibrium.warp_functional(_rho, _u)
+
+            # Update f_1 with the new post-collision population
+            for l in range(self.velocity_set.q):
+                f_1[l, index[0], index[1], index[2]] += self.store_dtype(feq_force[l] - feq[l])
+
+        # Add a new kernel that combines force interpolation and conservation in one step
+        @wp.kernel
+        def improved_interpolate_force_to_eulerian(
+            lag_positions: wp.array(dtype=wp.vec3),
+            lag_forces: wp.array(dtype=wp.vec3),
+            lag_areas: wp.array(dtype=Any),
+            eul_positions: wp.array(dtype=wp.vec3),
+            eul_forces: wp.array(dtype=wp.vec3),  # Will store desired velocity, not force directly
+            eul_weights: wp.array(dtype=Any),  # For normalization
+            grid: wp.uint64,
+        ):
+            tid = wp.tid()
+            Xk = lag_positions[tid]
+            Fk = lag_forces[tid]  # Fk here represents the desired velocity change at the Lagrangian point
+            Ak = lag_areas[tid]
+
+            # Query neighboring Eulerian points
+            query = wp.hash_grid_query(grid, Xk, 2.0)
+            index = int(0)
+
+            while wp.hash_grid_query_next(query, index):
+                x_pos = eul_positions[index]
+                w = weight(x_pos, Xk)
+
+                # The weight represents how much this Lagrangian point influences this Eulerian point
+                wp.atomic_add(eul_weights, index, w)
+
+                # We accumulate the weighted desired velocity from each Lagrangian point
+                # Each Lagrangian point contributes according to its weight and area
+                target_velocity = Fk * w * Ak
+                wp.atomic_add(eul_forces, index, target_velocity)
+
+        # Add this to the constructor
+        self.improved_interpolate_force_to_eulerian = improved_interpolate_force_to_eulerian
+
+        _ibm_relaxation = self.compute_dtype(self.ibm_relaxation)
+
+        @wp.kernel
+        def compute_velocity_and_correct(
+            f_1: wp.array4d(dtype=Any),
+            eul_forces: wp.array(dtype=wp.vec3),
+            eul_weights: wp.array(dtype=Any),
+            eul_velocities: wp.array(dtype=wp.vec3),
+        ):
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            _f1_thread = _f_vec()
+
+            for l in range(self.velocity_set.q):
+                _f1_thread[l] = self.compute_dtype(f_1[l, index[0], index[1], index[2]])
+
+            _rho, _u = self.macroscopic.warp_functional(_f1_thread)
+
+            hash_idx = grid_to_hash_idx(i, j, k, _dim_x, _dim_y)
+            eul_velocities[hash_idx] = _u
+
+            weight_sum = eul_weights[hash_idx]
+
+            if weight_sum > self.compute_dtype(0.0):
+                target_velocity = eul_forces[hash_idx] / weight_sum
+                correction_force = target_velocity - _u
+                eul_forces[hash_idx] = _ibm_relaxation * correction_force
+
+        @wp.kernel
+        def interpolate_velocity_and_update_force(
+            lag_positions: wp.array(dtype=wp.vec3),
+            eul_positions: wp.array(dtype=wp.vec3),
+            eul_velocities: wp.array(dtype=wp.vec3),
+            solid_lagr_velocities: wp.array(dtype=wp.vec3),
+            lag_forces: wp.array(dtype=wp.vec3),
+            lag_forces_prev: wp.array(dtype=wp.vec3),
+            convergence_flag: wp.array(dtype=wp.int32),
+            compute_residual: int,
+            tolerance_sq: Any,
+            grid: wp.uint64,
+        ):
+            tid = wp.tid()
+            Xk = lag_positions[tid]
+
+            numerator = wp.vec3(self.compute_dtype(0.0), self.compute_dtype(0.0), self.compute_dtype(0.0))
+            denominator = self.compute_dtype(0.0)
+
+            query = wp.hash_grid_query(grid, Xk, 2.0)
+            index = int(0)
+
+            while wp.hash_grid_query_next(query, index):
+                x_pos = eul_positions[index]
+                u = eul_velocities[index]
+                w_val = weight(x_pos, Xk)
+                numerator += u * w_val
+                denominator += w_val
+
+            if denominator > self.compute_dtype(0.0):
+                u_interp = numerator / denominator
+            else:
+                u_interp = wp.vec3(self.compute_dtype(0.0), self.compute_dtype(0.0), self.compute_dtype(0.0))
+
+            delta_F = solid_lagr_velocities[tid] - u_interp
+            lag_forces[tid] += delta_F
+
+            if compute_residual != 0:
+                diff = lag_forces[tid] - lag_forces_prev[tid]
+                squared_norm = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]
+                if squared_norm > tolerance_sq:
+                    wp.atomic_max(convergence_flag, 0, 1)
+
+        self.compute_velocity_and_correct = compute_velocity_and_correct
+        self.interpolate_velocity_and_update_force = interpolate_velocity_and_update_force
+
+        self.initialize_lagr_force = initialize_lagr_force
+        self.interpolate_force_to_eulerian_atomic = interpolate_force_to_eulerian_atomic
+        self.compute_eulerian_velocity_from_f_1 = compute_eulerian_velocity_from_f_1
+        self.correct_population_ibm = correct_population_ibm
+
+    @Operator.register_backend(ComputeBackend.WARP)
+    def warp_implementation(
+        self,
+        f_0,
+        f_1,
+        s_lagr_vertices_wp,
+        lagr_solid_vertex_areas_wp,
+        lagr_solid_velocities_wp,
+        bc_mask,
+        missing_mask,
+        omega,
+        timestep,
+    ):
+        self.s_lagr_forces = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
+        s_lagr_forces_prev = wp.zeros(shape=(s_lagr_vertices_wp.shape[0]), dtype=wp.vec3)
+        convergence_flag_host_wp = wp.zeros(1, dtype=wp.int32, device="cpu", pinned=True)
+        device = f_0.device
+        if device.is_cuda:
+            # Warp recommends zero-copy by aliasing pinned host memory instead of issuing explicit copies
+            convergence_flag = wp.array(
+                ptr=convergence_flag_host_wp.ptr,
+                dtype=wp.int32,
+                shape=convergence_flag_host_wp.shape,
+                strides=convergence_flag_host_wp.strides,
+                device=device,
+            )
+        else:
+            convergence_flag = convergence_flag_host_wp
+        convergence_flag_host = convergence_flag_host_wp.numpy()
+        flag_pending = False  # Tracks whether an async convergence check is outstanding
+        tolerance_sq = self.compute_dtype(self.ibm_tolerance * self.ibm_tolerance)
+
+        with self.timer_context:
+            wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
+            for iteration in range(self.ibm_max_iterations):
+                if flag_pending:
+                    # Complete any in-flight convergence update before using the host flag
+                    wp.synchronize_stream()
+                    needs_more_iterations = bool(convergence_flag_host[0])
+                    flag_pending = False
+                    if not needs_more_iterations:
+                        break
+
+                wp.copy(s_lagr_forces_prev, self.s_lagr_forces)
+
+                self.f_eulerian_forces.zero_()
+                self.f_eulerian_weights.zero_()
+
+                wp.launch(
+                    kernel=self.improved_interpolate_force_to_eulerian,
+                    dim=s_lagr_vertices_wp.shape[0],
+                    inputs=[
+                        s_lagr_vertices_wp,
+                        self.s_lagr_forces,
+                        lagr_solid_vertex_areas_wp,
+                        self.f_eulerian_points,
+                        self.f_eulerian_forces,
+                        self.f_eulerian_weights,
+                        wp.uint64(self.hash_grid.id),
+                    ],
+                )
+
+                wp.launch(
+                    kernel=self.compute_velocity_and_correct,
+                    dim=f_1.shape[1:],
+                    inputs=[f_1, self.f_eulerian_forces, self.f_eulerian_weights, self.f_eulerian_velocities],
+                )
+
+                compute_residual_flag = 1 if (iteration > 0 and self.ibm_tolerance > 0) else 0
+                if compute_residual_flag:
+                    convergence_flag.zero_()
+
+                wp.launch(
+                    kernel=self.interpolate_velocity_and_update_force,
+                    dim=s_lagr_vertices_wp.shape[0],
+                    inputs=[
+                        s_lagr_vertices_wp,
+                        self.f_eulerian_points,
+                        self.f_eulerian_velocities,
+                        lagr_solid_velocities_wp,
+                        self.s_lagr_forces,
+                        s_lagr_forces_prev,
+                        convergence_flag,
+                        compute_residual_flag,
+                        tolerance_sq,
+                        wp.uint64(self.hash_grid.id),
+                    ],
+                )
+
+                if compute_residual_flag:
+                    # Device flag will be read at the start of the next iteration
+                    flag_pending = True
+
+            if flag_pending:
+                wp.synchronize_stream()
+
+            wp.launch(kernel=self.correct_population_ibm, dim=f_1.shape[1:], inputs=[f_1, self.f_eulerian_forces])
+
+        return f_0, f_1, self.s_lagr_forces

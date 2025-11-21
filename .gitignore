@@ -155,3 +155,11 @@ checkpoints/*
 dist/
 build/
 *.egg-info/
+
+# USD files
+*.usd
+*.usda
+*.usdc
+*.usd.gz
+*.usd.zip
+*.usd.bz2
