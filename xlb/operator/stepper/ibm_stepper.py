@@ -95,7 +95,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
         # Group active boundary conditions
         active_bcs = set(boundary_condition_registry.id_to_bc[bc.id] for bc in self.boundary_conditions)
 
-
         @wp.func
         def hash_to_grid_idx(hash_idx: int, dim_x: int, dim_y: int) -> wp.vec3i:
             """Convert hash grid index to 3D grid coordinates"""

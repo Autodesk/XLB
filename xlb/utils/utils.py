@@ -326,6 +326,24 @@ def get_color(
     values: wp.array(dtype=float),
     out_color: wp.array(dtype=wp.vec3),
 ):
+    """
+    Colorize scalars using a rainbow color map.
+
+    Parameters
+    ----------
+    low : float
+        The lower bound of the color map.
+    high : float
+        The upper bound of the color map.
+    values : wp.array(dtype=float)
+        The values to colorize.
+    out_color : wp.array(dtype=wp.vec3)
+        The output colors.
+
+    Returns
+    -------
+    None
+    """
     tid = wp.tid()
     v = values[tid]
     r = 1.0
@@ -352,6 +370,29 @@ def get_color(
 
 
 def colorize_scalars(scalars, device=None, value_range=None, percentiles=(5, 95), target=None):
+    """
+    Colorize scalars using a rainbow color map.
+
+    Parameters
+    ----------
+    scalars : wp.array(dtype=float)
+        The scalars to colorize.
+    device : wp.Device, optional
+        The device to use for the colorization.
+    value_range : tuple, optional
+        The value range to use for the colorization.
+    percentiles : tuple, optional
+        The percentiles to use for the colorization.
+    target : wp.array(dtype=wp.vec3), optional
+        The target array to store the colors.
+
+    Returns
+    -------
+    wp.array(dtype=wp.vec3)
+        The colors.
+    tuple
+        The value range used for the colorization.
+    """
     if device is None:
         device = scalars.device
     colors = target if target is not None else wp.empty(scalars.shape[0], dtype=wp.vec3, device=device)
@@ -375,6 +416,19 @@ def colorize_scalars(scalars, device=None, value_range=None, percentiles=(5, 95)
 
 
 def _normalize_clip_values(values):
+    """
+    Internal function to normalize clip values.
+
+    Parameters
+    ----------
+    values : tuple, optional
+        The clip values to normalize.
+
+    Returns
+    -------
+    tuple
+        The normalized clip values.
+    """
     if values is None:
         return (0, 0, 0)
     if isinstance(values, (int, float)):
@@ -387,6 +441,23 @@ def _normalize_clip_values(values):
 
 
 def _slice_velocity_field(field, clip_lower, clip_upper):
+    """
+    Internal function to slice a velocity field.
+
+    Parameters
+    ----------
+    field : wp.array(dtype=float)
+        The velocity field to slice.
+    clip_lower : tuple, optional
+        The lower clip values.
+    clip_upper : tuple, optional
+        The upper clip values.
+
+    Returns
+    -------
+    wp.array(dtype=float)
+        The sliced velocity field.
+    """
     lower = _normalize_clip_values(clip_lower)
     upper = _normalize_clip_values(clip_upper)
     slices = [slice(None)]
@@ -398,12 +469,35 @@ def _slice_velocity_field(field, clip_lower, clip_upper):
 
 
 def _clone_to_device(array, device):
+    """
+    Internal function to clone an array to a device.
+
+    Parameters
+    ----------
+    array : wp.array(dtype=float)
+        The array to clone.
+    device : wp.Device
+        The device to clone the array to.
+
+    Returns
+    -------
+    wp.array(dtype=float)
+        The cloned array.
+    """
     if hasattr(array, "device") and array.device == device:
         return array
     return wp.clone(array, device=device)
 
 
 def _get_usd_modules():
+    """
+    Internal function to get the USD modules.
+
+    Returns
+    -------
+    tuple
+        The USD modules (UsdGeom, Vt).
+    """
     UsdGeom = importlib.import_module("pxr.UsdGeom")
     Vt = importlib.import_module("pxr.Vt")
     return UsdGeom, Vt
@@ -426,6 +520,46 @@ def save_usd_vorticity(
     color_percentiles=(5, 95),
     color_range=None,
 ):
+    """
+    Save the vorticity field to a USD mesh.
+
+    Parameters
+    ----------
+    timestep : int
+        The timestep.
+    post_process_interval : int
+        The post-process interval.
+    bc_mask : wp.array(dtype=bool)
+        The boundary mask.
+    f_current : wp.array(dtype=float)
+        The current field.
+    grid_shape : tuple
+        The shape of the grid.
+    usd_mesh : pxr.Usd.Mesh
+        The USD mesh to save the vorticity field to.
+    vorticity_operator : xlb.operator.vorticity.VorticityOperator
+        The vorticity operator.
+    precision_policy : xlb.precision_policy.PrecisionPolicy
+        The precision policy.
+    vorticity_threshold : float
+        The vorticity threshold.
+    usd_stage : pxr.Usd.Stage
+        The USD stage.
+    device : wp.Device, optional
+        The device to use for the computation.
+    clip_lower : tuple, optional
+        The lower clip values.
+    clip_upper : tuple, optional
+        The upper clip values.
+    color_percentiles : tuple, optional
+        The percentiles to use for the colorization.
+    color_range : tuple, optional
+        The value range to use for the colorization.
+
+    Returns
+    -------
+    None
+    """
     from xlb.compute_backend import ComputeBackend
     from xlb.operator.macroscopic import Macroscopic
     from xlb.operator.postprocess import GridToPoint
@@ -497,6 +631,46 @@ def save_usd_q_criterion(
     color_range=(0.0, 0.1),
     color_percentiles=None,
 ):
+    """
+    Save the Q-criterion field to a USD mesh.
+
+    Parameters
+    ----------
+    timestep : int
+        The timestep.
+    post_process_interval : int
+        The post-process interval.
+    bc_mask : wp.array(dtype=bool)
+        The boundary mask.
+    f_current : wp.array(dtype=float)
+        The current field.
+    grid_shape : tuple
+        The shape of the grid.
+    usd_mesh : pxr.Usd.Mesh
+        The USD mesh to save the Q-criterion field to.
+    q_criterion_operator : xlb.operator.q_criterion.QCriterionOperator
+        The Q-criterion operator.
+    precision_policy : xlb.precision_policy.PrecisionPolicy
+        The precision policy.
+    q_threshold : float
+        The Q-criterion threshold.
+    usd_stage : pxr.Usd.Stage
+        The USD stage.
+    device : wp.Device, optional
+        The device to use for the computation.
+    clip_lower : tuple, optional
+        The lower clip values.
+    clip_upper : tuple, optional
+        The upper clip values.
+    color_range : tuple, optional
+        The value range to use for the colorization.
+    color_percentiles : tuple, optional
+        The percentiles to use for the colorization.
+
+    Returns
+    -------
+    None
+    """
     from xlb.compute_backend import ComputeBackend
     from xlb.operator.macroscopic import Macroscopic
     from xlb.operator.postprocess import GridToPoint
@@ -569,6 +743,32 @@ def update_usd_lagrangian_parts(
     force_component=0,
     device=None,
 ):
+    """
+    Update the USD lagrangian parts. The lagrangian parts are updated with the vertices and faces. The forces are colorized using a rainbow color map.
+    The color map is a linear interpolation between the lower and upper bounds.
+    Parameters
+    ----------
+    timestep : int
+        The timestep.
+    post_process_interval : int
+        The post-process interval.
+    vertices_wp : wp.array(dtype=float)
+        The vertices of the lagrangian parts.
+    parts : list
+        The parts of the lagrangian mesh.
+    vertex_offset : tuple, optional
+        The vertex offset.
+    lag_forces : wp.array(dtype=float), optional
+        The forces of the lagrangian parts.
+    force_component : int, optional
+        The component of the forces to colorize.
+    device : wp.Device, optional
+        The device to use for the computation.
+
+    Returns
+    -------
+    None
+    """
     vertices_np = vertices_wp.numpy()
     if vertex_offset is not None:
         offset_array = np.asarray(vertex_offset, dtype=np.float64)
@@ -629,6 +829,28 @@ def update_usd_lagrangian_parts(
 
 
 def plot_object_placement(vertices_wp, grid_shape, filename, title, object_label="Object"):
+    """
+    Plot the object placement.
+    The object placement is plotted as a polygon in the domain. The domain is the bounding box of the vertices.
+    The plot is saved as a PNG file.
+
+    Parameters
+    ----------
+    vertices_wp : wp.array(dtype=float)
+        The vertices of the object.
+    grid_shape : tuple
+        The shape of the grid.
+    filename : str
+        The filename to save the plot to.
+    title : str
+        The title of the plot.
+    object_label : str, optional
+        The label of the object.
+
+    Returns
+    -------
+    None
+    """
     verts = vertices_wp.numpy()
     obj_min = verts.min(axis=0)
     obj_max = verts.max(axis=0)
