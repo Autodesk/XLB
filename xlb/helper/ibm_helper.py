@@ -104,13 +104,6 @@ def prepare_immersed_boundary(mesh, max_lbm_length, translation=None, rotation=N
         - vertex_areas_wp: Warp array containing Voronoi areas for each vertex
         - faces_np: NumPy array containing face indices
     """
-    # First normalize the mesh to the desired LBM length
-    # max_length = mesh.extents.max()
-    # normalize_scale = max_lbm_length / max_length
-    # mesh.apply_scale(normalize_scale)
-
-    # # Apply additional transformations
-    # mesh = transform_mesh(mesh, translation=translation, rotation=rotation, rotation_order=rotation_order, scale=scale)
 
     # Subdivide to ensure at least one vertex per cell
     mesh = mesh.subdivide_to_size(max_edge=1.0, max_iter=200)

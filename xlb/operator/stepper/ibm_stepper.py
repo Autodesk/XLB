@@ -12,6 +12,51 @@ from warp.utils import ScopedTimer
 
 
 class IBMStepper(IncompressibleNavierStokesStepper):
+    """
+    Incompressible Navier-Stokes stepper with immersed boundary coupling.
+
+    Note:
+        The iterative IBM loop follows the spirit of multi-direct forcing schemes
+        such as those discussed by Inamuro (2012) and Ataei et al. (2022). The flow
+        field is corrected multiple times within a single fluid step so that the
+        no-slip constraint on immersed surfaces is satisfied more accurately. This
+        implementation differs in three ways:
+
+        1) Velocity-based target field instead of direct force spreading. Classical
+           IBM spreads the Lagrangian forces F_k with
+
+                    f(x_i) ~= sum_k F_k delta_h(x_i - X_k) * DeltaA_k.
+
+           Here we accumulate a target Eulerian velocity using a partition of unity:
+
+                    eul_forces[i] <- sum_k w_ik A_k U*_k
+                    eul_weights[i] <- sum_k w_ik
+                    target_u[i] = eul_forces[i] / eul_weights[i]  (if the weight sum is > 0)
+                    correction_force[i] = target_u[i] - u[i]
+
+           Normalizing by eul_weights keeps the constraint consistent for nonuniform
+           marker spacing and avoids over-forcing when many markers map to one node.
+
+        2) Relaxed fixed point iteration. Lagrangian forces are updated from the
+           mismatch between solid and interpolated fluid velocities, and the
+           resulting IBM correction on the Eulerian grid is under-relaxed via
+           ibm_relaxation inside compute_velocity_and_correct. This turns the IBM
+           loop into a relaxed fixed point iteration which improves robustness for
+           for fine Lagrangian resolution and high Reynolds number flows.
+
+        3) Residual-based stopping instead of a fixed iteration count. The loop
+           monitors the maximum incremental change in Lagrangian forces and stops
+           early when it falls below ibm_tolerance, avoiding unnecessary sweeps when
+           the constraint is already well satisfied. A pinned host flag is aliased on
+           the device so kernels can report residual breaches without extra copies,
+           and the host only synchronizes when that flag is read, keeping the final
+           check inexpensive while still guaranteeing correctness.
+
+           The Eulerian-Lagrangian coupling is implemented with a hash grid so that
+           interpolation and spreading share the same neighbor search, which keeps the
+           method efficient on GPUs and compatible with multi-resolution meshes.
+    """
+
     def __init__(
         self,
         grid,
@@ -364,7 +409,6 @@ class IBMStepper(IncompressibleNavierStokesStepper):
 
         with self.timer_context:
             wp.launch(kernel=self.warp_kernel, dim=f_0.shape[1:], inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep])
-
             for iteration in range(self.ibm_max_iterations):
                 if flag_pending:
                     # Complete any in-flight convergence update before using the host flag
