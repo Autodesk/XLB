@@ -130,22 +130,22 @@ f_1 = jnp.zeros_like(f_0)
 def step(f_pre, f_post, bc_mask, missing_mask):
     # 1. Macroscopic
     rho, u = macroscopic_op(f_pre)
-    
+
     # 2. Equilibrium
     feq = eq_op(rho, u)
-    
+
     # 3. Collision
     f_out = collision_op(f_pre, feq, rho, u, omega)
-    
+
     # 4. Stream
     f_streamed = stream_op(f_out)
-    
+
     # 5. Boundary Conditions
     # Apply BCs sequentially
     f_curr = f_streamed
     for bc in bcs:
         f_curr = bc(f_streamed, f_curr, bc_mask, missing_mask)
-    
+
     return f_curr
 
 # Run
@@ -167,10 +167,10 @@ next_f = f_1
 
 for i in range(num_steps):
     next_f = step(current_f, next_f, bc_mask, missing_mask)
-    
+
     # Swap
     current_f, next_f = next_f, current_f
-    
+
     # Save data for visualization
     if i % save_interval == 0:
         rho, u = macroscopic_op(current_f)
@@ -179,12 +179,12 @@ for i in range(num_steps):
         du_y_dx = jnp.gradient(u[1], axis=0)
         du_x_dy = jnp.gradient(u[0], axis=1)
         vorticity = du_y_dx - du_x_dy
-        
+
         saved_steps.append(i)
         saved_rho.append(np.array(rho[0]))
         saved_u.append(np.array(u))
         saved_vorticity.append(np.array(vorticity))
-    
+
     if i % 100 == 0:
         rho, u = macroscopic_op(current_f)
         u_mag = jnp.sqrt(u[0]**2 + u[1]**2)
