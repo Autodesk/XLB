@@ -7,5 +7,6 @@ trimesh
 warp-lang
 numpy-stl
 pydantic
+pytest
 ruff
 usd-core

@@ -24,6 +24,7 @@ setup(
     extras_require={
         "cuda": ["jax[cuda13]>=0.8.0"],  # For CUDA installations
         "tpu": ["jax[tpu]>=0.8.0"],  # For TPU installations
+        "test": ["pytest>=8.0.0"],
     },
     python_requires=">=3.11",
     dependency_links=["https://storage.googleapis.com/jax-releases/libtpu_releases.html"],

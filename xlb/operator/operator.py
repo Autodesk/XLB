@@ -55,7 +55,17 @@ class Operator:
         method_candidates = [
             (key, method) for key, method in self._backends.items() if key[0] == self.__class__.__name__ and key[1] == self.compute_backend
         ]
+        if not method_candidates:
+            supported = [key for key in self._backends.keys() if key[0] == self.__class__.__name__]
+            raise NotImplementedError(
+                f"No implementation found for operator {self.__class__.__name__} with backend {self.compute_backend}. "
+                f"Available implementations: {supported}"
+            )
+
         bound_arguments = None
+        key = None
+        error = None
+        traceback_str = None
         for key, backend_method in method_candidates:
             try:
                 # This attempts to bind the provided args and kwargs to the compute_backend method's signature

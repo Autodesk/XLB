@@ -26,12 +26,41 @@ class SmagorinskyLESBGK(Collision):
         self.smagorinsky_coef = smagorinsky_coef
         super().__init__(velocity_set, precision_policy, compute_backend)
 
+    @Operator.register_backend(ComputeBackend.JAX)
+    @partial(jit, static_argnums=(0,))
+    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray, rho: jnp.ndarray, u: jnp.ndarray, omega):
+        fneq = f - feq
+
+        pi_neq = jnp.tensordot(self.velocity_set.cc, fneq, axes=(0, 0))
+
+        if self.velocity_set.d == 3:
+            diag = pi_neq[(0, 3, 5), ...]
+            offdiag = pi_neq[(1, 2, 4), ...]
+        else:
+            diag = pi_neq[(0, 2), ...]
+            offdiag = pi_neq[(1,), ...]
+
+        strain = jnp.sum(diag * diag, axis=0) + self.compute_dtype(2.0) * jnp.sum(offdiag * offdiag, axis=0)
+
+        tau0 = self.compute_dtype(1.0) / self.compute_dtype(omega)
+        cs = self.compute_dtype(self.smagorinsky_coef)
+        tau = self.compute_dtype(0.5) * (
+            tau0 + jnp.sqrt(tau0 * tau0 + self.compute_dtype(36.0) * (cs * cs) * jnp.sqrt(strain))
+        )
+
+        omega_eff = self.compute_dtype(1.0) / tau
+        fout = f - omega_eff[None, ...] * fneq
+        return fout
+
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _d = self.velocity_set.d
-        _c = self.velocity_set.c
+        _cc = self.velocity_set.cc
         _smagorinsky_coef = wp.constant(self.compute_dtype(self.smagorinsky_coef))
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _pi_dim = self.velocity_set.d * (self.velocity_set.d + 1) // 2
+        _pi_vec = wp.vec(_pi_dim, dtype=self.compute_dtype)
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
 
         # Construct the functional
         @wp.func
@@ -71,22 +100,29 @@ class SmagorinskyLESBGK(Collision):
             # }
 
             # Compute strain
-            strain = wp.float32(0.0)
-            for l in range(self.velocity_set.q):
-                # diagonal terms
-                if (_c[0, l] + _c[1, l] + _c[2, l]) == 1:
-                    strain += fneq[l] * fneq[l]
+            pi_neq = _pi_vec()
+            for a in range(_pi_dim):
+                pi_neq[a] = self.compute_dtype(0.0)
+                for l in range(self.velocity_set.q):
+                    pi_neq[a] += _cc[l, a] * fneq[l]
 
-                # Off-diagonal terms
-                if (_c[0, l] + _c[1, l] + _c[2, l]) >= 2:
-                    strain += 2.0 * fneq[l] * fneq[l]
+            strain = self.compute_dtype(0.0)
+            if wp.static(_d == 3):
+                strain += pi_neq[0] * pi_neq[0] + pi_neq[3] * pi_neq[3] + pi_neq[5] * pi_neq[5]
+                strain += self.compute_dtype(2.0) * (pi_neq[1] * pi_neq[1] + pi_neq[2] * pi_neq[2] + pi_neq[4] * pi_neq[4])
+            else:
+                strain += pi_neq[0] * pi_neq[0] + pi_neq[2] * pi_neq[2]
+                strain += self.compute_dtype(2.0) * (pi_neq[1] * pi_neq[1])
 
             # Compute the Smagorinsky model
-            _tau = self.compute_dtype(1.0 / omega)
-            tau = _tau + (0.5 * (wp.sqrt(_tau * _tau + 36.0 * (_smagorinsky_coef**2.0) * wp.sqrt(strain)) - _tau))
+            _tau = self.compute_dtype(1.0) / self.compute_dtype(omega)
+            tau = _tau + (
+                self.compute_dtype(0.5)
+                * (wp.sqrt(_tau * _tau + self.compute_dtype(36.0) * (_smagorinsky_coef**2.0) * wp.sqrt(strain)) - _tau)
+            )
 
             # Compute the collision
-            fout = f - (1.0 / tau) * fneq
+            fout = f - (self.compute_dtype(1.0) / tau) * fneq
             return fout
 
         # Construct the warp kernel
@@ -109,7 +145,7 @@ class SmagorinskyLESBGK(Collision):
             for l in range(self.velocity_set.q):
                 _f[l] = f[l, index[0], index[1], index[2]]
                 _feq[l] = feq[l, index[0], index[1], index[2]]
-            _u = self._warp_u_vec()
+            _u = _u_vec()
             for l in range(_d):
                 _u[l] = u[l, index[0], index[1], index[2]]
             _rho = rho[0, index[0], index[1], index[2]]
@@ -119,7 +155,7 @@ class SmagorinskyLESBGK(Collision):
 
             # Write the result
             for l in range(self.velocity_set.q):
-                fout[l, index[0], index[1], index[2]] = _fout[l]
+                fout[l, index[0], index[1], index[2]] = self.store_dtype(_fout[l])
 
         return functional, kernel
 
