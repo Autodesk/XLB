@@ -8,7 +8,7 @@ from xlb.compute_backend import ComputeBackend
 from xlb.operator import Operator
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.stepper.nse_stepper import IncompressibleNavierStokesStepper
-from warp.utils import ScopedTimer
+from warp import ScopedTimer
 
 
 class IBMStepper(IncompressibleNavierStokesStepper):

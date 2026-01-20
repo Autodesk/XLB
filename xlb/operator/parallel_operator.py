@@ -1,4 +1,4 @@
-from jax.experimental.shard_map import shard_map
+from jax import shard_map
 from jax.sharding import PartitionSpec as P
 from jax import lax
 
@@ -47,7 +47,7 @@ class ParallelOperator:
             mesh=self.grid.global_mesh,
             in_specs=in_specs,
             out_specs=out_specs,
-            check_rep=False,
+            check_vma=False,
         )(f)
         return f
 

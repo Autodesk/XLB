@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="xlb",
-    version="0.3.1",
+    version="0.3.2",
     description="XLB: Accelerated Lattice Boltzmann (XLB) for Physics-based ML",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -19,11 +19,11 @@ setup(
         "numpy-stl>=3.1.2",
         "pydantic>=2.9.1",
         "ruff>=0.14.1",
-        "jax>=0.8.0",  # Base JAX CPU-only requirement
+        "jax>=0.8.2",  # Base JAX CPU-only requirement
     ],
     extras_require={
-        "cuda": ["jax[cuda13]>=0.8.0"],  # For CUDA installations
-        "tpu": ["jax[tpu]>=0.8.0"],  # For TPU installations
+        "cuda": ["jax[cuda13]>=0.8.2"],  # For CUDA installations (pip install -U "jax[cuda13]")
+        "tpu": ["jax[tpu]>=0.8.2"],  # For TPU installations
         "test": ["pytest>=8.0.0"],
     },
     python_requires=">=3.11",

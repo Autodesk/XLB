@@ -3,7 +3,7 @@ from xlb.operator import Operator
 from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from jax import lax
-from jax.experimental.shard_map import shard_map
+from jax import shard_map
 from jax import jit
 
 
@@ -72,7 +72,7 @@ def distribute_operator(
             mesh=grid.global_mesh,
             in_specs=in_specs,
             out_specs=out_specs,
-            check_rep=False,
+            check_vma=False,
         )
         return distributed_operator(*args)
 
