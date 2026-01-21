@@ -38,7 +38,7 @@ class ZouHeBC(BoundaryCondition):
         self,
         bc_type,
         profile=None,
-        prescribed_value: Union[float, Tuple[float, ...], np.ndarray] = None,
+        prescribed_values: Union[float, Tuple[float, ...], np.ndarray] = None,
         velocity_set: VelocitySet = None,
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
@@ -63,28 +63,28 @@ class ZouHeBC(BoundaryCondition):
         )
 
         # Handle prescribed value if provided
-        if prescribed_value is not None:
+        if prescribed_values is not None:
             if profile is not None:
-                raise ValueError("Cannot specify both profile and prescribed_value")
+                raise ValueError("Cannot specify both profile and prescribed_values")
 
             # Convert input to numpy array for validation
-            if isinstance(prescribed_value, (tuple, list)):
-                prescribed_value = np.array(prescribed_value, dtype=np.float64)
-            elif isinstance(prescribed_value, (int, float)):
+            if isinstance(prescribed_values, (tuple, list)):
+                prescribed_values = np.array(prescribed_values, dtype=np.float64)
+            elif isinstance(prescribed_values, (int, float)):
                 if bc_type == "pressure":
-                    prescribed_value = float(prescribed_value)
+                    prescribed_values = float(prescribed_values)
                 else:
-                    raise ValueError("Velocity prescribed_value must be a tuple or array")
-            elif isinstance(prescribed_value, np.ndarray):
-                prescribed_value = prescribed_value.astype(np.float64)
+                    raise ValueError("Velocity prescribed_values must be a tuple or array")
+            elif isinstance(prescribed_values, np.ndarray):
+                prescribed_values = prescribed_values.astype(np.float64)
 
             # Validate prescribed value
             if bc_type == "velocity":
-                if not isinstance(prescribed_value, np.ndarray):
-                    raise ValueError("Velocity prescribed_value must be an array-like")
+                if not isinstance(prescribed_values, np.ndarray):
+                    raise ValueError("Velocity prescribed_values must be an array-like")
 
                 # Check for non-zero elements - only one element should be non-zero
-                non_zero_count = np.count_nonzero(prescribed_value)
+                non_zero_count = np.count_nonzero(prescribed_values)
                 if non_zero_count > 1:
                     raise ValueError("This BC only supports normal prescribed values (only one non-zero element allowed)")
 
@@ -94,10 +94,10 @@ class ZouHeBC(BoundaryCondition):
             # a vector of zeros associated with no-slip BC.
             # Accounting for all scenarios here.
             if self.compute_backend is ComputeBackend.WARP:
-                idx = np.nonzero(prescribed_value)[0]
-                prescribed_value = prescribed_value[idx][0] if idx.size else 0.0
-                prescribed_value = self.precision_policy.store_precision.wp_dtype(prescribed_value)
-            self.prescribed_value = prescribed_value
+                idx = np.nonzero(prescribed_values)[0]
+                prescribed_values = prescribed_values[idx][0] if idx.size else 0.0
+                prescribed_values = self.precision_policy.store_precision.wp_dtype(prescribed_values)
+            self.prescribed_values = prescribed_values
             self.profile = self._create_constant_prescribed_profile()
 
         # This BC needs auxilary data initialization before streaming
@@ -113,7 +113,7 @@ class ZouHeBC(BoundaryCondition):
         self.needs_padding = True
 
     def _create_constant_prescribed_profile(self):
-        _prescribed_value = self.prescribed_value
+        _prescribed_value = self.prescribed_values
 
         @wp.func
         def prescribed_profile_warp(index: wp.vec3i):
@@ -299,8 +299,8 @@ class ZouHeBC(BoundaryCondition):
             # Find the value of u from the missing directions
             # Since we are only considering normal velocity, we only need to find one value (stored at the center of f_1)
             # Create velocity vector by multiplying the prescribed value with the normal vector
-            prescribed_value = f_1[0, index[0], index[1], index[2]]
-            _u = -prescribed_value * normals
+            prescribed_values = f_1[0, index[0], index[1], index[2]]
+            _u = -prescribed_values * normals
 
             for d in range(_d):
                 unormal += _u[d] * normals[d]
