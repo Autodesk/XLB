@@ -49,7 +49,7 @@ from xlb.operator.stepper import IncompressibleNavierStokesStepper
 from xlb.operator.macroscopic import Macroscopic
 import xlb.velocity_set
 
-# For loading NVIDIA logo
+# For loading XLB logo
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -75,7 +75,7 @@ class DifferentiableLBM:
         target_shape='n_letter',
         learning_rate=1.0,
         target_coverage=0.5,  # Fraction of grid covered by target pattern
-        target_image_path=None,  # Path to custom target image (e.g., NVIDIA logo)
+        target_image_path=None,  # Path to custom target image (e.g., XLB logo)
     ):
         self.grid_shape = grid_shape
         self.Re = Re
@@ -290,6 +290,7 @@ class DifferentiableLBM:
             # Convert to grayscale and normalize to [0, 1]
             img_gray = img_resized.convert('L')
             target = np.array(img_gray, dtype=np.float32) / 255.0
+            target = np.flipud(target)  # Flip vertically to match plot orientation
             target = target.T  # Transpose to (nx, ny)
             print(f"  Loaded target image: {image_path}")
             return target
