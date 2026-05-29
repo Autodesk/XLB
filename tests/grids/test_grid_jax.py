@@ -3,7 +3,7 @@ import jax
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
-from jax.sharding import Mesh
+from jax.sharding import Mesh, PartitionSpec
 from jax.experimental import mesh_utils
 import jax.numpy as jnp
 
@@ -30,7 +30,7 @@ def test_jax_2d_grid_initialization(grid_size):
 
     assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
     assert f.sharding.mesh == expected_mesh, "Field sharding mesh is incorrect"
-    assert f.sharding.spec == ("cardinality", "x", "y"), "PartitionSpec is incorrect"
+    assert f.sharding.spec == PartitionSpec("cardinality", "x", "y"), "PartitionSpec is incorrect"
 
 
 @pytest.mark.parametrize("grid_size", [50, 100, 150])
@@ -46,7 +46,7 @@ def test_jax_3d_grid_initialization(grid_size):
 
     assert f.shape == (9,) + grid_shape, "Field shape is incorrect"
     assert f.sharding.mesh == expected_mesh, "Field sharding mesh is incorrect"
-    assert f.sharding.spec == (
+    assert f.sharding.spec == PartitionSpec(
         "cardinality",
         "x",
         "y",

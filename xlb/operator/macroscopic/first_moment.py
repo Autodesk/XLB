@@ -23,31 +23,18 @@ class FirstMoment(Operator):
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
 
         @wp.func
-        def neumaier_sum_component(d: int, f: _f_vec):
-            total = self.compute_dtype(0.0)
-            compensation = self.compute_dtype(0.0)
-            for l in range(self.velocity_set.q):
-                # Get contribution based on the sign of _c[d, l]
-                if _c[d, l] == 1:
-                    val = f[l]
-                elif _c[d, l] == -1:
-                    val = -f[l]
-                else:
-                    val = self.compute_dtype(0.0)
-                t = total + val
-                if wp.abs(total) >= wp.abs(val):
-                    compensation = compensation + ((total - t) + val)
-                else:
-                    compensation = compensation + ((val - t) + total)
-                total = t
-            return total + compensation
-
-        @wp.func
         def functional(f: _f_vec, rho: Any):
+            # Simple sum for Warp autodiff compatibility
+            # Original Neumaier sum with if-else conditionals breaks gradient flow
+            # For momentum calculation: u[d] = sum(c[d,l] * f[l]) / rho
+            # This is equivalent to: u = (c · f) / rho (tensor dot product)
             u = _u_vec()
-            # Use Neumaier summation for each spatial component
             for d in range(self.velocity_set.d):
-                u[d] = neumaier_sum_component(d, f)
+                total = self.compute_dtype(0.0)
+                for l in range(self.velocity_set.q):
+                    # Direct multiplication instead of if-else branching
+                    total = total + self.compute_dtype(_c[d, l]) * f[l]
+                u[d] = total
             u /= rho
             return u
 
@@ -75,7 +62,8 @@ class FirstMoment(Operator):
     def warp_implementation(self, f, rho, u):
         wp.launch(
             self.warp_kernel,
-            inputs=[f, rho, u],
+            inputs=[f, rho],
+            outputs=[u],
             dim=u.shape[1:],
         )
         return u

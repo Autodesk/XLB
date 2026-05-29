@@ -58,7 +58,8 @@ class Macroscopic(Operator):
     def warp_implementation(self, f, rho, u):
         wp.launch(
             self.warp_kernel,
-            inputs=[f, rho, u],
+            inputs=[f],
+            outputs=[rho, u],
             dim=rho.shape[1:],
         )
         return rho, u

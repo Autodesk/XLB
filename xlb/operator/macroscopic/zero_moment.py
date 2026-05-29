@@ -20,23 +20,13 @@ class ZeroMoment(Operator):
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
-        def neumaier_sum(f: _f_vec):
-            total = self.compute_dtype(0.0)
-            compensation = self.compute_dtype(0.0)
-            for l in range(self.velocity_set.q):
-                x = f[l]
-                t = total + x
-                # Using wp.abs to compute absolute value
-                if wp.abs(total) >= wp.abs(x):
-                    compensation = compensation + ((total - t) + x)
-                else:
-                    compensation = compensation + ((x - t) + total)
-                total = t
-            return total + compensation
-
-        @wp.func
         def functional(f: _f_vec):
-            return neumaier_sum(f)
+            # Simple sum for Warp autodiff compatibility
+            # Neumaier sum with conditionals breaks gradient flow
+            total = self.compute_dtype(0.0)
+            for l in range(self.velocity_set.q):
+                total = total + f[l]
+            return total
 
         @wp.kernel
         def kernel(
@@ -57,7 +47,7 @@ class ZeroMoment(Operator):
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f, rho):
-        wp.launch(self.warp_kernel, inputs=[f, rho], dim=rho.shape[1:])
+        wp.launch(self.warp_kernel, inputs=[f], outputs=[rho], dim=rho.shape[1:])
         return rho
 
     def _construct_neon(self):
