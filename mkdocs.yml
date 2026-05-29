@@ -41,11 +41,12 @@ site_description: 'Documentation for project XLB'
 theme:
         # Name of the theme
         name: material
+        highlight_theme: default
         features:
           - header.autohide
-        logo: assets/logo.svg
+        logo: assets/logo-transparent.png
         # Favicon
-        favicon: assets/logo.svg
+        favicon: assets/logo-transparent.png
         # Directory containing theme customizations
         # custom_dir: theme_customizations/
         font:
@@ -76,8 +77,6 @@ markdown_extensions:
   - admonition
   - codehilite
   - smarty
-  - pymdownx.superfences
-  - pymdownx.highlight
   - markdown.extensions.attr_list
   - markdown.extensions.def_list
   - markdown.extensions.fenced_code
@@ -87,15 +86,15 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
   - attr_list
-  - pymdownx.superfences
   - pymdownx.highlight:
       use_pygments: true
       linenums: true
       anchor_linenums: true
       linenums_style: table
   - pymdownx.snippets
-  - pymdownx.highlight
   - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - toc
 
 # MkDocs supports plugins written in Python to extend the functionality of the site
 # This parameter contains a list of the MkDocs plugins to add to the site
@@ -146,5 +145,35 @@ extra_javascript:
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
+
 nav:
-  - XLB's home: index.md
+  - 'Home': 'index.md'
+  - 'User Guide':
+    - 'Introduction': 'guide/introduction.md'
+    - 'Installation': 'guide/installation.md'
+    - 'Getting Started': 'guide/getting_started.md'
+    - 'Core Concepts': 'guide/concepts.md'
+    # - 'How-to Guides':
+    #   - 'Set up Boundary Conditions': 'guides/how-to-bc.md'
+    #   - 'Implement a Forcing Scheme': 'guides/how-to-force.md'
+  # - 'Advanced Guides':
+  #   - 'Parallel Simulations with JAX': 'advanced/parallelism.md'
+  - 'API Reference':
+    - 'Simulation Setup':
+      - 'Constants': 'api/constants.md'
+      - 'Velocity Set': 'api/velocity_set.md'
+      - 'Grid': 'api/grid.md'
+    - 'LBM Kernel':
+      - 'Operator': 'api/operator.md'
+      - 'Equilibrium': 'api/equilibrium.md'
+      - 'Streaming and Collision': 'api/streaming_and_collision.md'
+    - 'Physics & Numerics':
+      - 'Boundary Condition': 'api/BC.md'
+      - 'Force': 'api/force.md'
+    - 'Simulation Control':
+      - 'Stepper': 'api/stepper.md'
+      - 'Macroscopic Variables': 'api/macroscopic.md'
+    - 'Distributed Computing':
+      - 'Distribution': 'api/distribution.md'
+  - 'Examples': examples.md
+  - 'Contributing': 'contributing.md'
