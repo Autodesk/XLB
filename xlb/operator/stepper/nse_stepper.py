@@ -437,31 +437,42 @@ class IncompressibleNavierStokesStepper(Stepper):
             index = wp.vec3i(i, j, k)
 
             _boundary_id = bc_mask[0, index[0], index[1], index[2]]
-            if _boundary_id == wp.uint8(BC_SOLID):
-                return
 
-            # Apply streaming
-            _f_post_stream = self.stream.warp_functional(f_0, index)
-
+            # Read input data (needed for gradient flow even for BC_SOLID)
             _f0_thread, _missing_mask = get_thread_data(f_0, missing_mask, index)
-            _f_post_collision = _f0_thread
 
-            # Apply post-streaming boundary conditions
-            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
+            # For BC_SOLID cells, we skip computation but still need to write output
+            # to maintain gradient flow. Using conditional assignment instead of early
+            # return to ensure Warp's autodiff can trace through the kernel.
+            if _boundary_id == wp.uint8(BC_SOLID):
+                # Pass through input values for solid cells (maintains gradient flow)
+                for l in range(self.velocity_set.q):
+                    f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f0_thread[l])
+            else:
+                # Apply streaming
+                _f_post_stream = self.stream.warp_functional(f_0, index)
 
-            _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
-            _feq = self.equilibrium.warp_functional(_rho, _u)
-            _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, omega)
+                _f_post_collision = _f0_thread
 
-            # Apply post-collision boundary conditions
-            _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
+                # Apply post-streaming boundary conditions
+                _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
 
-            # Apply auxiliary recovery for boundary conditions (swapping)
-            apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0, f_1)
+                _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
+                _feq = self.equilibrium.warp_functional(_rho, _u)
+                _f_post_collision = self.collision.warp_functional(_f_post_stream, _feq, omega)
 
-            # Store the result in f_1
-            for l in range(self.velocity_set.q):
-                f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
+                # Apply post-collision boundary conditions
+                _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
+
+                # Store the result in f_1
+                for l in range(self.velocity_set.q):
+                    f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
+
+            # Apply auxiliary recovery for boundary conditions (swapping) AFTER writing f_1
+            # Only call if we have BCs that need aux recovery (checked at compile time)
+            # This is critical for Warp autodiff - modifying input arrays breaks gradient flow
+            if wp.static(any(bc.needs_aux_recovery for bc in self.boundary_conditions)):
+                apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0, f_1)
 
         return None, kernel
 

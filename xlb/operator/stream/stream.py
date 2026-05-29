@@ -75,16 +75,12 @@ class Stream(Operator):
             # Pull the distribution function
             _f = _f_vec()
             for l in range(self.velocity_set.q):
-                # Get pull index
+                # Get pull index with periodic boundary using modulo arithmetic
+                # This avoids if-else branches which break Warp's autodiff
                 pull_index = type(index)()
                 for d in range(self.velocity_set.d):
-                    pull_index[d] = index[d] - _c[d, l]
-
-                    # impose periodicity for out of bound values
-                    if pull_index[d] < 0:
-                        pull_index[d] = f.shape[d + 1] - 1
-                    elif pull_index[d] >= f.shape[d + 1]:
-                        pull_index[d] = 0
+                    # Use modulo for periodicity (works for both negative and positive out-of-bounds)
+                    pull_index[d] = (index[d] - _c[d, l] + f.shape[d + 1]) % f.shape[d + 1]
 
                 # Read the distribution function
                 # Unlike other functionals, we need to cast the type here since we read from the buffer
