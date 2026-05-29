@@ -131,7 +131,7 @@ class DifferentiableLBM:
             self.use_warp = True
         else:
             raise ValueError(f"Unknown backend: {backend}. Use 'jax' or 'warp'")
-        
+
         self.precision_policy = PrecisionPolicy.FP32FP32
 
         # Initialize velocity set
@@ -193,14 +193,14 @@ class DifferentiableLBM:
         nx, ny = self.grid_shape
         rho = np.full((nx, ny), self.rho_background - self.rho_variation, dtype=np.float32)
         self.initial_density_normalized = self._normalize_density(rho)
-        
+
         if self.use_warp:
             # Warp backend - Pre-allocate arrays for EVERY simulation step
             # This is CRITICAL for tape-based AD (NVIDIA pattern)
             shape_4d = (9, nx, ny, 1)
             f_eq_np = self._equilibrium_np(rho, np.zeros((2, nx, ny)))
             f_eq_4d = f_eq_np.reshape(shape_4d)
-            
+
             # Pre-allocate state at every timestep for gradient flow
             self.f_states_warp = [
                 wp.zeros(shape_4d, dtype=wp.float32, requires_grad=True)
@@ -208,7 +208,7 @@ class DifferentiableLBM:
             ]
             # Initialize first state
             wp.copy(self.f_states_warp[0], wp.array(f_eq_4d, dtype=wp.float32))
-            
+
             # Also keep f_0 and f_1 for compatibility
             self.f_0_warp = self.f_states_warp[0]
             self.f_1_warp = wp.zeros(shape_4d, dtype=wp.float32, requires_grad=True)
@@ -233,7 +233,7 @@ class DifferentiableLBM:
             1.0 + cu / cs2 + cu**2 / (2.0 * cs2**2) - u_sq / (2.0 * cs2)
         )
         return f_eq
-    
+
     def _equilibrium_np(self, rho, u):
         """Compute equilibrium distribution (NumPy for Warp)."""
         cs2 = 1.0 / 3.0
@@ -389,43 +389,43 @@ class DifferentiableLBM:
         """Loss function for optimization (JAX)."""
         f_final = self.forward(f_init)
         return self.compute_loss(f_final)
-    
+
     def forward_warp(self):
         """Run simulation forward (Warp)."""
         # NVIDIA pattern: Use pre-allocated states for each step
         # This ensures gradient flow through the entire simulation
         omega_wp = wp.float32(self.omega)
-        
+
         for step in range(self.sim_steps):
             # Clear the output state (don't recreate!)
             self.f_states_warp[step + 1].zero_()
-            
+
             # Run one timestep
             _, self.f_states_warp[step + 1] = self.stepper(
-                self.f_states_warp[step], 
+                self.f_states_warp[step],
                 self.f_states_warp[step + 1],
-                self.bc_mask, 
-                self.missing_mask, 
-                omega_wp, 
+                self.bc_mask,
+                self.missing_mask,
+                omega_wp,
                 step
             )
-        
+
         return self.f_states_warp[self.sim_steps]
-    
+
     def loss_fn_warp(self):
         """Loss function for optimization (Warp)."""
         # Forward simulation
         f_final = self.forward_warp()
-        
+
         # Compute macroscopic
         rho_wp = wp.zeros((1, *self.grid_shape, 1), dtype=wp.float32, requires_grad=True)
         u_wp = wp.zeros((2, *self.grid_shape, 1), dtype=wp.float32, requires_grad=True)
         rho_wp, u_wp = self.macroscopic(f_final, rho_wp, u_wp)
-        
+
         # Normalize density
         rho_min = self.rho_background - self.rho_variation
         rho_max = self.rho_background + self.rho_variation
-        
+
         # Create loss kernel
         @wp.kernel
         def loss_kernel(
@@ -443,7 +443,7 @@ class DifferentiableLBM:
             # MSE loss
             diff = rho_norm - target[i, j]
             wp.atomic_add(loss, 0, diff * diff * norm_factor)
-        
+
         # Compute loss
         self.loss_warp.zero_()
         target_np = np.array(self.target_normalized, dtype=np.float32)
@@ -454,7 +454,7 @@ class DifferentiableLBM:
             dim=self.grid_shape,
             inputs=[rho_wp, target_wp, self.loss_warp, wp.float32(rho_min), wp.float32(rho_max), norm_factor]
         )
-        
+
         return self.loss_warp
 
     def optimize_step(self):
@@ -463,32 +463,32 @@ class DifferentiableLBM:
             # Warp backend - use wp.Tape
             with wp.Tape() as tape:
                 loss_val = self.loss_fn_warp()
-            
+
             # Backward pass
             tape.backward(loss=self.loss_warp)
-            
+
             # Get gradients
             grad_f = self.f_0_warp.grad.numpy()
             loss_val = float(self.loss_warp.numpy()[0])
-            
+
             # Update using numpy, then copy back
             f_0_np = self.f_0_warp.numpy()
             f_0_np = f_0_np - self.learning_rate * grad_f
-            
+
             # Clamp to physical range
             w_np = np.array(self.w)[:, None, None, None]  # Shape (9, 1, 1, 1)
             f_min = 0.01 * w_np
             f_max = 10.0 * w_np
             f_0_np = np.clip(f_0_np, f_min, f_max)
-            
+
             # Copy back to warp arrays - update initial state
             # Re-initialize f_states with new initial condition
             self.f_states_warp[0] = wp.array(f_0_np, dtype=wp.float32, requires_grad=True)
-            
+
             # Clear all intermediate states for next iteration
             for i in range(1, len(self.f_states_warp)):
                 self.f_states_warp[i].zero_()
-            
+
             # Update f_0_warp reference for compatibility
             self.f_0_warp = self.f_states_warp[0]
             self.loss_warp.zero_()
