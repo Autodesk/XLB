@@ -78,8 +78,10 @@ class Operator:
         """
 
         def decorator(func):
-            subclass_name = func.__qualname__.split(".")[0]
-            signature = inspect.signature(func)
+            unwrapped = inspect.unwrap(func)
+            qualname = unwrapped.__qualname__
+            subclass_name = qualname.rsplit(".", 1)[0] if "." in qualname else qualname
+            signature = inspect.signature(unwrapped)
             key = (subclass_name, backend_name, str(signature))
             cls._backends[key] = func
             return func
@@ -98,8 +100,8 @@ class Operator:
         ------
         NotImplementedError
             If no implementation is registered for the active backend.
-        Exception
-            If all candidate implementations raise errors.
+        RuntimeError
+            If all candidate implementations raise errors (chained from the last exception).
         """
         method_candidates = [
             (key, method) for key, method in self._backends.items() if key[0] == self.__class__.__name__ and key[1] == self.compute_backend
@@ -107,15 +109,17 @@ class Operator:
         if not method_candidates:
             supported = [key for key in self._backends.keys() if key[0] == self.__class__.__name__]
             raise NotImplementedError(
-                f"No implementation found for operator {self.__class__.__name__} with backend {self.compute_backend}. "
+                f"No implementation found for operator {type(self).__qualname__} with backend {self.compute_backend}. "
                 f"Available implementations: {supported}"
             )
 
-        bound_arguments = None
-        key = None
+        last_key = None
+        last_method = None
         error = None
         traceback_str = None
         for key, backend_method in method_candidates:
+            last_key = key
+            last_method = backend_method
             try:
                 # This attempts to bind the provided args and kwargs to the compute_backend method's signature
                 bound_arguments = inspect.signature(backend_method).bind(self, *args, **kwargs)
@@ -129,8 +133,15 @@ class Operator:
                 error = e
                 traceback_str = traceback.format_exc()
                 continue  # This skips to the next candidate if binding fails
-        method_candidates = [(key, method) for key, method in self._backends.items() if key[1] == self.compute_backend]
-        raise Exception(f"Error captured for backend with key {key} for operator {self.__class__.__name__}: {error}\n {traceback_str}")
+
+        impl_qualname = inspect.unwrap(last_method).__qualname__ if last_method is not None else "unknown"
+        registered_class = last_key[0] if last_key is not None else "unknown"
+        instance_class = type(self).__qualname__
+        if instance_class != registered_class:
+            instance_note = f", instance={instance_class}"
+        else:
+            instance_note = ""
+        raise RuntimeError(f"{impl_qualname} failed for backend {self.compute_backend}{instance_note}: {error}\n{traceback_str}") from error
 
     @property
     def supported_compute_backend(self):
