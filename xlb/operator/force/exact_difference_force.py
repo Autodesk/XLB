@@ -1,6 +1,7 @@
 from functools import partial
 from jax import jit, lax
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 
 from xlb import DefaultConfig
@@ -77,7 +78,7 @@ class ExactDifference(Operator):
 
     def _construct_warp(self):
         _d = self.velocity_set.d
-        _u_vec = wp.vec(_d, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=_d, dtype=self.compute_dtype)
         if _d == 2:
             _force = _u_vec(self.force_vector[0], self.force_vector[1])
         else:

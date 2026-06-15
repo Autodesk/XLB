@@ -6,6 +6,7 @@ from functools import partial
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 
 from xlb.compute_backend import ComputeBackend
@@ -34,7 +35,7 @@ class MultiresMacroscopic(Macroscopic):
         # This is because the neon backend relies on the warp functionals for its operations.
         self.zero_moment = ZeroMoment(compute_backend=ComputeBackend.WARP)
         self.first_moment = FirstMoment(compute_backend=ComputeBackend.WARP)
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
         functional, _ = self._construct_warp()
 
         @neon.Container.factory("macroscopic")

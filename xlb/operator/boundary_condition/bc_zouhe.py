@@ -16,6 +16,7 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any, Union, Tuple, Callable
 import numpy as np
 
@@ -150,7 +151,7 @@ class ZouHeBC(BoundaryCondition):
 
         @wp.func
         def prescribed_profile_warp(index: wp.vec3i):
-            return wp.vec(_prescribed_value, length=1)
+            return wp.vector(_prescribed_value, length=1)
 
         def prescribed_profile_jax():
             return jnp.array(_prescribed_value, dtype=self.precision_policy.store_precision.jax_dtype).reshape(-1, 1)

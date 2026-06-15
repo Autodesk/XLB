@@ -2,6 +2,7 @@ from functools import partial
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 
 from xlb.compute_backend import ComputeBackend
@@ -17,7 +18,7 @@ class ZeroMoment(Operator):
         return jnp.sum(f, axis=0, keepdims=True)
 
     def _construct_warp(self):
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
         def neumaier_sum(f: _f_vec):

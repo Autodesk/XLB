@@ -5,6 +5,7 @@ KBC collision operator for LBM.
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 from functools import partial
 
@@ -179,8 +180,8 @@ class KBC(Collision):
             raise NotImplementedError("Velocity set not supported for warp backend: {}".format(type(self.velocity_set)))
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
         _epsilon = wp.constant(self.compute_dtype(self.epsilon))
 
         @wp.func

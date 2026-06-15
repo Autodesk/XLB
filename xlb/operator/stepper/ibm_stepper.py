@@ -1,6 +1,7 @@
 from functools import partial
 from jax import jit
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 from contextlib import nullcontext
 
@@ -121,8 +122,8 @@ class IBMStepper(IncompressibleNavierStokesStepper):
 
     def _construct_ibm_warp(self):
         # Set local constants
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
+        _missing_mask_vec = wp.types.vector(length=self.velocity_set.q, dtype=wp.uint8)
         _opp_indices = self.velocity_set.opp_indices
         _weights = self.velocity_set.w
         _c = self.velocity_set.c

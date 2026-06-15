@@ -7,6 +7,7 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Tuple, Any
 
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -81,7 +82,7 @@ class EquilibriumBC(BoundaryCondition):
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
         _rho = self.compute_dtype(self.rho)
         _u = _u_vec(self.u[0], self.u[1], self.u[2]) if self.velocity_set.d == 3 else _u_vec(self.u[0], self.u[1])
 

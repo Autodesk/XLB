@@ -13,6 +13,7 @@ are supported:
 """
 
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 from xlb import DefaultConfig
 from xlb.operator import Operator
@@ -166,7 +167,7 @@ class CustomInitializer(Operator):
 
     def _construct_warp(self):
         _q = self.velocity_set.q
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
         _u = _u_vec(self.constant_velocity_vector[0], self.constant_velocity_vector[1], self.constant_velocity_vector[2])
         _rho = self.compute_dtype(self.constant_density)
         _w = self.velocity_set.w
