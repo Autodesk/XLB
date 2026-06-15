@@ -10,8 +10,7 @@ Physical parameters
 * Reynolds number ``Re = 100`` (based on cylinder diameter and ``prescribed_vel``).
 * Relaxation rate ``omega = 1 / (3 * nu + 0.5)`` with
   ``nu = prescribed_vel * diam / Re``.
-* Reference inlet speed ``prescribed_vel = 0.003 * (reference_diam / diam)`` so
-  resolution can be changed while keeping similar lattice dynamics.
+* Reference inlet speed ``prescribed_vel = 0.02 (For more accurate results reduce this value)
 
 Domain and geometry
 -------------------
@@ -31,6 +30,7 @@ Boundary conditions
 Compute backends
 ----------------
 * **WARP (default):** Recommended for large 2D GPU runs.
+* **NEON:** Recommended for extremely large multi-GPU runs.
 * **JAX:** Set ``compute_backend = ComputeBackend.JAX``. On NVIDIA Ampere and
   newer GPUs, keep the TF32 overrides at the top of this file (or export
   ``NVIDIA_TF32_OVERRIDE=0`` before launch) so ``jnp.tensordot`` in equilibrium
@@ -42,8 +42,8 @@ when needed). PNG snapshots are written with prefix ``flow_past_cylinder_2d``.
 Forces
 ------
 After step ``> 0.5 * num_steps``, ``MomentumTransfer`` reports ``CD`` and ``CL``
-(drag along x, lift along y), normalized by ``prescribed_vel**2 * diam``. Running
-maxima ``CD_max`` and ``CL_max`` are printed at the end.
+(drag along x, lift along y), normalized by ``prescribed_vel**2 * diam``. Values
+are stored at each post-process step.
 
 Usage
 -----
@@ -69,6 +69,7 @@ jax.config.update("jax_default_matmul_precision", "highest")
 import jax.numpy as jnp
 import numpy as np
 import warp as wp
+from tqdm import tqdm
 import xlb
 from xlb.compute_backend import ComputeBackend
 from xlb.grid import grid_factory
@@ -85,28 +86,26 @@ from xlb.utils import save_image, warp_array_to_jax
 
 # -------------------------- Simulation Setup --------------------------
 
-diam = 80  # Cylinder diameter in lattice units; reduce (e.g. 20) for faster runs
-reference_diam = 80
-
-Re = 100.0
-scale_factor = reference_diam / diam
-prescribed_vel = 0.003 * scale_factor
-visc = prescribed_vel * diam / Re
-omega = 1.0 / (3.0 * visc + 0.5)
-
+# Geometry and grid parameters
+diam = 20  # Cylinder diameter in lattice units; increase (e.g. 80) for faster runs and note to scale down prescribed_vel accordingly
 grid_shape = (int(22 * diam), int(4.1 * diam))
 cylinder_center = (2.0 * diam, 2.0 * diam)
 cylinder_radius = diam / 2.0
 
+# Physical parameters
+Re = 100.0
+prescribed_vel = 0.02
+visc = prescribed_vel * diam / Re
+omega = 1.0 / (3.0 * visc + 0.5)
+u_peak = 1.5 * prescribed_vel
+
+# Compute backend and precision policy
 compute_backend = ComputeBackend.JAX
 precision_policy = PrecisionPolicy.FP32FP32
 velocity_set = xlb.velocity_set.D2Q9(precision_policy=precision_policy, compute_backend=compute_backend)
-
-characteristic_time = prescribed_vel / diam
-num_steps = int(100 / characteristic_time)
-post_process_interval = max(1, int(500 / scale_factor))
-
-u_peak = 1.5 * prescribed_vel  # Poiseuille peak (1.5 × mean inlet speed)
+flow_pass = int(grid_shape[0] / u_peak)
+num_steps = 5 * flow_pass
+post_process_interval = int(0.1 * flow_pass)
 
 
 def bc_profile():
@@ -186,7 +185,9 @@ def main() -> None:
     )
     momentum_transfer = MomentumTransfer(bc_cylinder, compute_backend=compute_backend)
 
-    force_stats = {"CL_max": 0.0, "CD_max": 0.0}
+    force_steps: list[int] = []
+    cl_history: list[float] = []
+    cd_history: list[float] = []
 
     def post_process(step: int, f_0, f_1) -> None:
         wp.synchronize()
@@ -197,9 +198,10 @@ def main() -> None:
             lift = boundary_force[1]
             cd = 2.0 * drag / (prescribed_vel**2 * diam)
             cl = 2.0 * lift / (prescribed_vel**2 * diam)
-            force_stats["CL_max"] = max(force_stats["CL_max"], float(cl))
-            force_stats["CD_max"] = max(force_stats["CD_max"], float(cd))
-            print(f"step={step:7d}, CL={cl: .6f}, CD={cd: .6f}, CL_max={force_stats['CL_max']: .6f}, CD_max={force_stats['CD_max']: .6f}")
+            force_steps.append(step)
+            cd_history.append(cd)
+            cl_history.append(cl)
+            tqdm.write(f"step={step:7d}, CL={cl: .6f}, CD={cd: .6f}")
 
         if not isinstance(f_0, jnp.ndarray):
             # Warp pads 2D domains with a singleton z dimension
@@ -207,27 +209,34 @@ def main() -> None:
             wp.synchronize()
 
         _, u = macro(f_0)
-        u_magnitude = jnp.sqrt(u[0] ** 2 + u[1] ** 2)
 
-        save_image(u_magnitude, timestep=step, prefix="flow_past_cylinder_2d")
-        print(f"Post-processed step {step}: saved velocity magnitude (prefix=flow_past_cylinder_2d)")
+        # Vorticity ω_z = ∂u_y/∂x − ∂u_x/∂y (central differences on the full grid)
+        u_y_dx = jnp.gradient(u[1], axis=0)
+        u_x_dy = jnp.gradient(u[0], axis=1)
+        vort_z = u_y_dx - u_x_dy
+
+        save_image(vort_z, timestep=step, prefix="flow_past_cylinder_2d", cmap="seismic", vmin=-1e-2, vmax=1e-2)
+        tqdm.write(f"Post-processed step {step}: saved vorticity (prefix=flow_past_cylinder_2d)")
 
     print(
         f"grid_shape={grid_shape}, Re={Re}, omega={omega:.6f}, prescribed_vel={prescribed_vel}, num_steps={num_steps}, backend={compute_backend.name}"
     )
 
     start_time = time.time()
-    for step in range(num_steps):
+    pbar = tqdm(range(num_steps), unit="step")
+    for step in pbar:
         f_0, f_1 = stepper(f_0, f_1, bc_mask, missing_mask, omega, step)
         f_0, f_1 = f_1, f_0
 
         if step % post_process_interval == 0 or step == num_steps - 1:
             post_process(step, f_0, f_1)
             elapsed = time.time() - start_time
-            print(f"Completed step {step}. Elapsed for last chunk: {elapsed:.6f} s.")
+            pbar.set_postfix(chunk_s=f"{elapsed:.1f}")
             start_time = time.time()
 
-    print(f"Final CL_max={force_stats['CL_max']:.6f}, CD_max={force_stats['CD_max']:.6f}")
+    print(f"Stored {len(cl_history)} force samples")
+    if cl_history:
+        print(f"Final CL={cl_history[-1]:.6f}, CD={cd_history[-1]:.6f}")
 
 
 if __name__ == "__main__":

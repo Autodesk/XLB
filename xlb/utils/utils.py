@@ -94,8 +94,10 @@ def save_image(fld, timestep=None, prefix=None, **kwargs):
         fld = np.sqrt(fld[0, ...] ** 2 + fld[1, ...] ** 2 + fld[2, ...] ** 2)
 
     plt.clf()
-    kwargs.pop("cmap", None)
-    plt.imsave(fname + ".png", fld.T, cmap=cm.nipy_spectral, origin="lower", **kwargs)
+    cmap = kwargs.pop("cmap", None)
+    if cmap is None:
+        cmap = cm.nipy_spectral
+    plt.imsave(fname + ".png", fld.T, cmap=cmap, origin="lower", **kwargs)
 
 
 def save_fields_vtk(fields, timestep, output_dir=".", prefix="fields"):
