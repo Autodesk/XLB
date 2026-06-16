@@ -10,6 +10,7 @@ from jax import jit
 import jax.lax as lax
 from functools import partial
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 
 from xlb.velocity_set.velocity_set import VelocitySet
@@ -59,7 +60,7 @@ class FullwayBounceBackBC(BoundaryCondition):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _opp_indices = self.velocity_set.opp_indices
         _q = wp.constant(self.velocity_set.q)
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
 
         # Construct the functional for this BC
         @wp.func

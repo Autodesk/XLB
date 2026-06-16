@@ -19,6 +19,7 @@ import inspect
 from jax import jit
 from functools import partial
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any, Union, Tuple, Callable
 import numpy as np
 
@@ -149,7 +150,7 @@ class HybridBC(BoundaryCondition):
                 prescribed_value = np.array([prescribed_value[0], prescribed_value[1], 0.0], dtype=np.float64)
 
             # create a constant prescribed profile
-            _u_vec = wp.vec(3, dtype=self.compute_dtype)
+            _u_vec = wp.types.vector(length=3, dtype=self.compute_dtype)
             prescribed_value = _u_vec(prescribed_value)
 
             @wp.func

@@ -98,7 +98,7 @@ def bc_profile():
             r_squared = (two * y_center / H_y) ** two + (two * z_center / H_z) ** two
 
             # Parabolic profile: u = u_max * (1 - r²)
-            return wp.vec(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
+            return wp.vector(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
 
         return bc_profile_warp
 

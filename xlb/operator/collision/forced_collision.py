@@ -5,6 +5,7 @@ Collision operator with external body-force correction.
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 
 from xlb.compute_backend import ComputeBackend
@@ -58,8 +59,8 @@ class ForcedCollision(Collision):
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
 
         # Construct the functional
         @wp.func

@@ -9,6 +9,7 @@ indices, moments, etc.) for any DdQq stencil.  Backend-specific constants
 import math
 import numpy as np
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 import jax.numpy as jnp
 import jax
 
@@ -87,12 +88,12 @@ class VelocitySet(object):
         Convert NumPy properties to Warp-specific properties.
         """
         dtype = self.precision_policy.compute_precision.wp_dtype
-        self.c = wp.constant(wp.mat((self.d, self.q), dtype=wp.int32)(self._c))
-        self.w = wp.constant(wp.vec(self.q, dtype=dtype)(self._w))
-        self.opp_indices = wp.constant(wp.vec(self.q, dtype=wp.int32)(self._opp_indices))
-        self.cc = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._cc))
-        self.c_float = wp.constant(wp.mat((self.d, self.q), dtype=dtype)(self._c_float))
-        self.qi = wp.constant(wp.mat((self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._qi))
+        self.c = wp.constant(wp.types.matrix(shape=(self.d, self.q), dtype=wp.int32)(self._c))
+        self.w = wp.constant(wp.types.vector(length=self.q, dtype=dtype)(self._w))
+        self.opp_indices = wp.constant(wp.types.vector(length=self.q, dtype=wp.int32)(self._opp_indices))
+        self.cc = wp.constant(wp.types.matrix(shape=(self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._cc))
+        self.c_float = wp.constant(wp.types.matrix(shape=(self.d, self.q), dtype=dtype)(self._c_float))
+        self.qi = wp.constant(wp.types.matrix(shape=(self.q, self.d * (self.d + 1) // 2), dtype=dtype)(self._qi))
 
     def _init_neon_properties(self):
         """
@@ -128,13 +129,13 @@ class VelocitySet(object):
             self.inv_cs2 = jnp.array(self.inv_cs2, dtype=dtype)
 
     def warp_lattice_vec(self, dtype):
-        return wp.vec(len(self.c), dtype=dtype)
+        return wp.types.vector(length=len(self.c), dtype=dtype)
 
     def warp_u_vec(self, dtype):
-        return wp.vec(self.d, dtype=dtype)
+        return wp.types.vector(length=self.d, dtype=dtype)
 
     def warp_stream_mat(self, dtype):
-        return wp.mat((self.q, self.d), dtype=dtype)
+        return wp.types.matrix(shape=(self.q, self.d), dtype=dtype)
 
     def _construct_qi(self):
         # Qi = cc - cs^2*I

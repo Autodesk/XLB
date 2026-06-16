@@ -68,6 +68,7 @@ Cell types are defined in `xlb.cell_type`:
 
 import nvtx
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 
 from xlb import DefaultConfig
@@ -391,8 +392,8 @@ class MultiresIncompressibleNavierStokesStepper(Stepper):
         # in a plain assignment (e.g. `_c = self.velocity_set.c`).  Capturing here
         # makes these values available as simple closure variables.
         lattice_central_index = self.velocity_set.center_index
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
+        _missing_mask_vec = wp.types.vector(length=self.velocity_set.q, dtype=wp.uint8)
         _opp_indices = self.velocity_set.opp_indices
         _c = self.velocity_set.c
 

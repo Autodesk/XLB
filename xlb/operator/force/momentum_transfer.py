@@ -2,6 +2,7 @@ from functools import partial
 import jax.numpy as jnp
 from jax import jit, lax
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 from enum import Enum, auto
 
@@ -70,7 +71,7 @@ class FetchPopulations(Operator):
         return f_post_collision, f_post_stream
 
     def _construct_warp(self):
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
         def functional_stream_then_collide(
@@ -168,7 +169,7 @@ class MomentumTransfer(Operator):
 
         if self.compute_backend != ComputeBackend.JAX:
             # Allocate the force vector (the total integral value will be computed)
-            _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+            _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
             self.force = wp.zeros((1), dtype=_u_vec)
 
     @Operator.register_backend(ComputeBackend.JAX)
@@ -214,8 +215,8 @@ class MomentumTransfer(Operator):
         # Set local constants
         _c = self.velocity_set.c
         _opp_indices = self.velocity_set.opp_indices
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
+        _missing_mask_vec = wp.types.vector(length=self.velocity_set.q, dtype=wp.uint8)
         _no_slip_id = self.no_slip_bc_instance.id
 
         # Find velocity index for (0, 0, 0)

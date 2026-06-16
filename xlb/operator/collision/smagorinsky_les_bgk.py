@@ -5,6 +5,7 @@ BGK collision operator with Smagorinsky large-eddy-simulation sub-grid model.
 import jax.numpy as jnp
 from jax import jit
 import warp as wp
+import warp.types  # noqa: F401  (warp-1.14 generic ctors)
 from typing import Any
 import numpy as np
 
@@ -70,10 +71,10 @@ class SmagorinskyLESBGK(Collision):
         _d = self.velocity_set.d
         _cc = self.velocity_set.cc
         _smagorinsky_coef = wp.constant(self.compute_dtype(self.smagorinsky_coef))
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
         _pi_dim = self.velocity_set.d * (self.velocity_set.d + 1) // 2
-        _pi_vec = wp.vec(_pi_dim, dtype=self.compute_dtype)
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _pi_vec = wp.types.vector(length=_pi_dim, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
 
         # Construct the functional
         @wp.func

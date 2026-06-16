@@ -105,7 +105,7 @@ def _run_flow_past_sphere_for_backend(compute_backend: ComputeBackend) -> None:
             y_center = y - (H_y_w / two)
             z_center = z - (H_z_w / two)
             r_squared = (two * y_center / H_y_w) ** two + (two * z_center / H_z_w) ** two
-            return wp.vec(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
+            return wp.vector(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
 
         return bc_profile_warp
 
