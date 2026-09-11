@@ -9,3 +9,6 @@ from xlb.operator.boundary_condition.bc_zouhe import ZouHeBC
 from xlb.operator.boundary_condition.bc_regularized import RegularizedBC
 from xlb.operator.boundary_condition.bc_extrapolation_outflow import ExtrapolationOutflowBC
 from xlb.operator.boundary_condition.bc_hybrid import HybridBC
+from xlb.operator.boundary_condition.bc_scalar_dirichlet import ScalarDirichletBC
+from xlb.operator.boundary_condition.bc_scalar_neumann import ScalarNeumannBC
+from xlb.operator.boundary_condition.bc_scalar_outflow import ScalarOutflowBC

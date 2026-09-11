@@ -226,16 +226,26 @@ class IncompressibleNavierStokesStepper(Stepper):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
-    def jax_implementation(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
+    def jax_implementation(self, f_0, f_1, bc_mask, missing_mask, omega, timestep, force_vector=None):
+        """
+        Parameters
+        ----------
+        force_vector : jax.numpy.ndarray, optional
+            Overrides the body force for this step only; only meaningful when the stepper
+            was constructed with ``force_vector`` (i.e. ``self.collision`` is a
+            :class:`~xlb.operator.collision.ForcedCollision`). Pass this to drive a
+            time- or field-dependent force (e.g. Boussinesq buoyancy from a coupled
+            temperature field). See :class:`~xlb.operator.force.ExactDifference` for the full explanation.
+        """
         if self.streaming_scheme == "pull":
-            return self.jax_implementation_pull(f_0, f_1, bc_mask, missing_mask, omega, timestep)
+            return self.jax_implementation_pull(f_0, f_1, bc_mask, missing_mask, omega, timestep, force_vector)
         elif self.streaming_scheme == "push":
-            return self.jax_implementation_push(f_0, f_1, bc_mask, missing_mask, omega, timestep)
+            return self.jax_implementation_push(f_0, f_1, bc_mask, missing_mask, omega, timestep, force_vector)
         else:
             raise ValueError(f"Unknown streaming scheme: {self.streaming_scheme}")
 
     @partial(jit, static_argnums=(0,))
-    def jax_implementation_pull(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
+    def jax_implementation_pull(self, f_0, f_1, bc_mask, missing_mask, omega, timestep, force_vector=None):
         """
         Perform a single step of the lattice boltzmann method
         """
@@ -263,7 +273,10 @@ class IncompressibleNavierStokesStepper(Stepper):
         feq = self.equilibrium(rho, u)
 
         # Apply collision
-        f_post_collision = self.collision(f_post_stream, feq, omega)
+        if force_vector is not None:
+            f_post_collision = self.collision(f_post_stream, feq, omega, force_vector)
+        else:
+            f_post_collision = self.collision(f_post_stream, feq, omega)
 
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:
@@ -282,7 +295,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         return f_0, f_1
 
     @partial(jit, static_argnums=(0,))
-    def jax_implementation_push(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
+    def jax_implementation_push(self, f_0, f_1, bc_mask, missing_mask, omega, timestep, force_vector=None):
         """
         Perform a single step of the lattice boltzmann method
         """
@@ -300,7 +313,10 @@ class IncompressibleNavierStokesStepper(Stepper):
         feq = self.equilibrium(rho, u)
 
         # Apply collision
-        f_post_collision = self.collision(f_post_stream, feq, omega)
+        if force_vector is not None:
+            f_post_collision = self.collision(f_post_stream, feq, omega, force_vector)
+        else:
+            f_post_collision = self.collision(f_post_stream, feq, omega)
 
         # Apply collision type boundary conditions
         for bc in self.boundary_conditions:

@@ -15,6 +15,13 @@ class ExactDifference(Operator):
     """
     Add external body force based on the exact-difference method due to Kupershtokh (2004)
 
+    On JAX, the force can either be fixed at construction time or supplied fresh on every
+    call via the ``force_vector`` argument to ``jax_implementation`` -- the latter is
+    required for a force that depends on another field (e.g. Boussinesq buoyancy driven by
+    a coupled temperature solver), since reassigning ``self.force_vector`` after
+    construction has no effect once the JIT-compiled call has been traced once. The Warp
+    path only supports a single vector fixed at construction time.
+
     References
     ----------
     Kupershtokh, A. (2004). New method of incorporating a body force term into the lattice Boltzmann equation. In
@@ -31,7 +38,7 @@ class ExactDifference(Operator):
         precision_policy: PrecisionPolicy = None,
         compute_backend: ComputeBackend = None,
     ):
-        # TODO: currently we are limited to a single force vector not a spatially dependent forcing field
+        # Now the class accept a force vector at construction time, which is used for the Warp backend and as a default for JAX.
         self.force_vector = force_vector
 
         # Resolve compute_backend the same way Operator.__init__ does, so we
@@ -51,7 +58,7 @@ class ExactDifference(Operator):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0))
-    def jax_implementation(self, f_postcollision, feq, rho, u):
+    def jax_implementation(self, f_postcollision, feq, rho, u, force_vector=None):
         """
         Parameters
         ----------
@@ -65,12 +72,29 @@ class ExactDifference(Operator):
         u: jax.numpy.ndarray
             The velocity field.
 
+        force_vector: jax.numpy.ndarray, optional
+            Body force for this call, overriding the vector fixed at construction time.
+            Passing it here (rather than reassigning ``self.force_vector``) is what makes
+            a time- or field-dependent force (e.g. Boussinesq buoyancy from a coupled
+            temperature field) actually take effect: ``self.force_vector`` is baked into
+            the JIT trace as a compile-time constant because ``self`` is a static
+            argument, so mutating it after the first call has no effect on subsequent
+            calls with the same shapes. A traced argument is retraced/updated correctly
+            on every call, at no extra compilation cost as long as its shape and dtype
+            stay fixed. Defaults to the vector given at construction time.
+
         Returns
         -------
         f_postcollision: jax.numpy.ndarray
         The post-collision distribution functions with the force applied.
         """
-        delta_u = lax.broadcast_in_dim(self.force_vector, u.shape, (0,))
+        if force_vector is None:
+            force_vector = self.force_vector
+        if force_vector.ndim == 1:
+            delta_u = lax.broadcast_in_dim(force_vector, u.shape, (0,))
+        else:
+            assert force_vector.shape == u.shape, f"force_vector has wrong shape {force_vector.shape}, expected {u.shape} or ({u.shape[0]},)"
+            delta_u = force_vector
         feq_force = self.equilibrium(rho, u + delta_u)
         f_postcollision += feq_force - feq
         return f_postcollision

@@ -62,7 +62,7 @@ pip install git+https://github.com/Autodesk/XLB.git
 
 The changelog for the releases can be found [here](https://github.com/Autodesk/XLB/blob/main/CHANGELOG.md).
 
-For examples to get you started please refer to the [examples](https://github.com/Autodesk/XLB/tree/main/examples) folder.
+For examples to get you started please refer to the [examples](https://github.com/Autodesk/XLB/tree/main/examples) folder. If you're new to XLB, start with the [tutorials](https://github.com/Autodesk/XLB/tree/main/examples/tutorials) subfolder: seven step-by-step Jupyter notebooks that build from a basic lid-driven cavity up through two-way coupled thermal-flow simulations, with explanatory markdown alongside the code.
 
 ## Accompanying Paper
 

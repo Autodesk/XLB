@@ -23,6 +23,7 @@ import xlb.operator.collision
 import xlb.operator.stream
 import xlb.operator.boundary_condition
 import xlb.operator.macroscopic
+import xlb.operator.source
 import xlb.operator.postprocess
 
 # Grids
