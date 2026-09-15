@@ -9,15 +9,22 @@
 XLB is a fully differentiable 2D/3D Lattice Boltzmann Method (LBM) library that leverages hardware acceleration. It supports [JAX](https://github.com/google/jax), [NVIDIA Warp](https://github.com/NVIDIA/warp), and [Neon](https://github.com/Autodesk/Neon) backends, and is specifically designed to solve fluid dynamics problems in a computationally efficient and differentiable manner. Its unique combination of features positions it as an exceptionally suitable tool for applications in physics-based machine learning. With the Warp backend, XLB offers state-of-the-art single-GPU performance, and with the new Neon backend it extends to multi-GPU (single-resolution). More importantly, the Neon backend provides grid refinement capabilities for multi-resolution simulations.
 
 ## Getting Started
-To get started with XLB, you can install it using pip. There are different installation options depending on your hardware and needs:
+To get started with XLB, you can install it using pip. XLB imports Warp at import time and Warp must come from exactly one of two extras, so every install picks either `xlb[warp]` or `xlb[neon]`:
+
+| Extra | Source of Warp | Use for |
+| --- | --- | --- |
+| `xlb[warp]` | `warp-lang` from PyPI | JAX and Warp backends (single-GPU) |
+| `xlb[neon]` | the fork bundled in `neon_gpu` | Neon backend (multi-GPU / multi-resolution) |
+
+Both unpack into the same `site-packages/warp`, so installing both leaves whichever pip wrote last in charge; XLB warns on import if it finds both.
 
 ### Basic Installation (CPU-only)
 ```bash
-pip install xlb
+pip install "xlb[warp]"
 ```
 
 ### Installation with Warp support (single-GPU)
-For the NVIDIA Warp backend (single-GPU, state-of-the-art performance):
+For the NVIDIA Warp backend (single-GPU, state-of-the-art performance) the same extra applies:
 ```bash
 pip install "xlb[warp]"
 ```
@@ -25,13 +32,13 @@ pip install "xlb[warp]"
 ### Installation with CUDA support (for NVIDIA GPUs)
 This installation is for the JAX backend with CUDA support:
 ```bash
-pip install "xlb[cuda]"
+pip install "xlb[cuda,warp]"
 ```
 
 ### Installation with TPU support
 This installation is for the JAX backend with TPU support:
 ```bash
-pip install "xlb[tpu]"
+pip install "xlb[tpu,warp]"
 ```
 
 ### Installation with Neon support
@@ -47,7 +54,7 @@ pip install '.[neon]'
 
 **Requirements:** The Neon wheel supports **Python 3.11** to **Python 3.14** on **Linux x86_64** and **Linux ARM**. 
 
-**Note:** Neon uses a custom fork of warp.
+**Note:** Neon uses a custom fork of warp, which is why `xlb[neon]` does not install `warp-lang`. If the environment already has `warp-lang`, remove it first with `pip uninstall warp-lang`, then reinstall `.[neon]`.
 
 ### Notes:
 - For Mac users: Use the basic CPU installation command as JAX's GPU support is not available on MacOS
@@ -57,7 +64,15 @@ pip install '.[neon]'
 To install the latest development version from source:
 
 ```bash
-pip install git+https://github.com/Autodesk/XLB.git
+pip install "xlb[warp] @ git+https://github.com/Autodesk/XLB.git"
+```
+
+### Running the tests
+`tests/run_backend_test_envs.py` builds a virtualenv per backend, installs XLB from the repository root, and runs the suite in each:
+
+```bash
+python tests/run_backend_test_envs.py                 # warp and neon
+python tests/run_backend_test_envs.py --backend neon  # one backend
 ```
 
 The changelog for the releases can be found [here](https://github.com/Autodesk/XLB/blob/main/CHANGELOG.md).

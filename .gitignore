@@ -133,6 +133,7 @@ env.bak/
 venv.bak/
 .xlb-env/
 .xlb_install_test_venvs/
+.xlb_backend_test_venvs/
 
 # Spyder project settings
 .spyderproject

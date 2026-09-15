@@ -77,7 +77,7 @@ class ExactDifference(Operator):
 
     def _construct_warp(self):
         _d = self.velocity_set.d
-        _u_vec = wp.vec(_d, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=_d, dtype=self.compute_dtype)
         if _d == 2:
             _force = _u_vec(self.force_vector[0], self.force_vector[1])
         else:
