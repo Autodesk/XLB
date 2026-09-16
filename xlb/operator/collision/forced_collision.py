@@ -50,10 +50,20 @@ class ForcedCollision(Collision):
 
     @Operator.register_backend(ComputeBackend.JAX)
     @partial(jit, static_argnums=(0,))
-    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray, omega):
+    def jax_implementation(self, f: jnp.ndarray, feq: jnp.ndarray, omega, force_vector=None):
+        """
+        Parameters
+        ----------
+        force_vector : jax.numpy.ndarray, optional
+            Body force for this call, overriding the vector fixed at construction time.
+            See :class:`~xlb.operator.force.ExactDifference` for why this must be passed
+            as a traced argument rather than by mutating ``self.force_vector`` when the
+            force depends on another field (e.g. Boussinesq buoyancy). Defaults to the
+            vector given at construction time.
+        """
         fout = self.collision_operator(f, feq, omega)
         rho, u = self.macroscopic(fout)
-        fout = self.forcing_operator(fout, feq, rho, u)
+        fout = self.forcing_operator(fout, feq, rho, u, force_vector)
         return fout
 
     def _construct_warp(self):

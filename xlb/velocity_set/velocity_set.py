@@ -71,10 +71,27 @@ class VelocitySet(object):
         self._c_float = self._c.astype(np.float64)
         self._qi = self._construct_qi()
 
-        # Constants in NumPy
-        self.cs = np.float64(math.sqrt(3) / 3.0)
-        self.cs2 = np.float64(1.0 / 3.0)
-        self.inv_cs2 = np.float64(3.0)
+        # Constants in NumPy. The lattice speed of sound follows from the second moment
+        # of the weights, sum_i w_i c_ia c_ib = cs^2 delta_ab, so we derive it from the
+        # stencil rather than assuming 1/3. Every stencil used for Navier-Stokes
+        # (D2Q9, D3Q19, D3Q27) and the D2Q5 scalar stencil give cs^2 = 1/3, but the
+        # minimal 3D scalar stencil D3Q7 gives cs^2 = 1/4.
+        second_moment = np.einsum("i,ai,bi->ab", self._w, self._c, self._c)
+        cs2 = float(second_moment[0, 0])
+        if not np.allclose(second_moment, cs2 * np.eye(self.d)):
+            raise ValueError(
+                f"Velocity set is not isotropic at second order: sum_i w_i c_ia c_ib = "
+                f"{second_moment.tolist()} is not proportional to the identity."
+            )
+        # Snap to the exact rational when the sum is within floating-point noise of it,
+        # so that inv_cs2 stays bit-for-bit 3.0 (or 4.0) rather than 3.000000000000001.
+        for exact in (1.0 / 3.0, 1.0 / 4.0):
+            if abs(cs2 - exact) < 1e-12:
+                cs2 = exact
+                break
+        self.cs = np.float64(math.sqrt(cs2))
+        self.cs2 = np.float64(cs2)
+        self.inv_cs2 = np.float64(1.0 / cs2)
 
         # Indices
         self.main_indices = self._construct_main_indices()
