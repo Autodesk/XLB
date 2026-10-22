@@ -70,7 +70,7 @@ def bc_profile(precision_policy, grid_shape, u_max):
 
     @wp.func
     def bc_profile_warp(index: wp.vec3i):
-        return wp.vec(dtype(u_max_d), length=1)
+        return wp.vector(dtype(u_max_d), length=1)
 
     return bc_profile_warp
 

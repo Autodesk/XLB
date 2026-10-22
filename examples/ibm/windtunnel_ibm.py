@@ -239,7 +239,7 @@ def bc_profile(precision_policy, grid_shape, u_max):
         z_center = z - (L_z / _dtype(2.0))
         r_sq = ((_dtype(2.0) * y_center) / L_y) ** _dtype(2.0) + ((_dtype(2.0) * z_center) / L_z) ** _dtype(2.0)
         velocity_x = u_max_d * wp.max(_dtype(0.0), _dtype(1.0) - r_sq)
-        return wp.vec(velocity_x, length=1)
+        return wp.vector(velocity_x, length=1)
 
     return bc_profile_warp
 
@@ -559,11 +559,11 @@ cx_list = [c[0] for c in wheel_centers]
 cy_list = [c[1] for c in wheel_centers]
 cz_list = [c[2] for c in wheel_centers]
 
-_wheel_starts = wp.constant(wp.vec(len(starts_list), dtype=int)(starts_list))
-_wheel_ends = wp.constant(wp.vec(len(ends_list), dtype=int)(ends_list))
-_wheel_centers_x = wp.constant(wp.vec(len(cx_list), dtype=float)(cx_list))
-_wheel_centers_y = wp.constant(wp.vec(len(cy_list), dtype=float)(cy_list))
-_wheel_centers_z = wp.constant(wp.vec(len(cz_list), dtype=float)(cz_list))
+_wheel_starts = wp.constant(wp.types.vector(length=len(starts_list), dtype=int)(starts_list))
+_wheel_ends = wp.constant(wp.types.vector(length=len(ends_list), dtype=int)(ends_list))
+_wheel_centers_x = wp.constant(wp.types.vector(length=len(cx_list), dtype=float)(cx_list))
+_wheel_centers_y = wp.constant(wp.types.vector(length=len(cy_list), dtype=float)(cy_list))
+_wheel_centers_z = wp.constant(wp.types.vector(length=len(cz_list), dtype=float)(cz_list))
 
 bc_list = setup_boundary_conditions(grid, velocity_set, precision_policy, grid_shape, u_max)
 stepper = setup_stepper(grid, bc_list, omega)

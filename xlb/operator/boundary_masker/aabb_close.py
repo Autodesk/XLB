@@ -307,6 +307,13 @@ class MeshMaskerAABBClose(MeshBoundaryMasker):
             points=wp.array(mesh_vertices, dtype=wp.vec3),
             indices=wp.array(mesh_indices, dtype=wp.int32),
         )
+        # Only the integer ``mesh.id`` reaches the kernels, so retain the Mesh to keep
+        # its device arrays (points/indices/BVH) from being freed while launches are
+        # still pending (use-after-free on the deferred Neon path).
+        if not hasattr(self, "_retained_meshes"):
+            self._retained_meshes = []
+        self._retained_meshes.append(mesh)
+
         mesh_id = wp.uint64(mesh.id)
         bc_id = bc.id
 

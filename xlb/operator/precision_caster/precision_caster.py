@@ -43,8 +43,8 @@ class PrecisionCaster(Operator):
 
     def _construct_warp(self):
         # Construct needed types and constants
-        from_lattice_vec = wp.vec(self.velocity_set.q, dtype=self.input_precision)
-        to_lattice_vec = wp.vec(self.velocity_set.q, dtype=self.output_precision)
+        from_lattice_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.input_precision)
+        to_lattice_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.output_precision)
         from_array_type = wp.array4d(dtype=self.input_precision)
         to_array_type = wp.array4d(dtype=self.output_precision)
         _q = wp.constant(self.velocity_set.q)

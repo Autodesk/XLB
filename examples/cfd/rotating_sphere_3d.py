@@ -115,7 +115,7 @@ sphere_cross_section = np.pi * diam**2 / 4.0
 def bc_profile():
     """Build a Warp function returning the rotational wall velocity at a voxel."""
     dtype = precision_policy.compute_precision.wp_dtype
-    _u_vec = wp.vec(velocity_set.d, dtype=dtype)
+    _u_vec = wp.types.vector(length=velocity_set.d, dtype=dtype)
     angular_velocity = _u_vec(0.0, rot_rate, 0.0)
     origin_np = shift + diam / 2
     origin_wp = _u_vec(origin_np[0], origin_np[1], origin_np[2])

@@ -58,8 +58,8 @@ class ForcedCollision(Collision):
 
     def _construct_warp(self):
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
 
         # Construct the functional
         @wp.func

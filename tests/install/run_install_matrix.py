@@ -119,29 +119,30 @@ def main() -> int:
     scenarios: list[tuple[str, str, str, str]] = [
         (
             "jax-cpu",
-            "JAX (CPU): editable install with test extra",
-            "[test]",
-            "Base JAX CPU jaxlib + test deps (pytest). Warp-lang is still pulled in as a core dependency.",
+            "JAX (CPU): editable install with warp + test extras",
+            "[warp,test]",
+            "Base JAX CPU jaxlib + test deps (pytest). The warp extra is required because XLB imports "
+            "warp at import time and warp-lang is no longer a core dependency.",
         ),
         (
             "jax-cuda",
-            "JAX[cuda]: editable install with cuda + test extras",
-            "[cuda,test]",
+            "JAX[cuda]: editable install with cuda + warp + test extras",
+            "[cuda,warp,test]",
             "Adds the cuda extra from setup (jax[cuda13] per setup.py). Requires a matching CUDA stack.",
         ),
         (
             "warp",
             "WARP: explicit [warp,test] extras",
             "[warp,test]",
-            "Explicit WARP extra plus test deps; core install already includes warp-lang.",
+            "WARP extra plus test deps; warp-lang comes from PyPI.",
         ),
         (
             "neon",
             "NEON: editable install with neon + test extras",
             "[neon,test]",
             "Installs neon_gpu wheel per setup.py (Linux x86_64/aarch64, Python 3.11+). "
-            "Includes h5py for Neon multires HDF5 export. "
-            "Uninstalls any existing warp-lang before install and PyPI warp-lang after (Neon's fork).",
+            "Includes h5py for Neon multires HDF5 export. Must not pull warp-lang: neon_gpu "
+            "provides the Warp fork, and both would own site-packages/warp.",
         ),
     ]
 
