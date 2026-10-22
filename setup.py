@@ -15,7 +15,7 @@ from setuptools import setup, find_packages
 # dependencies after building this project, and for wheel and PEP 660 editable
 # installs the ``install`` command never runs at all. Keeping it out of the core
 # dependencies is the only way ``[neon]`` reliably gets one Warp.
-_NEON_VERSION = "0.5.2a3"
+_NEON_VERSION = "0.5.2a5"
 _NEON_RELEASE_URL = f"https://github.com/Autodesk/Neon/releases/download/v{_NEON_VERSION}"
 
 
