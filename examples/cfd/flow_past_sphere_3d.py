@@ -85,6 +85,7 @@ def bc_profile():
         H_y = wp_dtype(grid_shape[1] - 1)  # Height in y direction
         H_z = wp_dtype(grid_shape[2] - 1)  # Height in z direction
         two = wp_dtype(2.0)
+        _u_normal_vec = wp.types.vector(length=1, dtype=wp_dtype)
 
         @wp.func
         def bc_profile_warp(index: wp.vec3i):
@@ -98,7 +99,7 @@ def bc_profile():
             r_squared = (two * y_center / H_y) ** two + (two * z_center / H_z) ** two
 
             # Parabolic profile: u = u_max * (1 - r²)
-            return wp.vec(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
+            return _u_normal_vec(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared))
 
         return bc_profile_warp
 

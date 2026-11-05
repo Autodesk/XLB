@@ -19,8 +19,8 @@ class FirstMoment(Operator):
 
     def _construct_warp(self):
         _c = self.velocity_set.c
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
 
         @wp.func
         def neumaier_sum_component(d: int, f: _f_vec):
