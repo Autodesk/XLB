@@ -147,10 +147,11 @@ class ZouHeBC(BoundaryCondition):
 
     def _create_constant_prescribed_profile(self):
         _prescribed_value = self.prescribed_value
+        _value_vec = wp.types.vector(length=1, dtype=self.precision_policy.store_precision.wp_dtype)
 
         @wp.func
         def prescribed_profile_warp(index: wp.vec3i):
-            return wp.vec(_prescribed_value, length=1)
+            return _value_vec(_prescribed_value)
 
         def prescribed_profile_jax():
             return jnp.array(_prescribed_value, dtype=self.precision_policy.store_precision.jax_dtype).reshape(-1, 1)

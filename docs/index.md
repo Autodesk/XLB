@@ -7,20 +7,20 @@
 # XLB: A Differentiable Massively Parallel Lattice Boltzmann Library in Python for Physics-Based Machine Learning
 
 🎉 **Exciting News!** 🎉 XLB version 0.2.0 has been released, featuring a complete rewrite of the library and introducing support for the NVIDIA Warp backend! 
-XLB can now be installed via pip: `pip install xlb`.
+XLB can now be installed via pip: `pip install "xlb[warp]"`.
 
 XLB is a fully differentiable 2D/3D Lattice Boltzmann Method (LBM) library that leverages hardware acceleration. It supports [JAX](https://github.com/google/jax) and [NVIDIA Warp](https://github.com/NVIDIA/warp) backends, and is specifically designed to solve fluid dynamics problems in a computationally efficient and differentiable manner. Its unique combination of features positions it as an exceptionally suitable tool for applications in physics-based machine learning. With the new Warp backend, XLB now offers state-of-the-art performance for even faster simulations.
 
 ## Getting Started
-To get started with XLB, you can install it using pip:
+To get started with XLB, you can install it using pip. Warp comes from either the `warp` extra (PyPI `warp-lang`) or the `neon` extra (the fork bundled with `neon_gpu`); pick exactly one:
 ```bash
-pip install xlb
+pip install "xlb[warp]"
 ```
 
 To install the latest development version from source:
 
 ```bash
-pip install git+https://github.com/Autodesk/XLB.git
+pip install "xlb[warp] @ git+https://github.com/Autodesk/XLB.git"
 ```
 
 The changelog for the releases can be found [here](https://github.com/Autodesk/XLB/blob/main/CHANGELOG.md).

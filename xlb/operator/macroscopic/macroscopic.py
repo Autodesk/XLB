@@ -26,7 +26,7 @@ class Macroscopic(Operator):
         return rho, u
 
     def _construct_warp(self):
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
 
         @wp.func
         def functional(f: _f_vec):
@@ -73,7 +73,7 @@ class Macroscopic(Operator):
         functional, _ = self._construct_warp()
 
         # Set local vectors
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
 
         @neon.Container.factory("macroscopic")
         def container(

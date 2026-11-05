@@ -40,10 +40,11 @@ def define_boundary_indices(grid, velocity_set):
 def bc_profile(precision_policy, grid_shape, u_max):
     _dtype = precision_policy.store_precision.wp_dtype
     u_max_d = _dtype(u_max)
+    _u_normal_vec = wp.types.vector(length=1, dtype=_dtype)
 
     @wp.func
     def bc_profile_warp(index: wp.vec3i):
-        return wp.vec(u_max_d, length=1)
+        return _u_normal_vec(u_max_d)
 
     return bc_profile_warp
 
