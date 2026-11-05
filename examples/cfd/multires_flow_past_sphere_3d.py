@@ -171,8 +171,7 @@ def bc_profile():
     one = dtype(1.0)
     zero = dtype(0.0)
     u_max_wp = dtype(u_max)
-    _u_vec = wp.types.vector(length=velocity_set.d, dtype=dtype)
-    _u_normal_vec = wp.types.vector(length=1, dtype=dtype)
+    _u_vec = wp.vec(velocity_set.d, dtype=dtype)
 
     @wp.func
     def bc_profile_warp(index: wp.vec3i):
@@ -192,7 +191,7 @@ def bc_profile():
         # return _u_vec(u_max_wp * wp.max(zero, one - r_squared), zero, zero)
 
         # For Regularized and ZouHe
-        return _u_normal_vec(u_max_wp * wp.max(zero, one - r_squared))
+        return wp.vec(u_max_wp * wp.max(zero, one - r_squared), length=1)
 
     return bc_profile_warp
 

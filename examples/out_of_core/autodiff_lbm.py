@@ -194,13 +194,11 @@ if __name__ == "__main__":
     else:
         raise ValueError("Invalid velocity set")
 
-    # Initialize XLB. This example differentiates through the solver with
-    # wp.Tape, so it needs the adjoint kernels that XLB otherwise skips.
+    # Initialize XLB
     xlb.init(
         velocity_set=velocity_set,
         default_backend=compute_backend,
         default_precision_policy=precision_policy,
-        enable_backward=True,
     )
 
     # Make grid for constructing stepper
