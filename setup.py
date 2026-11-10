@@ -1,3 +1,4 @@
+import os
 import platform
 import sys
 
@@ -32,6 +33,21 @@ def _neon_wheel_requirement():
     return req
 
 
+extras_require = {
+    # Exactly one of [warp] and [neon] is required; see the note above.
+    "warp": ["warp-lang>=1.19,<1.20"],
+    "cuda": ["jax[cuda13]>=0.8.2"],  # For CUDA installations (pip install -U "jax[cuda13]")
+    "tpu": ["jax[tpu]>=0.8.2"],  # For TPU installations
+    "test": ["pytest>=8.0.0"],
+}
+# PyPI rejects direct-URL requirements, so PyPI builds ship without [neon].
+# Source and git installs keep the neon_gpu wheel URL. Set XLB_PYPI_BUILD=1 when
+# building the PyPI sdist/wheel.
+if not os.environ.get("XLB_PYPI_BUILD"):
+    # h5py: MultiresIO / Neon multi-resolution export to HDF5 (see xlb.utils.mesher).
+    extras_require["neon"] = [_neon_wheel_requirement(), "h5py>=3.10.0"]
+
+
 setup(
     name="xlb",
     version="0.3.2",
@@ -53,17 +69,7 @@ setup(
         "jax>=0.8.2",  # Base JAX CPU-only requirement
         "nvtx>=0.2.0",  # NVTX ranges (e.g. nse_multires_stepper); listed in requirements.txt
     ],
-    extras_require={
-        # Exactly one of [warp] and [neon] is required; see the note above.
-        # Newest stable warp-lang on PyPI, the closest release to the Warp fork
-        # neon_gpu bundles (1.19.0.dev0). Move to 1.19 once it is released.
-        "warp": ["warp-lang>=1.18,<1.19"],
-        "cuda": ["jax[cuda13]>=0.8.2"],  # For CUDA installations (pip install -U "jax[cuda13]")
-        "tpu": ["jax[tpu]>=0.8.2"],  # For TPU installations
-        # h5py: MultiresIO / Neon multi-resolution export to HDF5 (see xlb.utils.mesher).
-        "neon": [_neon_wheel_requirement(), "h5py>=3.10.0"],
-        "test": ["pytest>=8.0.0"],
-    },
+    extras_require=extras_require,
     python_requires=">=3.11",
     dependency_links=["https://storage.googleapis.com/jax-releases/libtpu_releases.html"],
 )

@@ -42,8 +42,9 @@ pip install "xlb[tpu,warp]"
 ```
 
 ### Installation with Neon support
-Neon backend enables multi-GPU dense and single-GPU multi-resolution representations. 
-Install XLB with Neon support using:
+Neon backend enables multi-GPU dense and single-GPU multi-resolution representations.
+The PyPI package does not include the `[neon]` extra (PyPI rejects the direct-URL
+`neon_gpu` wheel dependency); install Neon from a source or git checkout instead:
 
 ```bash
 git clone https://github.com/Autodesk/XLB.git
