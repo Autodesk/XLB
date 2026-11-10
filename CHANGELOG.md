@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - _No changes yet_  <!-- Placeholder for future changes -->
 
+## [0.3.2] - 2026-11-10
+
+### Added
+- Multi-resolution grid refinement and Neon backend support (#159)
+- Differentiable LBM example for inverse problem solving with JAX (#156)
+
+### Changed
+- Upgraded Warp dependency to 1.19 (#168)
+- PyPI builds omit the `[neon]` extra (direct-URL `neon_gpu` requirement); Neon remains available from source/git installs
+
+### Removed
+- Deprecated functions (#154)
 
 ## [0.2.1] - 2024-12-05
 
