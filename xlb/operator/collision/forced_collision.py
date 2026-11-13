@@ -79,6 +79,17 @@ class ForcedCollision(Collision):
             fout = self.forcing_operator.warp_functional(fout, feq, rho, u)
             return fout
 
+        # Same collision with the force of the node supplied explicitly, for a force field
+        # that varies in space and time (see ExactDifference)
+        @wp.func
+        def functional_with_force(f: Any, feq: Any, omega: Any, force: Any):
+            fout = self.collision_operator.warp_functional(f, feq, omega)
+            rho, u = self.macroscopic.warp_functional(fout)
+            fout = self.forcing_operator.warp_functional_with_force(fout, feq, rho, u, force)
+            return fout
+
+        self.warp_functional_with_force = functional_with_force
+
         # Construct the warp kernel
         @wp.kernel
         def kernel(

@@ -7,6 +7,7 @@ pull-only fused kernel on Warp, and a pull-only Neon container.
 """
 
 from functools import partial
+import numpy as np
 
 from jax import jit
 import warp as wp
@@ -24,6 +25,7 @@ from xlb.operator.stepper import Stepper
 from xlb.operator.boundary_condition.boundary_condition import ImplementationStep
 from xlb.operator.boundary_condition.boundary_condition_registry import boundary_condition_registry
 from xlb.operator.collision import ForcedCollision
+from xlb.operator.force.exact_difference_force import is_uniform_force
 from xlb.operator.boundary_masker import (
     IndicesBoundaryMasker,
     MeshVoxelizationMethod,
@@ -57,7 +59,14 @@ class IncompressibleNavierStokesStepper(Stepper):
     forcing_scheme : str
         Forcing scheme name (used when *force_vector* is given).
     force_vector : array-like, optional
-        External body force vector.
+        External body force, either a uniform ``(d,)`` vector or a field of cardinality
+        ``d`` (``(d, nx, ny[, nz])``). Giving it makes the collision a
+        :class:`~xlb.operator.collision.ForcedCollision`. On both backends the force can
+        be overridden on every call (``force_vector`` argument of the stepper), which is
+        how a force that depends on another field, such as Boussinesq buoyancy, is
+        applied. On Warp a per-call force should be a Warp array of the field's shape,
+        e.g. the output of :class:`~xlb.operator.force.BoussinesqForce`, so that it never
+        leaves the device.
     backend_config : dict
         Backend-specific options (e.g. Neon OCC configuration).
     """
@@ -85,6 +94,13 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         if force_vector is not None:
             self.collision = ForcedCollision(collision_operator=self.collision, forcing_scheme=forcing_scheme, force_vector=force_vector)
+
+        # On Warp a spatially varying force is read per node from a field, which is kept on
+        # the device; the kernel that reads it is only built when it is first needed
+        self._warp_force_field = None
+        self._warp_forced_kernel = None
+        if force_vector is not None and self.compute_backend == ComputeBackend.WARP and not is_uniform_force(force_vector):
+            self._warp_force_field = self._as_warp_force_field(force_vector)
 
         # Choose the implementation based on backend and streaming scheme
         self.streaming_scheme = streaming_scheme
@@ -237,6 +253,8 @@ class IncompressibleNavierStokesStepper(Stepper):
             time- or field-dependent force (e.g. Boussinesq buoyancy from a coupled
             temperature field). See :class:`~xlb.operator.force.ExactDifference` for the full explanation.
         """
+        if force_vector is not None and not isinstance(self.collision, ForcedCollision):
+            raise ValueError("A per-call force_vector requires the stepper to be constructed with force_vector")
         if self.streaming_scheme == "pull":
             return self.jax_implementation_pull(f_0, f_1, bc_mask, missing_mask, omega, timestep, force_vector)
         elif self.streaming_scheme == "push":
@@ -352,6 +370,7 @@ class IncompressibleNavierStokesStepper(Stepper):
         # Set local constants
         _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
+        _f_array = wp.array4d(dtype=self.store_dtype)
         _opp_indices = self.velocity_set.opp_indices
         lattice_central_index = self.velocity_set.center_index
 
@@ -364,16 +383,22 @@ class IncompressibleNavierStokesStepper(Stepper):
             if bc_name.startswith("ExtrapolationOutflowBC"):
                 extrapolation_outflow_bc_ids.append(bc_id)
 
+        # apply_bc and apply_aux_recovery_bc are deliberately fully typed. Warp defers the
+        # wp.static expressions of a generic (Any-typed) function until it is instantiated,
+        # and leaves them out of the module hash; two steppers whose BCs differ only in their
+        # registry ids would then share a hash and silently reuse each other's compiled
+        # binary, in memory and in the on-disk kernel cache. Concrete types resolve the
+        # statics at declaration time.
         @wp.func
         def apply_bc(
-            index: Any,
-            timestep: Any,
-            _boundary_id: Any,
-            _missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
-            f_pre: Any,
-            f_post: Any,
+            index: wp.vec3i,
+            timestep: wp.int32,
+            _boundary_id: wp.uint8,
+            _missing_mask: _missing_mask_vec,
+            f_0: _f_array,
+            f_1: _f_array,
+            f_pre: _f_vec,
+            f_post: _f_vec,
             is_post_streaming: bool,
         ):
             f_result = f_post
@@ -413,11 +438,11 @@ class IncompressibleNavierStokesStepper(Stepper):
 
         @wp.func
         def apply_aux_recovery_bc(
-            index: Any,
-            _boundary_id: Any,
-            _missing_mask: Any,
-            f_0: Any,
-            f_1: Any,
+            index: wp.vec3i,
+            _boundary_id: wp.uint8,
+            _missing_mask: _missing_mask_vec,
+            f_0: _f_array,
+            f_1: _f_array,
         ):
             # Note:
             # In XLB, the BC auxiliary data (e.g. prescribed values of pressure or normal velocity) are stored in (i) central index of f_1 and/or
@@ -479,16 +504,126 @@ class IncompressibleNavierStokesStepper(Stepper):
             for l in range(self.velocity_set.q):
                 f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
 
+        # Kept for the force-field kernel, which is built later (see _construct_warp_forced_kernel)
+        self._warp_step_funcs = (apply_bc, get_thread_data, apply_aux_recovery_bc)
+
         return None, kernel
 
+    def _construct_warp_forced_kernel(self):
+        """Build the fused Warp kernel that reads the body force per node from a field.
+
+        It cannot be built in :meth:`_construct_warp`, which runs before the collision
+        operator exists: Warp compiles every kernel of a module together, and this one
+        calls ``ForcedCollision.warp_functional_with_force``, which a plain BGK stepper
+        does not have.
+        """
+        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        apply_bc, get_thread_data, apply_aux_recovery_bc = self._warp_step_funcs
+
+        @wp.kernel
+        def kernel_forced(
+            f_0: wp.array4d(dtype=Any),
+            f_1: wp.array4d(dtype=Any),
+            bc_mask: wp.array4d(dtype=Any),
+            missing_mask: wp.array4d(dtype=Any),
+            force: wp.array4d(dtype=Any),
+            omega: Any,
+            timestep: int,
+        ):
+            i, j, k = wp.tid()
+            index = wp.vec3i(i, j, k)
+
+            _boundary_id = bc_mask[0, index[0], index[1], index[2]]
+            if _boundary_id == wp.uint8(BC_SOLID):
+                return
+
+            # Apply streaming
+            _f_post_stream = self.stream.warp_functional(f_0, index)
+
+            _f0_thread, _missing_mask = get_thread_data(f_0, missing_mask, index)
+            _f_post_collision = _f0_thread
+
+            # Apply post-streaming boundary conditions
+            _f_post_stream = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_collision, _f_post_stream, True)
+
+            # Read the velocity increment of this node from the force field
+            _force = _u_vec()
+            for d in range(self.velocity_set.d):
+                _force[d] = self.compute_dtype(force[d, index[0], index[1], index[2]])
+
+            _rho, _u = self.macroscopic.warp_functional(_f_post_stream)
+            _feq = self.equilibrium.warp_functional(_rho, _u)
+            _f_post_collision = self.collision.warp_functional_with_force(_f_post_stream, _feq, omega, _force)
+
+            # Apply post-collision boundary conditions
+            _f_post_collision = apply_bc(index, timestep, _boundary_id, _missing_mask, f_0, f_1, _f_post_stream, _f_post_collision, False)
+
+            # Apply auxiliary recovery for boundary conditions (swapping)
+            apply_aux_recovery_bc(index, _boundary_id, _missing_mask, f_0, f_1)
+
+            # Store the result in f_1
+            for l in range(self.velocity_set.q):
+                f_1[l, index[0], index[1], index[2]] = self.store_dtype(_f_post_collision[l])
+
+        return kernel_forced
+
+    def _as_warp_force_field(self, force_vector):
+        """Return *force_vector* as a Warp force field of cardinality ``d`` on the grid.
+
+        A Warp array of the right shape is returned as is, so that a field updated in
+        place on the device is picked up without a copy. Anything else (a ``(d,)`` vector,
+        or a NumPy/JAX field of shape ``(d, nx, ny[, nz])``) is copied to the device, which
+        is convenient but slow if done every step.
+        """
+        target = self.grid.create_field(cardinality=self.velocity_set.d, dtype=self.precision_policy.store_precision)
+        if isinstance(force_vector, wp.array):
+            assert force_vector.shape == target.shape, f"force field has shape {force_vector.shape}, expected {target.shape}"
+            return force_vector
+
+        force = np.asarray(force_vector, dtype=np.float64)
+        if force.ndim == 1:
+            assert force.shape[0] == self.velocity_set.d, f"force vector has length {force.shape[0]}, expected {self.velocity_set.d}"
+            force = np.broadcast_to(force.reshape((-1,) + (1,) * (len(target.shape) - 1)), target.shape)
+        elif force.shape != target.shape:
+            # 2D NumPy/JAX fields have no trailing z axis
+            assert force.shape == target.shape[:-1], f"force field has shape {force.shape}, expected {target.shape[:-1]} or {target.shape}"
+            force = force[..., np.newaxis]
+        return wp.array(np.ascontiguousarray(force), dtype=self.store_dtype, device=target.device)
+
     @Operator.register_backend(ComputeBackend.WARP)
-    def warp_implementation(self, f_0, f_1, bc_mask, missing_mask, omega, timestep):
-        wp.launch(
-            self.warp_kernel,
-            inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep],
-            dim=f_0.shape[1:],
-            device=f_0.device,
-        )
+    def warp_implementation(self, f_0, f_1, bc_mask, missing_mask, omega, timestep, force_vector=None):
+        """
+        Parameters
+        ----------
+        force_vector : warp.array, optional
+            Overrides the body force for this step only; requires the stepper to have been
+            constructed with ``force_vector``. Pass a Warp field of cardinality ``d`` and
+            the grid's shape, e.g. the output of :class:`~xlb.operator.force.BoussinesqForce`.
+            NumPy/JAX arrays are accepted too but are copied to the device on every call.
+        """
+        if force_vector is not None:
+            if not isinstance(self.collision, ForcedCollision):
+                raise ValueError("A per-call force_vector requires the stepper to be constructed with force_vector")
+            force_field = self._as_warp_force_field(force_vector)
+        else:
+            force_field = self._warp_force_field
+
+        if force_field is None:
+            wp.launch(
+                self.warp_kernel,
+                inputs=[f_0, f_1, bc_mask, missing_mask, omega, timestep],
+                dim=f_0.shape[1:],
+                device=f_0.device,
+            )
+        else:
+            if self._warp_forced_kernel is None:
+                self._warp_forced_kernel = self._construct_warp_forced_kernel()
+            wp.launch(
+                self._warp_forced_kernel,
+                inputs=[f_0, f_1, bc_mask, missing_mask, force_field, omega, timestep],
+                dim=f_0.shape[1:],
+                device=f_0.device,
+            )
         return f_0, f_1
 
     def _construct_neon(self):

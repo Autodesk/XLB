@@ -157,9 +157,14 @@ class ScalarOutflowBC(BoundaryCondition):
         return jnp.where(jnp.logical_and(missing_mask, boundary), f_open, f_post)
 
     def _construct_warp(self):
-        # Set local constants
+        # Set local constants. The convective branch is selected by the value of _u_conv at
+        # run time rather than by wp.static, so that the constant is part of the module hash.
+        _c = self.velocity_set.c
+        _d = self.velocity_set.d
         _u_conv = self.compute_dtype(self.u_conv)
+        _zero = self.compute_dtype(0.0)
         _one = self.compute_dtype(1.0)
+        _flow_direction = wp.int32(self.flow_direction)
 
         # Construct the functional for this BC
         @wp.func
@@ -172,13 +177,33 @@ class ScalarOutflowBC(BoundaryCondition):
             f_pre: Any,
             f_post: Any,
         ):
-            # Post-streaming values are only modified at missing directions.
-            # Zeroth-order extrapolation keeps the pre-streaming population, which is a
-            # purely local operation and therefore the only variant supported on Warp.
+            # Post-streaming values are only modified at missing directions
             _f = f_post
+
+            # Upstream neighbour along the outlet normal, periodic like jnp.roll on JAX
+            upstream = wp.vec3i(index[0], index[1], index[2])
+            upstream[_flow_direction] = upstream[_flow_direction] - 1
+            if upstream[_flow_direction] < 0:
+                upstream[_flow_direction] = f_0.shape[_flow_direction + 1] - 1
+
             for l in range(self.velocity_set.q):
                 if missing_mask[l] == wp.uint8(1):
-                    _f[l] = f_pre[l]
+                    if _u_conv > _zero:
+                        # Convective (Sommerfeld) outflow. With pull streaming the
+                        # post-streaming population of the upstream neighbour is the
+                        # pre-streaming population one link further back, f_0[l, x - c_l]
+                        pull_index = wp.vec3i(upstream[0], upstream[1], upstream[2])
+                        for d in range(_d):
+                            pull_index[d] = upstream[d] - _c[d, l]
+                            if pull_index[d] < 0:
+                                pull_index[d] = f_0.shape[d + 1] - 1
+                            elif pull_index[d] >= f_0.shape[d + 1]:
+                                pull_index[d] = 0
+                        _f_upstream = self.compute_dtype(f_0[l, pull_index[0], pull_index[1], pull_index[2]])
+                        _f[l] = (f_pre[l] + _u_conv * _f_upstream) / (_one + _u_conv)
+                    else:
+                        # Zeroth-order extrapolation: keep the pre-streaming population
+                        _f[l] = f_pre[l]
 
             return _f
 
@@ -188,8 +213,6 @@ class ScalarOutflowBC(BoundaryCondition):
 
     @Operator.register_backend(ComputeBackend.WARP)
     def warp_implementation(self, f_pre, f_post, bc_mask, missing_mask):
-        if self.u_conv > 0.0:
-            raise NotImplementedError("The convective outflow variant is only implemented for the JAX backend; use u_conv = 0.0 on Warp.")
         # Launch the warp kernel
         wp.launch(
             self.warp_kernel,

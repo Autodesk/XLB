@@ -13,6 +13,7 @@ Warp.
 
 from functools import partial
 
+import numpy as np
 from jax import jit
 import warp as wp
 from typing import Any
@@ -116,7 +117,9 @@ class ThermalStepper(Stepper):
 
         Args:
             phi_init: Initial scalar value. Either a scalar (uniform initialization) or a
-                      field of cardinality 1 holding the initial scalar distribution.
+                      field of cardinality 1 holding the initial scalar distribution. On
+                      Warp, a NumPy or JAX array of shape ``(1, nx, ny[, nz])`` is accepted
+                      too and copied to the device.
 
         Returns:
             Tuple of (g_0, g_1, bc_mask, missing_mask):
@@ -169,6 +172,15 @@ class ThermalStepper(Stepper):
         """Initialize the scalar populations at rest equilibrium for the given scalar value."""
         if isinstance(phi_init, (int, float)):
             phi = self.grid.create_field(cardinality=1, fill_value=float(phi_init), dtype=self.precision_policy.compute_precision)
+        elif self.compute_backend == ComputeBackend.WARP and not isinstance(phi_init, wp.array):
+            # Accept NumPy/JAX fields of shape (1, nx, ny[, nz]) on Warp too, so the same
+            # initial condition can be used on both backends
+            phi = self.grid.create_field(cardinality=1, dtype=self.precision_policy.compute_precision)
+            phi_np = np.asarray(phi_init, dtype=np.float64)
+            if phi_np.shape == phi.shape[:-1]:
+                phi_np = phi_np[..., np.newaxis]
+            assert phi_np.shape == phi.shape, f"phi_init has shape {np.shape(phi_init)}, expected {phi.shape} or {phi.shape[:-1]}"
+            phi = wp.array(np.ascontiguousarray(phi_np), dtype=self.compute_dtype, device=phi.device)
         else:
             phi = phi_init
         u = self.grid.create_field(cardinality=self.velocity_set.d, fill_value=0.0, dtype=self.precision_policy.compute_precision)
@@ -260,17 +272,23 @@ class ThermalStepper(Stepper):
         _g_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
         _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
         _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _g_array = wp.array4d(dtype=self.store_dtype)
 
+        # apply_bc is deliberately fully typed. Warp defers the wp.static expressions of a
+        # generic (Any-typed) function until it is instantiated, and leaves them out of the
+        # module hash; two steppers whose BCs differ only in their registry ids would then
+        # share a hash and silently reuse each other's compiled binary, in memory and in the
+        # on-disk kernel cache. Concrete types resolve the statics at declaration time.
         @wp.func
         def apply_bc(
-            index: Any,
-            timestep: Any,
-            _boundary_id: Any,
-            _missing_mask: Any,
-            g_0: Any,
-            g_1: Any,
-            g_pre: Any,
-            g_post: Any,
+            index: wp.vec3i,
+            timestep: wp.int32,
+            _boundary_id: wp.uint8,
+            _missing_mask: _missing_mask_vec,
+            g_0: _g_array,
+            g_1: _g_array,
+            g_pre: _g_vec,
+            g_post: _g_vec,
             is_post_streaming: bool,
         ):
             g_result = g_post

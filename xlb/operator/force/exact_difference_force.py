@@ -1,5 +1,6 @@
 from functools import partial
 from jax import jit, lax
+import numpy as np
 import warp as wp
 from typing import Any
 
@@ -11,6 +12,17 @@ from xlb.operator.operator import Operator
 from xlb.operator.equilibrium import QuadraticEquilibrium
 
 
+def is_uniform_force(force_vector) -> bool:
+    """Whether *force_vector* is a single ``(d,)`` vector rather than a ``(d, *grid)`` field.
+
+    Works for NumPy, JAX and Warp arrays, and for plain sequences.
+    """
+    shape = getattr(force_vector, "shape", None)
+    if shape is None:
+        shape = np.shape(force_vector)
+    return len(shape) == 1
+
+
 class ExactDifference(Operator):
     """
     Add external body force based on the exact-difference method due to Kupershtokh (2004)
@@ -19,8 +31,14 @@ class ExactDifference(Operator):
     call via the ``force_vector`` argument to ``jax_implementation`` -- the latter is
     required for a force that depends on another field (e.g. Boussinesq buoyancy driven by
     a coupled temperature solver), since reassigning ``self.force_vector`` after
-    construction has no effect once the JIT-compiled call has been traced once. The Warp
-    path only supports a single vector fixed at construction time.
+    construction has no effect once the JIT-compiled call has been traced once.
+
+    On Warp, a uniform ``(d,)`` vector given at construction is compiled into
+    ``warp_functional`` as a constant. A spatially varying force is applied through
+    ``warp_functional_with_force``, which takes the velocity increment of the node as an
+    extra argument; :class:`~xlb.operator.stepper.IncompressibleNavierStokesStepper` reads
+    it from a force field of cardinality ``d``, either given at construction or passed on
+    every call.
 
     References
     ----------
@@ -102,10 +120,16 @@ class ExactDifference(Operator):
     def _construct_warp(self):
         _d = self.velocity_set.d
         _u_vec = wp.vec(_d, dtype=self.compute_dtype)
+
+        # A uniform force is baked into the functional as a constant. A spatially varying
+        # force (any array with more than one dimension) cannot be, so the constant part is
+        # zero and the field must be supplied per node through functional_with_force; the
+        # steppers do that automatically.
+        uniform_force = np.zeros(_d) if not is_uniform_force(self.force_vector) else np.asarray(self.force_vector, dtype=np.float64)
         if _d == 2:
-            _force = _u_vec(self.force_vector[0], self.force_vector[1])
+            _force = _u_vec(uniform_force[0], uniform_force[1])
         else:
-            _force = _u_vec(self.force_vector[0], self.force_vector[1], self.force_vector[2])
+            _force = _u_vec(uniform_force[0], uniform_force[1], uniform_force[2])
 
         # Construct the functional
         @wp.func
@@ -114,6 +138,16 @@ class ExactDifference(Operator):
             feq_force = self.equilibrium.warp_functional(rho, u + delta_u)
             f_postcollision += feq_force - feq
             return f_postcollision
+
+        # Same correction with the velocity increment read per node, which is what allows a
+        # force that changes in space and time (e.g. Boussinesq buoyancy) on Warp
+        @wp.func
+        def functional_with_force(f_postcollision: Any, feq: Any, rho: Any, u: Any, delta_u: Any):
+            feq_force = self.equilibrium.warp_functional(rho, u + delta_u)
+            f_postcollision += feq_force - feq
+            return f_postcollision
+
+        self.warp_functional_with_force = functional_with_force
 
         # Construct the warp kernel
         @wp.kernel
