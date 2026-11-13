@@ -119,7 +119,7 @@ class ExactDifference(Operator):
 
     def _construct_warp(self):
         _d = self.velocity_set.d
-        _u_vec = wp.vec(_d, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=_d, dtype=self.compute_dtype)
 
         # A uniform force is baked into the functional as a constant. A spatially varying
         # force (any array with more than one dimension) cannot be, so the constant part is

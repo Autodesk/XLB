@@ -75,7 +75,7 @@ class BoussinesqForce(Operator):
         _d = self.velocity_set.d
         _b = [self.compute_dtype(b) for b in self.buoyancy]
         _phi_ref = self.compute_dtype(self.reference_value)
-        _u_vec = wp.vec(_d, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=_d, dtype=self.compute_dtype)
         if _d == 2:
             _buoyancy = _u_vec(_b[0], _b[1])
         else:

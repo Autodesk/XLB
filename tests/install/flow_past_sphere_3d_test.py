@@ -97,6 +97,7 @@ def _run_flow_past_sphere_for_backend(compute_backend: ComputeBackend) -> None:
         H_y_w = wp_dtype(grid_shape[1] - 1)
         H_z_w = wp_dtype(grid_shape[2] - 1)
         two = wp_dtype(2.0)
+        _u_normal_vec = wp.types.vector(length=1, dtype=wp_dtype)
 
         @wp.func
         def bc_profile_warp(index: wp.vec3i):
@@ -105,7 +106,7 @@ def _run_flow_past_sphere_for_backend(compute_backend: ComputeBackend) -> None:
             y_center = y - (H_y_w / two)
             z_center = z - (H_z_w / two)
             r_squared = (two * y_center / H_y_w) ** two + (two * z_center / H_z_w) ** two
-            return wp.vec(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
+            return _u_normal_vec(wp_dtype(u_max) * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared))
 
         return bc_profile_warp
 

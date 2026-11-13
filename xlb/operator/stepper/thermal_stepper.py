@@ -269,9 +269,9 @@ class ThermalStepper(Stepper):
 
     def _construct_warp(self):
         # Set local constants
-        _g_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _missing_mask_vec = wp.vec(self.velocity_set.q, dtype=wp.uint8)
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _g_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
+        _missing_mask_vec = wp.types.vector(length=self.velocity_set.q, dtype=wp.uint8)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
         _g_array = wp.array4d(dtype=self.store_dtype)
 
         # apply_bc is deliberately fully typed. Warp defers the wp.static expressions of a

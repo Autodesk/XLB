@@ -33,8 +33,8 @@ class QuadraticEquilibrium(Equilibrium):
         # Set local constants TODO: This is a hack and should be fixed with warp update
         _c = self.velocity_set.c
         _w = self.velocity_set.w
-        _f_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _f_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
 
         # Construct the equilibrium functional
         @wp.func
@@ -109,7 +109,7 @@ class QuadraticEquilibrium(Equilibrium):
         functional, _ = self._construct_warp()
 
         # Set local constants TODO: This is a hack and should be fixed with warp update
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
 
         @neon.Container.factory(name="QuadraticEquilibrium")
         def container(

@@ -46,8 +46,8 @@ class LinearEquilibrium(Equilibrium):
         _c = self.velocity_set.c
         _w = self.velocity_set.w
         _inv_cs2 = self.compute_dtype(self.velocity_set.inv_cs2)
-        _g_vec = wp.vec(self.velocity_set.q, dtype=self.compute_dtype)
-        _u_vec = wp.vec(self.velocity_set.d, dtype=self.compute_dtype)
+        _g_vec = wp.types.vector(length=self.velocity_set.q, dtype=self.compute_dtype)
+        _u_vec = wp.types.vector(length=self.velocity_set.d, dtype=self.compute_dtype)
 
         # Construct the equilibrium functional
         @wp.func

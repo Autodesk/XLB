@@ -60,9 +60,9 @@ class HelperFunctionsBC(object):
         _c = self.velocity_set.c
         _c_float = self.velocity_set.c_float
         _qi = self.velocity_set.qi
-        _u_vec = wp.vec(_d, dtype=compute_dtype)
-        _f_vec = wp.vec(_q, dtype=compute_dtype)
-        _missing_mask_vec = wp.vec(_q, dtype=wp.uint8)  # TODO fix vec bool
+        _u_vec = wp.types.vector(length=_d, dtype=compute_dtype)
+        _f_vec = wp.types.vector(length=_q, dtype=compute_dtype)
+        _missing_mask_vec = wp.types.vector(length=_q, dtype=wp.uint8)  # TODO fix vec bool
 
         # Define the operator needed for computing equilibrium
         equilibrium = QuadraticEquilibrium(velocity_set, precision_policy, compute_backend)
@@ -412,7 +412,7 @@ class EncodeAuxiliaryData(Operator):
         _opp_indices = self.velocity_set.opp_indices
         _id = self.boundary_id
         _num_of_aux_data = self.num_of_aux_data
-        _aux_vec = wp.vec(_num_of_aux_data, dtype=self.compute_dtype)
+        _aux_vec = wp.types.vector(length=_num_of_aux_data, dtype=self.compute_dtype)
 
         @wp.func
         def encoder_functional(

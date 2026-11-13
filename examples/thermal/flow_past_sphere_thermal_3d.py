@@ -205,13 +205,14 @@ class FlowPastSphereThermal3D:
         _H_z = wp_dtype(H_z)
         _u_max = wp_dtype(u_max)
         _two = wp_dtype(2.0)
+        _u_normal_vec = wp.types.vector(length=1, dtype=wp_dtype)
 
         @wp.func
         def profile_warp(index: wp.vec3i):
             y_center = wp_dtype(index[1]) - _H_y / _two
             z_center = wp_dtype(index[2]) - _H_z / _two
             r_squared = (_two * y_center / _H_y) ** _two + (_two * z_center / _H_z) ** _two
-            return wp.vec(_u_max * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
+            return _u_normal_vec(_u_max * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared))
 
         return profile_warp
 
