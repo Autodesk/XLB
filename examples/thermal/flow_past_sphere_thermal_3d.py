@@ -47,8 +47,11 @@ this exact case:
 Run directly to execute a short simulation and write periodic VTK/PNG snapshots.
 """
 
+from typing import Any
+
 import numpy as np
 import jax.numpy as jnp
+import warp as wp
 
 import xlb
 import xlb.velocity_set
@@ -68,6 +71,14 @@ from xlb.operator.boundary_condition import (
 from xlb.operator.macroscopic import Macroscopic, ZeroMoment
 from xlb.operator.force.momentum_transfer import MomentumTransfer
 from xlb.utils import save_fields_vtk, save_image
+
+
+@wp.kernel
+def copy_outlet_plane_warp(u: wp.array4d(dtype=Any)):
+    # u[:, -1, :, :] = u[:, -2, :, :], launched over (d, ny, nz)
+    d, j, k = wp.tid()
+    nx = u.shape[1]
+    u[d, nx - 1, j, k] = u[d, nx - 2, j, k]
 
 
 class FlowPastSphereThermal3D:
@@ -174,17 +185,35 @@ class FlowPastSphereThermal3D:
         H_z = float(nz - 1)
         u_max = self.u_inlet
 
-        def profile_jax():
-            y = jnp.arange(ny)
-            z = jnp.arange(nz)
-            Y, Z = jnp.meshgrid(y, z, indexing="ij")
-            y_center = Y - H_y / 2.0
-            z_center = Z - H_z / 2.0
-            r_squared = (2.0 * y_center / H_y) ** 2 + (2.0 * z_center / H_z) ** 2
-            u_x = u_max * jnp.maximum(0.0, 1.0 - r_squared)
-            return jnp.stack([u_x, jnp.zeros_like(u_x), jnp.zeros_like(u_x)])
+        if self.compute_backend == ComputeBackend.JAX:
 
-        return profile_jax
+            def profile_jax():
+                y = jnp.arange(ny)
+                z = jnp.arange(nz)
+                Y, Z = jnp.meshgrid(y, z, indexing="ij")
+                y_center = Y - H_y / 2.0
+                z_center = Z - H_z / 2.0
+                r_squared = (2.0 * y_center / H_y) ** 2 + (2.0 * z_center / H_z) ** 2
+                u_x = u_max * jnp.maximum(0.0, 1.0 - r_squared)
+                return jnp.stack([u_x, jnp.zeros_like(u_x), jnp.zeros_like(u_x)])
+
+            return profile_jax
+
+        # On Warp the profile is a per-node function returning the normal velocity only
+        wp_dtype = self.precision_policy.compute_precision.wp_dtype
+        _H_y = wp_dtype(H_y)
+        _H_z = wp_dtype(H_z)
+        _u_max = wp_dtype(u_max)
+        _two = wp_dtype(2.0)
+
+        @wp.func
+        def profile_warp(index: wp.vec3i):
+            y_center = wp_dtype(index[1]) - _H_y / _two
+            z_center = wp_dtype(index[2]) - _H_z / _two
+            r_squared = (_two * y_center / _H_y) ** _two + (_two * z_center / _H_z) ** _two
+            return wp.vec(_u_max * wp.max(wp_dtype(0.0), wp_dtype(1.0) - r_squared), length=1)
+
+        return profile_warp
 
     def _setup(self):
         inlet, outlet, walls = self.define_flow_boundary_indices()
@@ -227,6 +256,12 @@ class FlowPastSphereThermal3D:
         self.g_0, self.g_1, self.bc_mask_thermal, self.missing_mask_thermal = self.thermal_stepper.prepare_fields(phi_init=phi_init)
         self.u_thermal, self.source_thermal = self.thermal_stepper.prepare_aux_fields()
 
+        # Warp operators write into preallocated outputs. The flow velocity is recovered
+        # straight into the thermal stepper's advecting-velocity field.
+        if self.compute_backend == ComputeBackend.WARP:
+            self.rho = self.grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
+            self.phi = self.grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
+
         self.macroscopic = Macroscopic(
             compute_backend=self.compute_backend,
             precision_policy=self.precision_policy,
@@ -251,6 +286,9 @@ class FlowPastSphereThermal3D:
         velocity close to zero on its own face, which the flow solver never reads back but
         which would otherwise look like a stagnation wall to the thermal solver.
         """
+        if self.compute_backend == ComputeBackend.WARP:
+            wp.launch(copy_outlet_plane_warp, inputs=[u], dim=(u.shape[0], u.shape[2], u.shape[3]), device=u.device)
+            return u
         return u.at[:, -1, :, :].set(u[:, -2, :, :])
 
     def drag_lift_coefficients(self):
@@ -266,8 +304,12 @@ class FlowPastSphereThermal3D:
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             # 2. Recover the velocity, repair the outlet face, hand it to the scalar
-            _, u_flow = self.macroscopic(self.f_0)
-            self.u_thermal = self.sanitize_outlet_velocity(jnp.asarray(u_flow))
+            if self.compute_backend == ComputeBackend.WARP:
+                self.rho, self.u_thermal = self.macroscopic(self.f_0, self.rho, self.u_thermal)
+                self.u_thermal = self.sanitize_outlet_velocity(self.u_thermal)
+            else:
+                _, u_flow = self.macroscopic(self.f_0)
+                self.u_thermal = self.sanitize_outlet_velocity(jnp.asarray(u_flow))
 
             # 3. Advance the scalar, advected by that velocity
             self.g_0, self.g_1 = self.thermal_stepper(
@@ -281,6 +323,12 @@ class FlowPastSphereThermal3D:
                 self.post_process(step)
 
     def fields(self):
+        if self.compute_backend == ComputeBackend.WARP:
+            # Recover into a separate buffer, leaving the repaired advecting velocity alone
+            u = self.grid.create_field(cardinality=self.flow_velocity_set.d, dtype=self.precision_policy.store_precision)
+            self.rho, u = self.macroscopic(self.f_0, self.rho, u)
+            self.phi = self.zero_moment(self.g_0, self.phi)
+            return self.rho.numpy()[0], u.numpy(), self.phi.numpy()[0]
         rho, u = self.macroscopic(self.f_0)
         temperature = self.zero_moment(self.g_0)
         return np.asarray(rho)[0], np.asarray(u), np.asarray(temperature)[0]
@@ -313,7 +361,7 @@ class FlowPastSphereThermal3D:
 
 if __name__ == "__main__":
     grid_shape = (192, 64, 64)
-    compute_backend = ComputeBackend.JAX
+    compute_backend = ComputeBackend.JAX  # or ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP64FP64
 
     simulation = FlowPastSphereThermal3D(

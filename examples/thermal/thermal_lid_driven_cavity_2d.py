@@ -77,6 +77,12 @@ class ThermalLidDrivenCavity2D:
         self.g_0, self.g_1, self.bc_mask_thermal, self.missing_mask_thermal = self.thermal_stepper.prepare_fields(phi_init=0.0)
         self.u, self.source = self.thermal_stepper.prepare_aux_fields()
 
+        # Warp operators write into preallocated outputs. The flow velocity is recovered
+        # straight into the thermal stepper's advecting-velocity field.
+        if self.compute_backend == ComputeBackend.WARP:
+            self.rho = self.grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
+            self.phi = self.grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
+
         self.macroscopic = Macroscopic()
         self.zero_moment = ZeroMoment(
             velocity_set=self.thermal_velocity_set,
@@ -132,7 +138,10 @@ class ThermalLidDrivenCavity2D:
             self.f_0, self.f_1 = self.f_1, self.f_0
 
             # Hand the freshly computed velocity to the scalar, then advance the scalar
-            _, self.u = self.macroscopic(self.f_0)
+            if self.compute_backend == ComputeBackend.WARP:
+                self.rho, self.u = self.macroscopic(self.f_0, self.rho, self.u)
+            else:
+                _, self.u = self.macroscopic(self.f_0)
             self.g_0, self.g_1 = self.thermal_stepper(
                 self.g_0, self.g_1, self.u, self.source, self.bc_mask_thermal, self.missing_mask_thermal, self.omega_thermal, i
             )
@@ -142,6 +151,11 @@ class ThermalLidDrivenCavity2D:
                 self.post_process(i)
 
     def fields(self):
+        if self.compute_backend == ComputeBackend.WARP:
+            # Warp fields carry a trailing z axis of size 1 in 2D
+            self.rho, self.u = self.macroscopic(self.f_0, self.rho, self.u)
+            self.phi = self.zero_moment(self.g_0, self.phi)
+            return self.rho.numpy()[0, ..., 0], self.u.numpy()[..., 0], self.phi.numpy()[0, ..., 0]
         rho, u = self.macroscopic(self.f_0)
         temperature = self.zero_moment(self.g_0)
         return np.asarray(rho)[0], np.asarray(u), np.asarray(temperature)[0]
@@ -196,7 +210,7 @@ class ThermalLidDrivenCavity2D:
 
 if __name__ == "__main__":
     grid_shape = (128, 128)
-    compute_backend = ComputeBackend.JAX
+    compute_backend = ComputeBackend.JAX  # or ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP32FP32
 
     simulation = ThermalLidDrivenCavity2D(

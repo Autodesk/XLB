@@ -98,7 +98,7 @@ class LidDrivenCavity2D:
 
 if __name__ == "__main__":
     # Running the simulation
-    grid_size = 500
+    grid_size = 512
     grid_shape = (grid_size, grid_size)
     compute_backend = ComputeBackend.JAX
     precision_policy = PrecisionPolicy.FP32FP32

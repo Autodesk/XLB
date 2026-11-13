@@ -60,7 +60,14 @@ class HeatConduction2D:
 
         # A zero velocity field reduces the transport equation to pure conduction
         self.u, self.source = self.stepper.prepare_aux_fields()
-        self.source = self.source.at[0].set(self.source_value)
+        if self.compute_backend == ComputeBackend.WARP:
+            self.source.fill_(self.source_value)
+            # Warp operators write into preallocated outputs
+            self.phi = self.grid.create_field(cardinality=1, dtype=self.precision_policy.store_precision)
+        else:
+            self.source = self.source.at[0].set(self.source_value)
+
+        self.zero_moment = ZeroMoment(velocity_set=self.velocity_set, precision_policy=self.precision_policy, compute_backend=self.compute_backend)
 
     def define_boundary_indices(self):
         box = self.grid.bounding_box_indices()
@@ -92,7 +99,10 @@ class HeatConduction2D:
 
     def temperature(self):
         """Recover the temperature field as the zeroth moment of the scalar populations."""
-        return np.asarray(ZeroMoment()(self.g_0))[0]
+        if self.compute_backend == ComputeBackend.WARP:
+            # Warp fields carry a trailing z axis of size 1 in 2D
+            return self.zero_moment(self.g_0, self.phi).numpy()[0, :, :, 0]
+        return np.asarray(self.zero_moment(self.g_0))[0]
 
     def analytical_profile(self):
         """Steady parabolic profile across the slab, evaluated at the cell centres."""
@@ -133,7 +143,7 @@ class HeatConduction2D:
 
 if __name__ == "__main__":
     grid_shape = (64, 64)
-    compute_backend = ComputeBackend.JAX
+    compute_backend = ComputeBackend.JAX  # or ComputeBackend.WARP
     precision_policy = PrecisionPolicy.FP64FP64
 
     # D2Q5 is the natural stencil for a scalar in 2D: it is cheaper than D2Q9 and the
