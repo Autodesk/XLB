@@ -597,10 +597,14 @@ class MRTSim(LBMBase):
 class CLBMSim(LBMBase):
     """
     Central moment (cascaded) collision model.
+
+    The second-order central moments relax with s_2 (diagonal, normal-stress differences), s_b (bulk) and s_v (off-diagonal
+    shear). s_v defaults to s_2, which gives an isotropic viscosity nu = cs^2 (1 / s_2 - 1/2); omega is set to s_v.
     """
 
     def __init__(self, **kwargs):
-        kwargs.update({"omega": 1.0})
+        s_v = kwargs.get("s_v")
+        kwargs["omega"] = kwargs.get("s_2") if s_v is None else s_v
         super().__init__(**kwargs)
         self.M_inv = jnp.array(
             np.transpose(np.linalg.inv(kwargs.get("M"))),

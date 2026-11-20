@@ -285,6 +285,46 @@ def test_cascaded_collision_uses_relaxed_moments():
     np.testing.assert_allclose(np.asarray(jnp.sum(fout, axis=-1)), np.asarray(jnp.sum(fin, axis=-1)), atol=1e-5)
 
 
+def _d3q19_cascade_matrix():
+    e = LatticeD3Q19().c.T
+    ex, ey, ez = e[:, 0], e[:, 1], e[:, 2]
+    rows = [ex**0, ex, ey, ez, ex * ey, ex * ez, ey * ez, ex * ex, ey * ey, ez * ez, ex * ey * ey, ex * ez * ez, ey * ex * ex,
+            ez * ex * ex, ey * ez * ez, ez * ey * ey, ex * ex * ey * ey, ex * ex * ez * ez, ey * ey * ez * ez]  # fmt: skip
+    return np.stack(rows).astype(np.float64)
+
+
+@pytest.mark.parametrize("s_v", [None, 1.2])
+def test_cascaded_d3q19_shear_wave_decays_with_set_viscosity(s_v):
+    """A shear wave u_x(y) is damped only by the off-diagonal (s_v) stress: it must decay at nu = cs2 (1 / s_v - 1/2), with s_v
+    defaulting to s_2 (isotropic viscosity). JAX-LaB used to fix s_v at 1.0 whatever was passed."""
+    n, s_2, amplitude = 16, 1.6, 1e-3
+    kwargs = dict(s_v=s_v) if s_v is not None else {}
+    sim = CLBMSim(
+        lattice=LatticeD3Q19("f64/f64"), nx=n, ny=n, nz=n, precision="f64/f64", io_rate=0, print_info_rate=0, checkpoint_rate=0,
+        M=_d3q19_cascade_matrix(), s_0=1.0, s_1=1.0, s_b=1.0, s_2=s_2, s_3=1.0, s_4=1.0, **kwargs,
+    )  # fmt: skip
+    rate = s_2 if s_v is None else s_v
+    assert sim.s_v == rate and sim.omega == rate
+    k = 2.0 * np.pi / n
+    profile = np.sin(k * np.arange(n))[None, :, None]
+    u0 = np.zeros((n, n, n, 3))
+    u0[..., 0] = amplitude * profile
+    f = sim.initialize_populations(jnp.ones((n, n, n, 1)), jnp.asarray(u0))
+
+    def mode(f):
+        rho, u = sim.update_macroscopic(f)
+        return float(np.mean(np.asarray(u[..., 0]) * profile) * 2.0)
+
+    t0, t1 = 50, 250
+    for t in range(t1):
+        if t == t0:
+            a0 = mode(f)
+        f = sim.streaming(sim.collision(f))
+    nu_measured = np.log(a0 / mode(f)) / (k**2 * (t1 - t0))
+    nu_expected = (1.0 / rate - 0.5) / 3.0
+    np.testing.assert_allclose(nu_measured, nu_expected, rtol=0.01)
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Multiphase cascaded collision: fused force/potential evaluation
 # ---------------------------------------------------------------------------------------------------------------------

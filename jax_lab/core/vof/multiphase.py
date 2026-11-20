@@ -2,6 +2,7 @@
 Definition of the VoF class for simulating two-phase flows with the volume-of-fluid (VoF) lattice Boltzmann method.
 """
 
+import itertools
 import logging
 import time
 from functools import partial, reduce
@@ -56,7 +57,9 @@ class VoF(LBMBase):
        Populations that stream into a gas interface cell from a liquid cell are rebuilt with the local gas density, so the liquid acts on the
        gas as a moving wall while the gas sets the liquid pressure (Dirichlet-Neumann coupling, stable at large density ratios).
        Both use f_i = feq_i(rho, u_I) + feq_opp(i)(rho, u_I) - f_opp(i) + 2 g_opp(i) (Koerner et al. 2005, plus twice the post-collision
-       non-equilibrium part g of the cell, which continues each phase's viscous stress across the interface link).
+       non-equilibrium part g of the cell, which continues each phase's viscous stress across the interface link). With consistent_link_stress,
+       g is that of this step's reconstructed populations, the same that the shear-stress return below uses, so that the link momentum is
+       returned exactly.
 
     3. Shear stress: the momentum these interface links exchange with each lattice is returned through u_I of the next step, so the viscous
        stress of each phase reaches the other one and the total momentum is conserved. The body force of interface cells is weighted by the
@@ -96,6 +99,39 @@ class VoF(LBMBase):
     ghost_contact_angle (bool, optional): Extend the volume fraction into solid wall cells with a contact angle so that the interface meets
         the wall at theta (ghost cells, see _interface_geometry_m), instead of the neutral mean of the fluid neighbors. Defaults to True.
 
+    zero_net_capillary_force (bool, optional): Remove the net capillary force of every droplet (see _balanced_curvature). The capillary
+        pressure sigma kappa enters the liquid through the reconstructed populations of its interface links, and the curvature of a sharp
+        volume fraction on a fixed grid is not exact: summed over a closed surface, its error leaves a net force that depends on where the
+        droplet sits within its cells. Nothing in the gas takes up its reaction, so it pins slow droplets to the lattice and breaks the
+        conservation of momentum (a droplet translating with the gas at 1e-4 oscillates in place). With this option the curvature of each
+        droplet is corrected by the smallest change (least squares) that makes its net capillary force vanish. Droplets are labeled by
+        connected liquid and interface cells at initialization, and labels follow the interface (merged droplets take the smaller label;
+        the parts of a droplet that breaks up keep one label and are balanced together). Only for free droplets: a droplet on a wall carries
+        a real net capillary force (taken up by the wall at the contact line). Defaults to False.
+
+    max_droplets (int, optional): Largest number of droplet labels with zero_net_capillary_force. Defaults to 64.
+
+    consistent_link_stress (bool, optional): Rebuild the missing interface populations with the same viscous part that is returned through
+        the shared interface velocity (see _band_branch), so that the interface conserves momentum when it moves or deforms. Without it a
+        droplet with surface tension moving through the grid gains or loses momentum (25 % in 1e4 steps for a 40-cell droplet carried by
+        the gas). The rebuild feeds back with 1 - s_nu, so it is unstable when the shear relaxation rate s_nu of either phase approaches 2
+        (low viscosity: a 3D droplet impact at nu_l = 5.6e-4 diverges); tested stable up to s_nu = 1.43. Use it with
+        zero_net_capillary_force for droplets moving through the grid at moderate viscosity. Defaults to False.
+
+    capillary_curvature_degree (int, optional): With zero_net_capillary_force, each droplet's curvature is replaced by its least-squares
+        fit (weighted by the gas-link area of the rows) by a polynomial of this degree in the interface normal components, see
+        _fitted_curvature. On a near-spherical droplet the normal is the radial direction, so the fit keeps the spherical harmonics up to
+        l = degree: the mean curvature (Laplace pressure) and the low shape modes (restoring force, oscillations). It drops the fine part of
+        the gradient curvature, an error pattern tied to the grid: on a droplet that moves through the grid this pattern shakes the liquid
+        and grows until the droplet blows up (after ~0.7 cells of travel for a 40-cell droplet), while the fitted curvature keeps it clean.
+        0 keeps the local curvature (fine for droplets at rest). Defaults to 3.
+
+    capillary_shift_relaxation (float, optional): The fit is shifted per droplet by a uniform amount so that the projected-area mean of
+        the curvature, which sets the pressure inside, stays that of the local curvature (the link-area weighted fit alone lowers the
+        Laplace pressure by ~2 %). The shift is kept in the state and relaxed towards its instantaneous value at this rate per step, so that
+        it does not jump when cells change type. Defaults to 0.02.
+
+
     References
     ----------
     1. Mohammadrezaei, S., Farajzadeh, R. & Niasar, V. Modeling the drying process of CO2-water in porous media with a novel
@@ -133,6 +169,17 @@ class VoF(LBMBase):
         if not isinstance(self.curvature_smoothing, int) or self.curvature_smoothing < 0:
             raise ValueError("curvature_smoothing must be a non-negative integer")
         self.ghost_contact_angle = kwargs.get("ghost_contact_angle", True)
+        self.zero_net_capillary_force = bool(kwargs.get("zero_net_capillary_force", False))
+        self.consistent_link_stress = bool(kwargs.get("consistent_link_stress", False))
+        self.max_droplets = kwargs.get("max_droplets", 64)
+        self.capillary_curvature_degree = kwargs.get("capillary_curvature_degree", 3)
+        if not isinstance(self.capillary_curvature_degree, int) or self.capillary_curvature_degree < 0:
+            raise ValueError("capillary_curvature_degree must be a non-negative integer")
+        self.capillary_shift_relaxation = float(kwargs.get("capillary_shift_relaxation", 0.02))
+        if not 0.0 < self.capillary_shift_relaxation <= 1.0:
+            raise ValueError("capillary_shift_relaxation must be in (0, 1]")
+        if not isinstance(self.max_droplets, int) or self.max_droplets < 1:
+            raise ValueError("max_droplets must be a positive integer")
 
         self._lattice_directions = tuple(tuple(int(v) for v in np.asarray(self.lattice.c)[:, i]) for i in range(self.q))
         self._lattice_weights = tuple(float(v) for v in np.asarray(self.lattice.w))
@@ -712,12 +759,15 @@ class VoF(LBMBase):
             P = PartitionSpec
             field_spec = P("x", *([None] * self.dim))
             plane_spec = self._plane_spec()
+            # State fields: mass, flags, eps (and the droplet labels with zero_net_capillary_force)
+            n_state = 4 if self.zero_net_capillary_force else 3
+            shift_spec = (P(),) if self.zero_net_capillary_force else ()
             self._band_kernels[capacity] = jit(
                 shard_map(
                     partial(self._band_m, capacity=capacity),
                     mesh=self.mesh,
-                    in_specs=(plane_spec,) * 4 + (field_spec,) * 5 + (P(),),
-                    out_specs=(plane_spec, plane_spec, field_spec, field_spec, field_spec),
+                    in_specs=(plane_spec,) * 4 + (field_spec,) * n_state + shift_spec + (field_spec,) * 2 + (P(),),
+                    out_specs=(plane_spec, plane_spec) + (field_spec,) * n_state + shift_spec,
                     check_vma=False,
                 ),
                 donate_argnums=(2, 3),
@@ -820,7 +870,7 @@ class VoF(LBMBase):
         cast = self.precision_policy.cast_to_output
         return tuple(cast(p) for p in lattices[0]["new"]), tuple(cast(p) for p in lattices[1]["new"]), band, count
 
-    def _band_m(self, P_l, P_g, new_l, new_g, mass, flags, eps, geometry, band, flux, *, capacity):
+    def _band_m(self, P_l, P_g, new_l, new_g, mass, flags, eps, *rest, capacity):
         """
         Band part of a time step of a local shard (see _band_branch), writing the recomputed band rows over the dense result in place.
 
@@ -832,26 +882,24 @@ class VoF(LBMBase):
 
         mass, flags, eps (jax.numpy.ndarray): Liquid mass, cell types and volume fraction, shape (..., 1).
 
-        geometry (tuple of jax.numpy.ndarray): Curvature and normal components from interface_geometry, each of shape (..., 1).
-
-        band (jax.numpy.ndarray): Band mask from _dense_m, shape (..., 1).
-
-        flux (jax.numpy.ndarray): Evaporation flux of this step (scalar).
+        rest: The droplet labels (..., 1) with zero_net_capillary_force, then geometry (tuple of the normal components from interface_geometry,
+            each of shape (..., 1)), band (band mask from _dense_m, shape (..., 1)) and flux (evaporation flux of this step, scalar).
 
         capacity (tuple of int): Static numbers of interface and neighbor rows, at least the numbers of every shard.
 
         Returns
         -------
-        (tuple): Updated planes of both lattices, liquid mass, cell types and volume fraction.
+        (tuple): Updated planes of both lattices, liquid mass, cell types and volume fraction (and droplet labels).
         """
+        label, shift, (geometry, band, flux) = (rest[0], rest[1], rest[2:]) if self.zero_net_capillary_force else (None, None, rest)
         dtype = self.precision_policy.compute_dtype
         lattices = []
         for planes, new in ((P_l, new_l), (P_g, new_g)):
             planes = [p.astype(dtype) for p in planes]
             left, right = self._halo_slabs(planes)
             lattices.append({"planes": planes, "left": left, "right": right, "new": list(new)})
-        new_l, new_g, mass, flags, eps = self._band_branch(capacity, lattices, mass, flags, eps, geometry, flux, band)
-        return tuple(new_l), tuple(new_g), mass, flags, eps
+        out = self._band_branch(capacity, lattices, mass, flags, eps, geometry, flux, band, label, shift)
+        return (tuple(out[0]), tuple(out[1])) + tuple(out[2:])
 
     def _open_boundary_rows(self, lattice, phase, cell, cells, neighbors, missing, prescribed):
         """
@@ -871,7 +919,7 @@ class VoF(LBMBase):
         inactive = (cell[safe] == (GAS if phase == 0 else LIQUID))[:, None]
         return self._scatter_rows(lattice["new"], coords, self._collide_rows(rows, phase, inactive))
 
-    def _band_branch(self, capacity, lattices, mass, flags, eps, geometry, flux, band):
+    def _band_branch(self, capacity, lattices, mass, flags, eps, geometry, flux, band, label=None, shift=None):
         """
         Interface update of the band: mass exchange, reconstruction of the missing populations, evaporation, cell type conversion with excess
         mass redistribution, initialization of the cells that newly carry a phase, the shared interface velocity, and the collision of the
@@ -879,7 +927,9 @@ class VoF(LBMBase):
 
         The missing populations are f_i = feq_i(rho, u_I) + feq_opp(i)(rho, u_I) - f_opp(i) + 2 g_opp(i), i.e. the free-surface reconstruction
         (Koerner et al. 2005) plus twice the post-collision non-equilibrium part g of the cell, so that each lattice sees its own viscous stress
-        continued across the interface link instead of a stress-free boundary. The momentum these links exchange with each lattice (and the
+        continued across the interface link instead of a stress-free boundary. With consistent_link_stress, the populations are rebuilt a
+        second time with g = (1 - s_nu) fneq of the first reconstruction of this step, so that exactly the momentum the links carry is
+        returned below. The momentum these links exchange with each lattice (and the
         body force applied beyond the volume-fraction weighted one) is returned to the shared interface velocity (paper Eq. 13), which hands
         the viscous stress of each phase to the other one and conserves the total momentum.
 
@@ -1008,6 +1058,12 @@ class VoF(LBMBase):
         u_liquid = [v - 2.0 * a for v, a in zip(u_post_l, half_a_l, strict=True)]
         u_interface = [v + a for v, a in zip(u_liquid, half_a_l, strict=True)]
         u_gas = [v - a for v, a in zip(u_interface, half_a_g, strict=True)]
+        if self.zero_net_capillary_force:
+            label_i = rows(label)[:n_int]
+            active_i = interface & (label_i > 0)
+            if self.capillary_curvature_degree:
+                curvature, shift = self._fitted_curvature(curvature, active_i, from_gas, label_i, normal, shift)
+            curvature = self._balanced_curvature(curvature, active_i, from_gas, label_i, normal)
         rho_boundary = 1.0 + r * (rho_in_g - 1.0) + self.surface_tension * curvature / self.lattice.cs2
 
         # Mass exchange of interface cells: incoming minus outgoing population of every link to a liquid or interface cell
@@ -1023,27 +1079,33 @@ class VoF(LBMBase):
         missing_l = {i: interface & from_gas[i] for i in neighbors_i}
         missing_g = {i: interface & from_liquid[i] for i in neighbors_i}
 
-        def reconstruct(rho_b):
+        streamed_l, streamed_g = fs_l, fs_g
+
+        def reconstruct(rho_b, stress):
             feq = self._equilibrium_planes(rho_b, u_liquid)
             return [
-                f if i not in missing_l else jnp.where(missing_l[i], feq[i] + feq[opposite[i]] - fp_l[opposite[i]] + 2.0 * g_l[opposite[i]], f)
-                for i, f in enumerate(fs_l)
+                f if i not in missing_l else jnp.where(missing_l[i], feq[i] + feq[opposite[i]] - fp_l[opposite[i]] + 2.0 * stress[opposite[i]], f)
+                for i, f in enumerate(streamed_l)
             ]
 
-        rec_l = reconstruct(rho_boundary)
+        def reconstruct_gas(stress):
+            return [
+                f if i not in missing_g else jnp.where(missing_g[i], feq_g[i] + feq_g[opposite[i]] - fp_g[opposite[i]] + 2.0 * stress[opposite[i]], f)
+                for i, f in enumerate(streamed_g)
+            ]
+
+        rec_l = reconstruct(rho_boundary, g_l)
         if self.viscous_stress_jump:
             # Normal strain rates of the streamed (pre-collision) populations, the liquid ones after a first reconstruction
             s_l, s_g = self._shear_relaxation()
             nu_l, nu_g = self.kinematic_viscosity()
             strain_l = self._normal_strain_planes(rec_l, normal, s_l)
             strain_g = self._normal_strain_planes(fs_g, normal, s_g)
-            rec_l = reconstruct(rho_boundary + 2.0 * (rho_in_l * nu_l * strain_l - r * rho_in_g * nu_g * strain_g) / self.lattice.cs2)
+            rho_boundary = rho_boundary + 2.0 * (rho_in_l * nu_l * strain_l - r * rho_in_g * nu_g * strain_g) / self.lattice.cs2
+            rec_l = reconstruct(rho_boundary, g_l)
         fs_l = rec_l
         feq_g = self._equilibrium_planes(rho_in_g, u_gas)
-        fs_g = [
-            f if i not in missing_g else jnp.where(missing_g[i], feq_g[i] + feq_g[opposite[i]] - fp_g[opposite[i]] + 2.0 * g_g[opposite[i]], f)
-            for i, f in enumerate(fs_g)
-        ]
+        fs_g = reconstruct_gas(g_g)
         # Momentum given to each lattice by its interface links (viscous part only; the equilibrium part carries the interface pressure) and
         # by the body force beyond eps rho_l a_l + (1 - eps) r rho_g a_g, both forcing the whole interface cell. The viscous part is 2 g_opp(i)
         # per link, with g taken as the post-collision value (1 - s_nu) fneq of the reconstructed populations of this step rather than the g of
@@ -1052,6 +1114,13 @@ class VoF(LBMBase):
         s_l, s_g = self._shear_relaxation()
         h_l = [(1.0 - s_l) * (f - feq) for f, feq in zip(fs_l, self._equilibrium_planes(*self._macroscopic_planes(fs_l)), strict=True)]
         h_g = [(1.0 - s_g) * (f - feq) for f, feq in zip(fs_g, self._equilibrium_planes(*self._macroscopic_planes(fs_g)), strict=True)]
+        if self.consistent_link_stress:
+            # The missing populations are rebuilt with this h, so they carry exactly the viscous part 2 h that transfer returns below: the
+            # viscous momentum the links give each lattice is returned in full. With 2 g (the last collision) the difference 2 (g - h), zero
+            # only in steady state, stays in the liquid every step: moving or oscillating droplets with surface tension gain or lose momentum
+            # (25 % in 1e4 steps for a 40-cell droplet carried by the gas). The rebuild with h feeds back with 1 - s_nu, so it is unstable
+            # where 1 - s_nu approaches -1 (low viscosity)
+            fs_l, fs_g = reconstruct(rho_boundary, h_l), reconstruct_gas(h_g)
         transfer = [0.0] * dim
         for i in neighbors_i:
             j = opposite[i]
@@ -1096,6 +1165,17 @@ class VoF(LBMBase):
         new_from_gas = (cell == GAS) & near_fill
         new_from_liquid = (cell == LIQUID) & near_empty
         cell_new = jnp.where(fill, LIQUID, jnp.where(empty, GAS, jnp.where(new_from_gas | new_from_liquid, INTERFACE, cell))).astype(cell.dtype)
+        if self.zero_net_capillary_force:
+            # Droplet labels follow the interface: every band row that holds liquid takes the smallest label of itself and its labeled band
+            # neighbors (cells that become interface inherit it, merged droplets take the smaller one over the following steps), and rows
+            # that become gas lose theirs
+            none = float(self.max_droplets + 1)
+            own = rows(label).astype(dtype)
+            own = jnp.where(own > 0.0, own, none)
+            smallest = own
+            for value in (from_band_neighbors(own)[i] for i in neighbors_i):
+                smallest = jnp.minimum(smallest, jnp.where(value > 0.0, value, none))
+            label_new = jnp.where((cell_new == GAS) | (smallest >= none), 0.0, smallest)
 
         # Liquid density of every row: from the recomputed populations (interface rows) or the dense result (neighbor rows, which are not
         # recomputed; only needed when a liquid cell becomes an interface cell)
@@ -1154,7 +1234,137 @@ class VoF(LBMBase):
             p.at[drop_int].set(v.astype(p.dtype), mode="drop").at[drop_g].set(n.astype(p.dtype), mode="drop")
             for p, v, n in zip(gas["new"], post_g, init_g, strict=True)
         ]
-        return new_l, new_g, scatter(mass, m), scatter(flags, cell_new), scatter(eps, e)
+        out = (new_l, new_g, scatter(mass, m), scatter(flags, cell_new), scatter(eps, e))
+        if self.zero_net_capillary_force:
+            out = out + (scatter(label, label_new), shift)
+        return out
+
+    def _link_area(self, active, from_gas, dtype):
+        """Gas-link area sum_{i: x - c_i gas} 2 w_i of the active interface rows (0 elsewhere), shape (n,)."""
+        area = sum(jnp.where(from_gas[i], 2.0 * self._lattice_weights[i], 0.0) for i in self._neighbor_indices)
+        return jnp.where(active, area, 0.0).astype(dtype)
+
+    def _droplet_sums(self, segment, values):
+        """
+        Per-droplet sums of the rows of values (n, m) by droplet segment (n,), shape (max_droplets + 1, m), as a one-hot matrix product:
+        nearly all rows belong to one or two labels, so a scatter-add (segment_sum) serializes on atomics, while the product runs as a dense
+        matrix multiply (in full float32 precision).
+        """
+        onehot = (segment[:, None] == jnp.arange(self.max_droplets + 1, dtype=segment.dtype)[None, :]).astype(values.dtype)
+        return jnp.matmul(onehot.T, values, precision=jax.lax.Precision.HIGHEST)
+
+    def _fitted_curvature(self, curvature, active, from_gas, label, normal, shift):
+        """
+        Low-order curvature of every droplet (capillary_curvature_degree), see capillary_curvature_degree and capillary_shift_relaxation.
+
+        kappa is fitted per droplet by sum_k c_k phi_k(n), with phi_k the monomials of the normal components up to the degree, in least
+        squares weighted by the gas-link area a of the rows (reduced over all shards). The fit is then shifted by the droplet's relaxed shift,
+        which follows the projected-area (P = -S . n, the cell's surface element) mean of kappa - fit.
+
+        Parameters
+        ----------
+        curvature, active, label (jax.numpy.ndarray): Curvature, active interface rows and droplet labels, shape (n,).
+
+        from_gas (dict): Per neighbor direction, whether the row's upstream neighbor is a gas cell.
+
+        normal (list of jax.numpy.ndarray): Interface normal components of the rows, each of shape (n,).
+
+        shift (jax.numpy.ndarray): Relaxed shift of every droplet label, shape (max_droplets + 1,).
+
+        Returns
+        -------
+        (jax.numpy.ndarray, jax.numpy.ndarray): Curvature (n,) and updated shifts.
+        """
+        dtype = curvature.dtype
+        n = [jnp.where(active, c, 0.0).astype(dtype) for c in normal]
+        basis = []
+        for powers in itertools.product(range(self.capillary_curvature_degree + 1), repeat=self.dim):
+            if sum(powers) <= self.capillary_curvature_degree:
+                term = jnp.ones_like(curvature)
+                for component, k in zip(n, powers, strict=True):
+                    if k:
+                        term = term * component**k
+                basis.append(term)
+        basis = jnp.stack(basis, axis=-1)
+        k = basis.shape[-1]
+        area = self._link_area(active, from_gas, dtype)
+        segments = self.max_droplets + 1
+        segment = jnp.where(active, label, 0).astype(jnp.int32)
+        weighted = area[:, None] * basis
+        sums = self._droplet_sums(
+            segment, jnp.concatenate([(weighted[:, :, None] * basis[:, None, :]).reshape(-1, k * k), weighted * curvature[:, None]], axis=-1)
+        )
+        matrix, rhs = sums[:, : k * k].reshape(segments, k, k), sums[:, k * k :]
+        matrix, rhs = jax.lax.psum((matrix, rhs), "x")
+        ridge = 1.0e-7 * jnp.trace(matrix, axis1=1, axis2=2) / k + 1.0e-30
+        coefficients = jnp.linalg.solve(matrix + ridge[:, None, None] * jnp.eye(k, dtype=dtype), rhs[..., None])[..., 0]
+        fitted = jnp.sum(coefficients[segment] * basis, axis=-1)
+        link = [
+            sum(
+                jnp.where(from_gas[i], 2.0 * self._lattice_weights[i] * self._lattice_directions[i][axis], 0.0)
+                for i in self._neighbor_indices
+                if self._lattice_directions[i][axis]
+            )
+            for axis in range(self.dim)
+        ]
+        projected = jnp.where(active, jnp.maximum(-sum(l_ * c for l_, c in zip(link, n, strict=True)), 0.0), 0.0).astype(dtype)
+        sums = jax.lax.psum(self._droplet_sums(segment, jnp.stack([projected * (curvature - fitted), projected], axis=-1)), "x")
+        instantaneous = sums[:, 0] / jnp.maximum(sums[:, 1], 1.0e-30)
+        shift = shift + self.capillary_shift_relaxation * (instantaneous - shift)
+        return jnp.where(active, fitted + shift[segment], curvature), shift
+
+    def _balanced_curvature(self, curvature, active, from_gas, label, normal):
+        """
+        Curvature of the interface rows corrected so that every droplet feels no net capillary force (zero_net_capillary_force).
+
+        The capillary pressure enters the liquid through the reconstructed populations of the links from gas cells, feq_i + feq_opp(i) =
+        2 w_i rho_b (to O(u^2)), each carrying the momentum c_i. The net force on a droplet is therefore (sigma / cs2) sum_x kappa(x) S(x), with
+        S(x) = sum_{i: x - c_i gas} 2 w_i c_i the link vector of an interface cell (the uniform part of rho_b cancels exactly over a closed
+        surface: every lattice direction has as many links into the droplet as its opposite). It is cancelled per droplet L by the dipole
+        correction kappa -> kappa - lambda_L . n, with n the (smooth) outward interface normal: A_L lambda_L = b_L, A_L = sum S n^T and b_L =
+        sum kappa S over the droplet's interface rows, reduced over all shards (solved in least squares, A^T A lambda = A^T b, with a tiny
+        relative ridge). The correction is a smooth l = 1 pressure mode over the droplet: correcting along S instead, which jumps from cell to
+        cell with the staircase of the interface, adds a lattice-locked cell-scale pressure pattern that slowly excites a growing interface mode
+        (a static droplet goes unstable after ~2e4 steps).
+
+        Parameters
+        ----------
+        curvature (jax.numpy.ndarray): Curvature of the interface rows, shape (n,).
+
+        active (jax.numpy.ndarray): Interface rows with a droplet label, shape (n,).
+
+        from_gas (dict): Per neighbor direction, whether the population of the row streams from a gas cell, shape (n,).
+
+        label (jax.numpy.ndarray): Droplet label of the rows, shape (n,).
+
+        normal (list of jax.numpy.ndarray): Outward interface normal components of the rows, each of shape (n,).
+
+        Returns
+        -------
+        (jax.numpy.ndarray): Corrected curvature, shape (n,).
+        """
+        dim = self.dim
+        dtype = curvature.dtype
+        link = [
+            sum(
+                jnp.where(from_gas[i], (2.0 * self._lattice_weights[i] * self._lattice_directions[i][axis]), 0.0)
+                for i in self._neighbor_indices
+                if self._lattice_directions[i][axis] != 0
+            )
+            for axis in range(dim)
+        ]
+        S = jnp.where(active[:, None], jnp.stack(link, axis=-1).astype(dtype), 0.0)
+        segments = self.max_droplets + 1
+        segment = jnp.where(active, label, 0).astype(jnp.int32)
+        n = jnp.where(active[:, None], jnp.stack(normal, axis=-1).astype(dtype), 0.0)
+        sums = self._droplet_sums(segment, jnp.concatenate([curvature[:, None] * S, (S[:, :, None] * n[:, None, :]).reshape(-1, dim * dim)], axis=-1))
+        b, A = sums[:, :dim], sums[:, dim:].reshape(segments, dim, dim)
+        b, A = jax.lax.psum((b, A), "x")
+        At = jnp.swapaxes(A, 1, 2)
+        normal_matrix = At @ A
+        ridge = 1.0e-10 * jnp.trace(normal_matrix, axis1=1, axis2=2) / dim + 1.0e-30
+        lam = jnp.linalg.solve(normal_matrix + ridge[:, None, None] * jnp.eye(dim, dtype=dtype), (At @ b[..., None]))[..., 0]
+        return curvature - jnp.sum(lam[segment] * n, axis=-1)
 
     def _compact_band(self, band, n_int, n_nbr, tile=1024):
         """
@@ -1242,8 +1452,9 @@ class VoF(LBMBase):
         -------
         f_tree (list of tuple of jax.numpy.ndarray): Liquid and gas populations, one plane per lattice direction.
 
-        state (dict): Liquid mass ("mass"), cell types ("flags") and volume fraction ("eps"), shape (..., 1), and the largest numbers of
-        interface and neighbor cells over all shards ("band_count").
+        state (dict): Liquid mass ("mass"), cell types ("flags") and volume fraction ("eps"), shape (..., 1), the largest numbers of
+        interface and neighbor cells over all shards ("band_count") and, with zero_net_capillary_force, the droplet labels ("label") and their
+        relaxed Laplace shifts ("capillary_shift").
         """
         spatial = (self.nx, self.ny) if self.dim == 2 else (self.nx, self.ny, self.nz)
         eps = np.clip(np.reshape(np.asarray(self.initialize_volume_fraction(), dtype=np.float64), spatial), 0.0, 1.0)
@@ -1287,7 +1498,54 @@ class VoF(LBMBase):
             near |= self._host_neighbor(flags, self._lattice_directions[d]) == INTERFACE
         near &= ~interface & (flags != SOLID)
         count = tuple(int(mask.reshape(self.n_devices, -1).sum(axis=1).max()) for mask in (interface, near))
-        return f_tree, {"mass": mass, "flags": flags_device, "eps": eps_device, "band_count": count}
+        state = {"mass": mass, "flags": flags_device, "eps": eps_device, "band_count": count}
+        if self.zero_net_capillary_force:
+            state["label"] = self._label_droplets(flags_device)
+            state["capillary_shift"] = jax.device_put(jnp.zeros(self.max_droplets + 1, dtype), NamedSharding(self.mesh, PartitionSpec()))
+        return f_tree, state
+
+    @property
+    def _label_dtype(self):
+        """Smallest integer type holding the droplet labels 0..max_droplets (labels are read and written every step)."""
+        return jnp.int8 if self.max_droplets <= 127 else jnp.int16 if self.max_droplets <= 32767 else jnp.int32
+
+    def _label_droplets(self, flags):
+        """
+        Droplet labels 1..K of the connected liquid and interface cells (lattice connectivity, periodic), 0 elsewhere, on the device:
+        min-label propagation over the occupied cells until it converges (as many passes as the widest droplet spans), then the roots ranked
+        to 1..K. Runs once, at initialization.
+        """
+        directions = [d for d in self._lattice_directions if any(d)]
+        axes = tuple(range(self.dim))
+
+        @jit
+        def label(flags):
+            occupied = (flags[..., 0] == LIQUID) | (flags[..., 0] == INTERFACE)
+            size = occupied.size
+            index = jnp.arange(size, dtype=jnp.int32).reshape(occupied.shape)
+            empty = jnp.int32(size)
+
+            def sweep(field):
+                smallest = field
+                for d in directions:
+                    smallest = jnp.minimum(smallest, jnp.roll(field, tuple(-c for c in d), axis=axes))
+                return jnp.where(occupied, smallest, empty)
+
+            def body(carry):
+                field, _ = carry
+                new = sweep(field)
+                return new, jnp.any(new != field)
+
+            field, _ = jax.lax.while_loop(lambda carry: carry[1], body, (jnp.where(occupied, index, empty), jnp.bool_(True)))
+            roots = occupied & (field == index)
+            rank = jnp.cumsum(roots.reshape(-1), dtype=jnp.int32)
+            labels = jnp.where(occupied, rank[jnp.minimum(field, size - 1).reshape(-1)].reshape(occupied.shape), 0)
+            return labels[..., None], jnp.sum(roots, dtype=jnp.int32)
+
+        labels, count = label(flags)
+        if int(count) > self.max_droplets:
+            raise ValueError(f"{int(count)} droplets exceed max_droplets = {self.max_droplets}")
+        return jax.device_put(labels.astype(self._label_dtype), flags.sharding)
 
     def _share_interface_velocity_host(self, f_tree, flags):
         """Impose the momentum-conserving interface velocity (paper Eq. 13) on both lattices at the interface cells (initialization only)."""
@@ -1335,10 +1593,15 @@ class VoF(LBMBase):
         state and the band size; the result is exact only if the band size fits the capacities (see step).
         """
         new_l, new_g, geometry, band, count, flux = self._dense_stage(f_tree, state, timestep)
-        new_l, new_g, mass, flags, eps = self._band_kernel(capacity)(
-            tuple(f_tree[0]), tuple(f_tree[1]), new_l, new_g, state["mass"], state["flags"], state["eps"], geometry, band, flux
-        )
-        return [new_l, new_g], {"mass": mass, "flags": flags, "eps": eps, "band_count": count}
+        fields = (state["mass"], state["flags"], state["eps"])
+        if self.zero_net_capillary_force:
+            fields = fields + (state["label"], state["capillary_shift"])
+        out = self._band_kernel(capacity)(tuple(f_tree[0]), tuple(f_tree[1]), new_l, new_g, *fields, geometry, band, flux)
+        new_l, new_g, mass, flags, eps = out[:5]
+        new_state = {"mass": mass, "flags": flags, "eps": eps, "band_count": count}
+        if self.zero_net_capillary_force:
+            new_state["label"], new_state["capillary_shift"] = out[5], out[6]
+        return [new_l, new_g], new_state
 
     def _capacity_for_counts(self, counts, headroom=1.0):
         """Static band capacities for the given numbers of interface and neighbor cells (times headroom)."""
@@ -1368,7 +1631,8 @@ class VoF(LBMBase):
         ----------
         f_tree (list of tuple of jax.numpy.ndarray): Post-collision liquid and gas populations, one plane per lattice direction.
 
-        state (dict): Liquid mass ("mass"), cell types ("flags"), volume fraction ("eps") and band size ("band_count").
+        state (dict): Liquid mass ("mass"), cell types ("flags"), volume fraction ("eps"), band size ("band_count") and, with
+            zero_net_capillary_force, the droplet labels ("label") and their relaxed Laplace shifts ("capillary_shift").
 
         timestep (int): Current timestep.
 
@@ -1419,10 +1683,16 @@ class VoF(LBMBase):
             "volume_fraction": eps,
             "flags": flags,
             "mass": mass,
+            **({"droplet_label": state["label"]} if "label" in state else {}),
         }
 
+    @property
+    def _state_keys(self):
+        """Persistent per-cell state fields (checkpointed): liquid mass, cell types, volume fraction (and droplet labels)."""
+        return ("mass", "flags", "eps") + (("label", "capillary_shift") if self.zero_net_capillary_force else ())
+
     def _checkpoint_state(self, f_tree, state):
-        return {"component_0": f_tree[0], "component_1": f_tree[1], **{key: state[key] for key in ("mass", "flags", "eps")}}
+        return {"component_0": f_tree[0], "component_1": f_tree[1], **{key: state[key] for key in self._state_keys}}
 
     def run(self, t_max):
         """
@@ -1451,7 +1721,7 @@ class VoF(LBMBase):
                 except ValueError:
                     raise ValueError(f"Failed to restore checkpoint at step {latest_step}.")
                 f_tree = [tuple(restored["component_0"]), tuple(restored["component_1"])]
-                state = {**state, **{key: restored[key] for key in ("mass", "flags", "eps")}}
+                state = {**state, **{key: restored[key] for key in self._state_keys}}
                 logger.info(f"Restored checkpoint at step {latest_step}.")
                 start_step = latest_step + 1
                 if not (t_max > start_step):

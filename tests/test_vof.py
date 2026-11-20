@@ -159,3 +159,67 @@ def test_compaction_matches_nonzero():
     np.testing.assert_array_equal(np.asarray(index)[: len(expected)], expected)
     assert np.all(np.asarray(index)[len(expected) :] == mask.size)
     np.testing.assert_array_equal(np.asarray(rows)[expected], np.arange(len(expected)))
+
+
+class TranslatingDroplet(VoFBGK):
+    """Periodic droplet (radius 8) carried by a uniform flow of both phases along x."""
+
+    speed = 2.0e-3
+
+    def initialize_volume_fraction(self):
+        x, y = np.meshgrid(np.arange(self.nx), np.arange(self.ny), indexing="ij")
+        return np.clip(8.5 - np.sqrt((x - 24.0) ** 2 + (y - 24.0) ** 2), 0.0, 1.0)
+
+    def initialize_macroscopic_fields(self):
+        rho = np.ones((self.nx, self.ny, 1))
+        u = np.zeros((self.nx, self.ny, 2))
+        u[..., 0] = self.speed
+        return [rho, rho], [u, u]
+
+
+class TwoDroplets(DropletInBox):
+    def initialize_volume_fraction(self):
+        x, y = np.meshgrid(np.arange(self.nx), np.arange(self.ny), indexing="ij")
+        return np.maximum(*(np.clip(6.5 - np.sqrt((x - xc) ** 2 + (y - 24.0) ** 2), 0.0, 1.0) for xc in (12.0, 36.0)))
+
+    def set_boundary_conditions(self):
+        pass  # periodic
+
+
+def _droplet_x(state):
+    eps = np.asarray(state["eps"])[..., 0]
+    return float(np.sum(eps * np.arange(eps.shape[0])[:, None]) / np.sum(eps))
+
+
+def test_translating_droplet_keeps_pace_with_the_flow():
+    # Galilean invariance with the net capillary force correction (without it, a slow 3D droplet is pinned to the lattice)
+    sim = TranslatingDroplet(**_kwargs(omega=[1.2, 1.2], zero_net_capillary_force=True, consistent_link_stress=True))
+    f_tree, state = sim.assign_fields_sharded()
+    start = _droplet_x(state)
+    steps = 1500
+    for timestep in range(1, steps + 1):
+        f_tree, state = sim.step(f_tree, state, timestep)
+    moved = _droplet_x(state) - start
+    expected = TranslatingDroplet.speed * steps
+    assert moved == pytest.approx(expected, rel=0.05)
+
+
+def test_droplets_are_labeled_separately():
+    sim = TwoDroplets(**_kwargs(zero_net_capillary_force=True))
+    _, state = sim.assign_fields_sharded()
+    labels = np.asarray(state["label"])[..., 0]
+    assert set(np.unique(labels)) == {0, 1, 2}
+    assert labels[12, 24] != labels[36, 24]
+
+
+def test_checkpoint_restores_droplet_labels_and_shifts(tmp_path):
+    # A run restored from a checkpoint (populations, mass, flags, volume fraction, droplet labels and Laplace shifts) continues exactly
+    # like an uninterrupted one
+    kwargs = _kwargs(omega=[1.2, 1.2], zero_net_capillary_force=True, consistent_link_stress=True)
+    directory = str(tmp_path / "checkpoints")
+    TranslatingDroplet(**kwargs, checkpoint_rate=100, checkpoint_dir=directory).run(200)
+    _, restored = TranslatingDroplet(**kwargs, checkpoint_rate=100, checkpoint_dir=directory, restore_checkpoint=True).run(300)
+    _, continuous = TranslatingDroplet(**kwargs).run(300)
+    np.testing.assert_array_equal(np.asarray(restored["label"]), np.asarray(continuous["label"]))
+    np.testing.assert_allclose(np.asarray(restored["capillary_shift"]), np.asarray(continuous["capillary_shift"]), rtol=1e-5, atol=1e-9)
+    np.testing.assert_allclose(np.asarray(restored["eps"]), np.asarray(continuous["eps"]), atol=1e-6)
