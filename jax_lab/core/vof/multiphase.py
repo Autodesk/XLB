@@ -1257,7 +1257,7 @@ class VoF(LBMBase):
         """
         Low-order curvature of every droplet (capillary_curvature_degree), see capillary_curvature_degree and capillary_shift_relaxation.
 
-        kappa is fitted per droplet by sum_k c_k phi_k(n), with phi_k the monomials of the normal components up to the degree, in least
+        kappa is fitted per droplet by sum_k c_k phi_k(n), with phi_k the monomials of degree d and d - 1 of the unit normal, in least
         squares weighted by the gas-link area a of the rows (reduced over all shards). The fit is then shifted by the droplet's relaxed shift,
         which follows the projected-area (P = -S . n, the cell's surface element) mean of kappa - fit.
 
@@ -1276,10 +1276,15 @@ class VoF(LBMBase):
         (jax.numpy.ndarray, jax.numpy.ndarray): Curvature (n,) and updated shifts.
         """
         dtype = curvature.dtype
-        n = [jnp.where(active, c, 0.0).astype(dtype) for c in normal]
+        # Unit normals; on the unit sphere the monomials of degree d and d - 1 span the harmonics up to l = d without redundancy
+        # (2d + 1 terms in 2D, (d + 1)^2 in 3D). All monomials up to d are linearly dependent there (e.g. 1 = |n|^2), which makes
+        # the least-squares matrix singular and the solve backend-dependent (NaN with LAPACK on CPU).
+        norm = jnp.sqrt(sum(c.astype(dtype) ** 2 for c in normal))
+        n = [jnp.where(active & (norm > 0), c.astype(dtype) / jnp.where(norm > 0, norm, 1.0), 0.0) for c in normal]
+        degree = self.capillary_curvature_degree
         basis = []
-        for powers in itertools.product(range(self.capillary_curvature_degree + 1), repeat=self.dim):
-            if sum(powers) <= self.capillary_curvature_degree:
+        for powers in itertools.product(range(degree + 1), repeat=self.dim):
+            if sum(powers) in (degree, degree - 1):
                 term = jnp.ones_like(curvature)
                 for component, k in zip(n, powers, strict=True):
                     if k:
@@ -1296,7 +1301,7 @@ class VoF(LBMBase):
         )
         matrix, rhs = sums[:, : k * k].reshape(segments, k, k), sums[:, k * k :]
         matrix, rhs = jax.lax.psum((matrix, rhs), "x")
-        ridge = 1.0e-7 * jnp.trace(matrix, axis1=1, axis2=2) / k + 1.0e-30
+        ridge = 1.0e-6 * jnp.trace(matrix, axis1=1, axis2=2) / k + 1.0e-30
         coefficients = jnp.linalg.solve(matrix + ridge[:, None, None] * jnp.eye(k, dtype=dtype), rhs[..., None])[..., 0]
         fitted = jnp.sum(coefficients[segment] * basis, axis=-1)
         link = [
