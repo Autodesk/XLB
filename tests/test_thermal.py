@@ -129,8 +129,8 @@ def test_rk4_applies_dirichlet_bc_at_intermediate_stages():
 def test_step_conserves_uniform_temperature():
     solver = make_thermal(2)
     T = solver.assign_fields_sharded()
-    f = solver.fluid_solver.assign_fields_sharded()
-    T_new, f, _ = solver.step(T, f, 0)
+    state = solver.fluid_solver.state_from_populations(solver.fluid_solver.assign_fields_sharded())
+    T_new, state, _ = solver.step(T, state, 0)
     assert np.allclose(np.array(T_new), 1.0, atol=1e-12)
 
 
@@ -183,9 +183,10 @@ def test_multiphase_thermal_uniform_state_is_stationary():
     solver.initialize_temperature_field = lambda: T_uniform
 
     T = solver.assign_fields_sharded()
-    f_tree = solver.fluid_solver.assign_fields_sharded()
+    state_tree = solver.fluid_solver.state_from_populations(solver.fluid_solver.assign_fields_sharded())
     for timestep in range(3):
-        T, f_tree, _ = solver.step(T, f_tree, timestep)
+        T, state_tree, _ = solver.step(T, state_tree, timestep)
+    f_tree = solver.fluid_solver.poststreaming(state_tree)
 
     # A uniform density and temperature state is a mechanical and thermal equilibrium
     assert np.allclose(np.array(T), T_uniform, atol=1e-10)
@@ -205,7 +206,7 @@ def test_multiphase_step_uses_synchronized_macroscopic_fields():
     u_tree = solver.fluid_solver.macroscopic_velocity(f_tree, rho_tree, T=T)
     expected_temperature = solver._advance_temperature(T, 0, rho_tree, u_tree)
 
-    temperature, _, _ = solver.step(T, f_tree, 0)
+    temperature, _, _ = solver.step(T, solver.fluid_solver.state_from_populations(f_tree), 0)
 
     assert np.allclose(np.array(temperature), np.array(expected_temperature), rtol=1e-12, atol=1e-12)
 

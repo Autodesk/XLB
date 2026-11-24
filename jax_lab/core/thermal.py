@@ -17,11 +17,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import orbax.checkpoint as orb
-from jax import jit, shard_map
+from jax import jit, lax, shard_map
 from jax.sharding import PartitionSpec
 from jax.tree import map as tree_map
 from jax.experimental.multihost_utils import process_allgather
 
+from .base import advance_quiet_steps, quiet_steps
 from .models import MRTSim
 from .utils import colored, downsample_field
 
@@ -612,8 +613,8 @@ class Thermal(object):
         """
         return self.fluid_solver.update_macroscopic(f)
 
-    @partial(jit, static_argnums=(0, 4), donate_argnums=(1, 2))
-    def step(self, T_prev, f_poststreaming, timestep, return_fpost=False):
+    @partial(jit, static_argnums=(0, 4))
+    def step(self, T_prev, state, timestep, return_fpost=False):
         """
         This function performs a single step of the hybrid thermal LBM simulation.
 
@@ -625,7 +626,7 @@ class Thermal(object):
         ----------
         T_prev (jax.numpy.ndarray): The temperature field from the previous timestep.
 
-        f_poststreaming (jax.numpy.ndarray): The post-streaming distribution functions.
+        state (PopulationState): The fluid state (see LBMBase.step).
 
         timestep (int): The current timestep of the simulation.
 
@@ -635,66 +636,32 @@ class Thermal(object):
         -------
         T (jax.numpy.ndarray): The temperature field after the simulation step.
 
-        f_poststreaming (jax.numpy.ndarray): The post-streaming distribution functions after the simulation step.
+        state (PopulationState): The fluid state after the simulation step.
 
         f_postcollision (jax.numpy.ndarray or None): The post-collision distribution functions after the simulation
         step, or None if return_fpost is False.
         """
         T = self.precision_policy.cast_to_compute(T_prev)
         T = self.apply_bc(T, timestep)
-        f_compute = self.precision_policy.cast_to_compute(f_poststreaming)
+        f_compute = self.precision_policy.cast_to_compute(self.fluid_solver.stream(state))
         rho, u = self.fluid_solver.update_macroscopic(f_compute)
 
-        f_poststreaming, f_postcollision = self.fluid_solver.step(f_poststreaming, timestep, return_fpost=return_fpost)
+        state, f_postcollision = self.fluid_solver.step(state, timestep, return_fpost=return_fpost)
         T = self._advance_temperature(T, timestep, rho, u)
 
         T = self.apply_bc(T, timestep)
 
-        return self.precision_policy.cast_to_output(T), f_poststreaming, f_postcollision
+        return self.precision_policy.cast_to_output(T), state, f_postcollision
 
-    def _direction_major_step(self, f, return_fpost):
-        """
-        The coupled step used by run(), compiled with the populations held direction-major in device memory (see
-        LBMBase._direction_major_step; the temperature field keeps its default layout). The step, the fluid step inside it
-        and every override are unchanged; only the physical storage order of the populations differs.
+    @partial(jit, static_argnums=(0,))
+    def advance(self, T, state, timestep, n_pairs):
+        """2 n_pairs coupled steps from timestep as one loop on the device, two steps per iteration (see LBMBase.advance)."""
 
-        Parameters
-        ----------
-        f (jax.Array or pytree): Populations, already in the direction-major layout (see LBMBase._to_direction_major).
+        def two_steps(k, carry):
+            carry = self.step(*carry, timestep + 2 * k)[:2]
+            return self.step(*carry, timestep + 2 * k + 1)[:2]
 
-        return_fpost (bool): Whether the step also returns the post-collision populations.
-
-        Returns
-        -------
-        (callable): step(T, f, timestep) -> (T, f, fstar), like self.step.
-        """
-        fs = self.fluid_solver
-        if not fs.direction_major_layout:
-            return lambda T, f, timestep: self.step(T, f, timestep, return_fpost=return_fpost)
-        steps = self.__dict__.setdefault("_direction_major_steps", {})
-        key = (return_fpost, jax.tree.structure(f))
-        if key not in steps:
-            formats = jax.tree.map(lambda x: fs._population_format(x, True), f)
-            step_function = getattr(type(self).step, "__wrapped__", type(self).step)
-            fluid_step = getattr(type(fs).step, "__wrapped__", type(fs).step)
-
-            def direction_major_step(T, f, timestep):
-                # Trace the fluid step inline (not from its own jit cache) with its direction-major layout hints active
-                fs._tracing_direction_major = True
-                fs.step = partial(fluid_step, fs)
-                try:
-                    return step_function(self, T, f, timestep, return_fpost)
-                finally:
-                    fs._tracing_direction_major = False
-                    del fs.step
-
-            steps[key] = jax.jit(
-                direction_major_step,
-                in_shardings=(None, formats, None),
-                out_shardings=(None, formats, formats if return_fpost else None),
-                donate_argnums=(0, 1),
-            )
-        return steps[key]
+        return lax.fori_loop(0, n_pairs, two_steps, (T, state))
 
     def run(self, t_max):
         """
@@ -748,21 +715,31 @@ class Thermal(object):
                     raise ValueError(f"Simulation already exceeded maximum allowable steps (t_max = {t_max}). Consider increasing t_max.")
 
         fs = self.fluid_solver
-        # Populations are held direction-major inside the time loop (see _direction_major_step) and moved back to the
-        # default layout wherever they leave it (output, checkpoints, the returned value)
-        f = fs._to_direction_major(f)
-        step = self._direction_major_step(f, self.return_fpost)
+        # The loop advances the fluid state (post-collision populations, see LBMBase.step); the post-streaming populations
+        # f are formed from it only where they are used (output, checkpoints, the returned value)
+        state = fs.state_from_populations(f)
+        del f
+        # Compile the device loop up front (a zero-step call), so that it is not timed (MLUPS)
+        T, state = self.advance(T, state, start_step, 0)
         if self.compute_MLUPS:
             start = time.time()
         # Loop over all time steps
-        for timestep in range(start_step, t_max + 1):
+        timestep = start_step
+        while timestep <= t_max:
+            # Steps without host-side events, see advance_quiet_steps
+            quiet = quiet_steps(timestep, t_max, self.io_rate, self.print_info_rate, self.checkpoint_rate)
+            if quiet:
+                (T, state), timestep = advance_quiet_steps(
+                    self, (T, state), timestep, quiet, lambda c, t, n: self.advance(*c, t, n), lambda c, t: self.step(*c, t)[:2]
+                )
+                continue
             io_flag = self.io_rate > 0 and (timestep % self.io_rate == 0 or timestep == t_max)
             print_iter_flag = self.print_info_rate > 0 and timestep % self.print_info_rate == 0
             checkpoint_flag = self.checkpoint_rate > 0 and timestep % self.checkpoint_rate == 0
 
             if io_flag:
                 # Save the previous values of the macroscopic fields (for error computation)
-                rho_prev, u_prev = self.update_macroscopic_output(fs._to_default_layout(f), T)
+                rho_prev, u_prev = self.update_macroscopic_output(fs.poststreaming(state), T)
                 rho_prev = tree_map(lambda x: downsample_field(x, self.downsampling_factor), rho_prev)
                 u_prev = tree_map(lambda x: downsample_field(x, self.downsampling_factor), u_prev)
                 T_prev = downsample_field(T, self.downsampling_factor)
@@ -772,7 +749,8 @@ class Thermal(object):
                 T_prev = process_allgather(T_prev)
 
             # Perform one time-step (fluid step followed by the temperature update)
-            T, f, fstar = step(T, f, timestep)
+            T, state, fstar = self.step(T, state, timestep, io_flag and self.return_fpost)
+            f = fs.poststreaming(state) if (io_flag or checkpoint_flag) else None
 
             # Print the progress of the simulation
             if print_iter_flag:
@@ -787,8 +765,7 @@ class Thermal(object):
             if io_flag:
                 # Save the simulation data
                 logger.info(f"Saving data at timestep {timestep}/{t_max}")
-                f_out = fs._to_default_layout(f)
-                rho, u = self.update_macroscopic_output(f_out, T)
+                rho, u = self.update_macroscopic_output(f, T)
                 rho = tree_map(lambda x: downsample_field(x, self.downsampling_factor), rho)
                 u = tree_map(lambda x: downsample_field(x, self.downsampling_factor), u)
                 T_out = downsample_field(T, self.downsampling_factor)
@@ -799,7 +776,7 @@ class Thermal(object):
                 T_out = process_allgather(T_out)
 
                 # Save the data
-                self.handle_io_timestep(timestep, f_out, fs._to_default_layout(fstar), T_out, rho, u, T_prev, rho_prev, u_prev)
+                self.handle_io_timestep(timestep, f, fstar, T_out, rho, u, T_prev, rho_prev, u_prev)
 
             if self.stop_simulation:
                 logger.info(f"Stopping the simulation early at timestep {timestep} (requested by output_data).")
@@ -810,18 +787,19 @@ class Thermal(object):
                 logger.info(f"Saving checkpoint at timestep {timestep}/{t_max}")
                 self.mngr.save(timestep, args=orb.args.StandardSave({"T": T}))
                 if self.fluid_solver.mngr is not None:
-                    self.fluid_solver.mngr.save(timestep, args=orb.args.StandardSave({"f": fs._to_default_layout(f)}))
+                    self.fluid_solver.mngr.save(timestep, args=orb.args.StandardSave({"f": f}))
 
             # Start the timer for the MLUPS computation after the first timestep (to remove compilation overhead)
             if self.compute_MLUPS and timestep == 1:
-                jax.block_until_ready(f)
+                jax.block_until_ready(state)
                 jax.block_until_ready(T)
                 start = time.time()
+            timestep += 1
 
         if self.compute_MLUPS:
             # Compute and print the performance of the simulation in MLUPS
             jax.block_until_ready(T)
-            jax.block_until_ready(f)
+            jax.block_until_ready(state)
             end = time.time()
             n_voxels = self.nx * self.ny if self.dim == 2 else self.nx * self.ny * self.nz
             domain = f"{self.nx} x {self.ny}" if self.dim == 2 else f"{self.nx} x {self.ny} x {self.nz}"
@@ -834,7 +812,7 @@ class Thermal(object):
         if self.fluid_solver.mngr is not None:
             self.fluid_solver.mngr.wait_until_finished()
         self._output_writer.finish()
-        return fs._to_default_layout(f), T
+        return fs.poststreaming(state), T
 
     def handle_io_timestep(self, timestep, f, fstar, T, rho, u, T_prev, rho_prev, u_prev):
         """

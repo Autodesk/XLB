@@ -178,9 +178,9 @@ def run_benchmark(
     require_gpu()
     sim = build_simulation(nx, ny, nz, seed, wetting_formulation)
 
-    f_tree = sim.assign_fields_sharded()
-    f_tree, _ = sim.step(f_tree, 0)  # compile, excluded from timing
-    jax.block_until_ready(f_tree)
+    state_tree = sim.state_from_populations(sim.assign_fields_sharded())
+    state_tree, _ = sim.step(state_tree, 0)  # compile, excluded from timing
+    jax.block_until_ready(state_tree)
 
     device = jax.local_devices()[0]
     memory_before = device.memory_stats() or {}
@@ -188,12 +188,13 @@ def run_benchmark(
 
     start = time.time()
     for timestep in range(1, steps + 1):
-        f_tree, _ = sim.step(f_tree, timestep)
+        state_tree, _ = sim.step(state_tree, timestep)
         if sample_memory:
-            jax.block_until_ready(f_tree)
+            jax.block_until_ready(state_tree)
             memory_trace.append((device.memory_stats() or {}).get("bytes_in_use"))
-    jax.block_until_ready(f_tree)
+    jax.block_until_ready(state_tree)
     elapsed = time.time() - start
+    f_tree = sim.poststreaming(state_tree)
 
     memory_after = device.memory_stats() or {}
     rho_tree, _ = sim.update_macroscopic(f_tree)

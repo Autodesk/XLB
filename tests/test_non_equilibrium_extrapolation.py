@@ -1,9 +1,10 @@
-"""Verify local extrapolation boundary paths against their global-index computations."""
+"""Verify the time step's extrapolation boundary conditions against their global-index computations."""
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from _boundary_pass import boundary_pass, reference_poststreaming
 
 from jax_lab.core.boundary_conditions import BounceBack, ExactNonEquilibriumExtrapolation, NonEquilibriumExtrapolation
 from jax_lab.core.shanchen.eos import VanderWaals
@@ -58,17 +59,17 @@ def test_local_non_equilibrium_extrapolation_matches_global_application():
     fin = _random_fin(sim)
     bc = sim.BCs[1]
 
-    expected = jnp.array(fin).at[bc.indices].set(bc.apply(fin, fin))
-    fout = sim.apply_bc(jnp.array(fin), fin, 0, "PostStreaming")
+    expected = reference_poststreaming(sim, bc, fin)
+    _, fout = boundary_pass(sim, fin, fin)
 
-    np.testing.assert_allclose(np.asarray(fout), np.asarray(expected), rtol=0.0, atol=1e-6)
+    np.testing.assert_allclose(np.asarray(fout)[bc.indices], np.asarray(expected)[bc.indices], rtol=0.0, atol=1e-6)
 
 
 def test_exact_non_equilibrium_extrapolation_matches_prescribed_density():
     sim = _make_sim(ExactNonEquilibriumExtrapolation)
     fin = _random_fin(sim)
 
-    fout = sim.apply_bc(jnp.array(fin), fin, 0, "PostStreaming")
+    _, fout = boundary_pass(sim, fin, fin)
 
     top = sim.bounding_box_indices["top"]
     boundary_rho = np.asarray(jnp.sum(fout, axis=-1, keepdims=True))[tuple(top.T)]
@@ -103,11 +104,8 @@ def test_local_exact_extrapolation_supports_multiple_components():
         EOS=VanderWaals(a=[9.0 / 49.0] * 2, b=[2.0 / 21.0] * 2, R=[1.0, 1.0], T=0.8 * 0.5714285714),
     )
     fin_tree = sim.assign_fields_sharded()
-    expected_tree = []
-    for component, fin in enumerate(fin_tree):
-        bc = sim.BCs[component][0]
-        expected_tree.append(jnp.array(fin).at[bc.indices].set(bc.apply(fin, fin)))
-    fout_tree = sim.apply_bc([jnp.array(fin) for fin in fin_tree], fin_tree, 0, "PostStreaming")
+    expected_tree = [reference_poststreaming(sim, sim.BCs[component][0], fin) for component, fin in enumerate(fin_tree)]
+    fout_tree = [boundary_pass(sim, fin, fin, component)[1] for component, fin in enumerate(fin_tree)]
     for component, face in ((0, "top"), (1, "bottom")):
         indices = tuple(sim.bounding_box_indices[face].T)
         assert np.allclose(np.asarray(fout_tree[component])[indices], np.asarray(expected_tree[component])[indices], atol=1e-6)

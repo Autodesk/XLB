@@ -49,10 +49,10 @@ def _shear_wave(base, lattice, dim, omega):
 )
 def test_shear_wave_decays_with_lattice_viscosity(base, lattice, dim, omega):
     sim = _shear_wave(base, lattice, dim, omega)
-    f = sim.assign_fields_sharded()
+    state = sim.state_from_populations(sim.assign_fields_sharded())
     for t in range(STEPS):
-        f, _ = sim.step(f, t)
-    f = np.asarray(f)
+        state, _ = sim.step(state, t)
+    f = np.asarray(sim.poststreaming(state))
     ux = (f @ np.asarray(sim.lattice.c).T.astype(float))[..., 0] / f.sum(axis=-1)
     profile = ux.mean(axis=tuple(axis for axis in range(dim) if axis != 1))
     amplitude = 2.0 * np.mean(profile * np.sin(2 * np.pi * np.arange(L) / L)) / U

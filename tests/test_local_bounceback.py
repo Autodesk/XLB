@@ -2,6 +2,7 @@
 
 import jax.numpy as jnp
 import numpy as np
+from _boundary_pass import boundary_pass
 
 from jax_lab.core.boundary_conditions import BounceBack
 from jax_lab.core.shanchen.eos import VanderWaals
@@ -78,7 +79,7 @@ def test_local_bounceback_matches_global_single_phase():
     rng = np.random.default_rng(SEED + 1)
     fin = fin + jnp.asarray(rng.uniform(-0.05, 0.05, size=fin.shape), dtype=fin.dtype)
 
-    fout = sim.apply_bc(jnp.array(fin), fin, 0, "PostCollision")
+    fout, _ = boundary_pass(sim, jnp.array(fin), fin)
 
     indices = np.asarray(sim.BCs[0].indices).T
     expected = _expected_bounceback(np.asarray(fin), indices, np.asarray(sim.lattice.opp_indices))
@@ -101,7 +102,7 @@ def test_local_bounceback_matches_global_multiphase():
     rng = np.random.default_rng(SEED + 1)
     fin_tree = [f + jnp.asarray(rng.uniform(-0.05, 0.05, size=f.shape), dtype=f.dtype) for f in fin_tree]
 
-    fout_tree = sim.apply_bc([jnp.array(f) for f in fin_tree], fin_tree, 0, "PostCollision")
+    fout_tree = [boundary_pass(sim, jnp.array(fin_tree[0]), fin_tree[0])[0]]
 
     indices = np.asarray(sim.BCs[0][0].indices).T
     expected = _expected_bounceback(np.asarray(fin_tree[0]), indices, np.asarray(sim.lattice.opp_indices))
@@ -145,10 +146,11 @@ def test_fused_bounceback_matches_scatter_path():
         expected = _expected_bounceback(np.asarray(f0), indices, np.asarray(fused.lattice.opp_indices))
         assert np.max(np.abs(np.asarray(fout0)[tuple(indices.T)] - expected)) == 0.0
         # Full steps agree bit for bit
-        a, b = copy(f), copy(f)
+        a, b = fused.state_from_populations(copy(f)), scatter.state_from_populations(copy(f))
         for t in range(3):
             a = fused.step(a, t)[0]
             b = scatter.step(b, t)[0]
+        a, b = fused.poststreaming(a), scatter.poststreaming(b)
         for x, y in zip(a if multiphase else [a], b if multiphase else [b], strict=True):
             assert np.isfinite(np.asarray(x)).all(), fused_cls.__name__
             assert np.array_equal(np.asarray(x), np.asarray(y)), fused_cls.__name__

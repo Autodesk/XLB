@@ -43,11 +43,11 @@ def _wall_indices(y):
 
 def _run(sim, steps=STEPS):
     """Advance to steady state; return the populations the way run() hands them to output_data."""
-    f = sim.assign_fields_sharded()
+    state = sim.state_from_populations(sim.assign_fields_sharded())
     for t in range(steps - 1):
-        f, _ = sim.step(f, t)
-    f_poststreaming, f_postcollision = sim.step(f, steps - 1, return_fpost=True)
-    return np.asarray(f_poststreaming), np.asarray(f_postcollision)
+        state, _ = sim.step(state, t)
+    state, f_postcollision = sim.step(state, steps - 1, return_fpost=True)
+    return np.asarray(sim.poststreaming(state)), np.asarray(f_postcollision)
 
 
 class ForcedChannel(BGKSim):

@@ -10,6 +10,7 @@ Journal of Fluid Mechanics 983, A6 (2024).
 import os
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import jit, config
@@ -17,6 +18,7 @@ from jax.tree import map as tree_map
 
 from jax_lab.core.boundary_conditions import BounceBack, ExactNonEquilibriumExtrapolation
 from jax_lab.core.shanchen.eos import PengRobinson
+from jax_lab.core.base import stack_components
 from jax_lab.core.lattice import LatticeD2Q9, LatticeD3Q19
 from jax_lab.core.shanchen.multiphase import MultiphaseCascade
 from jax_lab.core.utils import save_fields_vtk
@@ -70,22 +72,8 @@ class DropletOnWall2D(MultiphaseCascade):
         psi_tree = self.compute_potential(rho_tree)
         fluid_fluid_force = self.compute_fluid_fluid_force(psi_tree)
         if inter_component_interaction:
-            F_1 = (
-                -g_AB
-                * rho_tree[0]
-                * jnp.dot(
-                    self.G_ff * self.streaming(jnp.repeat(rho_tree[1], repeats=self.lattice.q, axis=-1)),
-                    self.precision_policy.cast_to_compute(self.lattice.c.T),
-                )
-            )
-            # F_2 = (
-            #     -g_AB
-            #     * rho_tree[1]
-            #     * jnp.dot(
-            #         self.G_ff * self.streaming(jnp.repeat(rho_tree[0], repeats=self.lattice.q, axis=-1)),
-            #         self.precision_policy.cast_to_compute(self.lattice.c.T),
-            #     )
-            # )
+            # -g_AB rho_0 sum_i G_ff_i c_i rho_1(x - c_i), as one fused neighbour stencil
+            F_1 = -g_AB * rho_tree[0] * self.neighbor_stencil(rho_tree[1], np.asarray(self.G_ff)[None, :] * np.asarray(self.lattice.c))
             F_2 = F_1
             F_tree = [F_1, F_2]
             fluid_fluid_force = tree_map(lambda f1, f2: f1 + f2, fluid_fluid_force, F_tree)
@@ -97,19 +85,16 @@ class DropletOnWall2D(MultiphaseCascade):
     @partial(jit, static_argnums=(0,))
     def compute_force_central_moments(self, F_tree, F_intra_tree, psi_tree):
         def f(F, F_intra, sigma, psi, s_b):
-            C = jnp.zeros((self.nx, self.ny, self.lattice.q), dtype=self.precision_policy.compute_dtype)
             Fx = F_intra[..., 0]
             Fy = F_intra[..., 1]
             eta = 4 * sigma * (Fx**2 + Fy**2) / ((psi[..., 0] ** 2) * (1 / s_b - 0.5))  # For mechanical stability
             Fx = F[..., 0]
             Fy = F[..., 1]
-            C = C.at[..., 1].set(Fx)
-            C = C.at[..., 2].set(Fy)
-            C = C.at[..., 3].set(eta)
-            C = C.at[..., 6].set(Fy * self.lattice.cs2)
-            C = C.at[..., 7].set(Fx * self.lattice.cs2)
-            C = C.at[..., 8].set(eta * self.lattice.cs2)
-            return C
+            # One fused pass (a chain of .at[..., k].set would be one pass per component, see stack_components)
+            return stack_components(
+                {1: Fx, 2: Fy, 3: eta, 6: Fy * self.lattice.cs2, 7: Fx * self.lattice.cs2, 8: eta * self.lattice.cs2},
+                jax.ShapeDtypeStruct((self.nx, self.ny, self.lattice.q), self.precision_policy.compute_dtype),
+            )
 
         return tree_map(lambda F, F_intra, sigma, psi, s_b: f(F, F_intra, sigma, psi, s_b), F_tree, F_intra_tree, self.sigma, psi_tree, self.s_b)
 

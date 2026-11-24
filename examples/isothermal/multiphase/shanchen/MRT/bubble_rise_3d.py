@@ -21,6 +21,7 @@ import numpy as np
 from jax import jit
 from jax.tree import map as tree_map
 
+from jax_lab.core.base import _lattice_dot
 from jax_lab.core.lattice import LatticeD3Q19
 from jax_lab.core.shanchen.multiphase import MultiphaseMRT
 from jax_lab.core.shanchen.eos import VanderWaals
@@ -89,29 +90,35 @@ class BubbleRise3D(MultiphaseMRT):
         buoyancy_tree = self.compute_buoyancy_force(rho_tree, timestep)
         return tree_map(lambda u, force, rho: u + 0.5 * force / rho, u_tree, buoyancy_tree, rho_tree)
 
-    @partial(jit, static_argnums=(0, 3), donate_argnums=(1,))
-    def step(self, f_poststreaming_tree, timestep, return_fpost=False, T=None):
-        f_postcollision_tree = self.collision(f_poststreaming_tree, T=T)
+    # post_collision returns stack_populations stacks (see LBMBase.post_collision)
+    post_collision_per_direction = True
+
+    def post_collision(self, f_postcollision_tree, f_poststreaming_tree, timestep):
+        """
+        Buoyancy by exact-difference forcing, f* += feq(rho, u + F / rho) - feq(rho, u) with F from compute_buoyancy_force,
+        then the rest population restores the density, f*_0 = rho - sum_(i>0) f*_i. Evaluated per lattice direction and
+        stacked with stack_populations, so XLA fuses the update into one kernel.
+        """
+        directions, weights = self._lattice_directions, self._lattice_weights
         rho_tree, u_tree = self.update_macroscopic(f_poststreaming_tree)
         buoyancy_tree = self.compute_buoyancy_force(rho_tree, timestep)
-        u_forced_tree = tree_map(lambda u, force, rho: u + force / rho, u_tree, buoyancy_tree, rho_tree)
-        feq_tree = self.equilibrium(rho_tree, u_tree, cast_output=False)
-        feq_forced_tree = self.equilibrium(rho_tree, u_forced_tree, cast_output=False)
-        f_postcollision_tree = tree_map(
-            lambda f, feq_forced, feq: f + feq_forced - feq,
-            f_postcollision_tree,
-            feq_forced_tree,
-            feq_tree,
-        )
-        f_postcollision_tree = tree_map(
-            lambda f, rho: f.at[..., 0].set(rho[..., 0] - jnp.sum(f[..., 1:], axis=-1)),
-            f_postcollision_tree,
-            rho_tree,
-        )
-        f_postcollision_tree = self.apply_bc(f_postcollision_tree, f_poststreaming_tree, timestep, "PostCollision")
-        f_poststreaming_tree = tree_map(self.streaming, f_postcollision_tree)
-        f_poststreaming_tree = self.apply_bc(f_poststreaming_tree, f_postcollision_tree, timestep, "PostStreaming")
-        return f_poststreaming_tree, f_postcollision_tree if return_fpost else None
+        out_tree = []
+        for f_post, rho, u, force in zip(f_postcollision_tree, rho_tree, u_tree, buoyancy_tree, strict=True):
+            rho = rho[..., 0]
+            u = [u[..., axis] for axis in range(self.dim)]
+            u_forced = [v + force[..., axis] / rho for axis, v in enumerate(u)]
+            usqr = 1.5 * sum(v * v for v in u)
+            usqr_forced = 1.5 * sum(v * v for v in u_forced)
+            out = []
+            for i, (direction, w) in enumerate(zip(directions, weights, strict=True)):
+                cu = 3.0 * _lattice_dot(direction, u)
+                cu_forced = 3.0 * _lattice_dot(direction, u_forced)
+                feq = rho * w * (1.0 + cu * (1.0 + 0.5 * cu) - usqr)
+                feq_forced = rho * w * (1.0 + cu_forced * (1.0 + 0.5 * cu_forced) - usqr_forced)
+                out.append(self.precision_policy.cast_to_compute(f_post[..., i]) + feq_forced - feq)
+            out[0] = rho - sum(out[1:])
+            out_tree.append(self.stack_populations([self.precision_policy.cast_to_output(o) for o in out]))
+        return out_tree
 
     def output_data(self, **kwargs):
         rho = np.array(kwargs["rho_tree"][0][0, ...])

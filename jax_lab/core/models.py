@@ -48,9 +48,6 @@ class BGKSim(LBMBase):
     This class implements the Bhatnagar-Gross-Krook (BGK) approximation for the collision step in the Lattice Boltzmann Method.
     """
 
-    # Direction-major populations in run() by default in 3D (+32%; see LBMBase._direction_major_step); not measured in 2D
-    _direction_major_dims = (3,)
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -118,10 +115,6 @@ class KBCSim(LBMBase):
 
     This class implements the Karlin-Bösch-Chikatamarla (KBC) model for the collision step in the Lattice Boltzmann Method.
     """
-
-    # Direction-major populations in run() by default (with the per-direction collision: +4% in 3D, +7% in 2D;
-    # see LBMBase._direction_major_step)
-    _direction_major_dims = (2, 3)
 
     def __init__(self, **kwargs):
         if kwargs.get("lattice").name != "D3Q27" and kwargs.get("nz") > 0:
@@ -397,10 +390,6 @@ class MRTSim(LBMBase):
     """
     Multi-relaxation time model.
     """
-
-    # Direction-major populations in run() by default (with the per-direction collision: +26-31% in 3D, +4% in 2D;
-    # see LBMBase._direction_major_step)
-    _direction_major_dims = (2, 3)
 
     def __init__(self, **kwargs):
         kwargs.update({"omega": 1.0})
@@ -1489,9 +1478,6 @@ class CLBMSim(LBMBase):
         C = self.compute_force_central_moments(F)
         Tf = jnp.dot(C, jnp.eye(self.lattice.q) - 0.5 * self.S)
         return Tdash + Tf
-
-    # Direction-major populations in run() by default in 3D (+17%; see LBMBase._direction_major_step); not measured in 2D
-    _direction_major_dims = (3,)
 
     _CASCADE_TRANSFORMS = (
         "compute_central_moment",

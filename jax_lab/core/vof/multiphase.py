@@ -16,7 +16,7 @@ from jax.experimental.multihost_utils import process_allgather
 from jax.sharding import NamedSharding, PartitionSpec
 
 from ..base import LBMBase
-from ..boundary_conditions import INLET_OUTLET_BC_TYPES, WALL_BC_TYPES, BounceBack, BounceBackHalfway, NonEquilibriumExtrapolation, link_fullway_walls
+from ..boundary_conditions import BounceBack, BounceBackHalfway, NonEquilibriumExtrapolation, link_fullway_walls
 from ..lattice import LatticeD2Q9, LatticeD3Q19
 from ..utils import colored, downsample_field
 from .boundary_conditions import VoFOpenBoundary
@@ -337,11 +337,16 @@ class VoF(LBMBase):
                 bc.create_local_mask_and_normal_arrays(grid_mask)
             link_fullway_walls(BCs)
             logger.info("Time to create the local masks and normal arrays: %.6f seconds", time.time() - start)
+        self._make_bounceback_walls()
 
-    def _make_local_bounceback_indices(self):
+    def _make_streaming_bc_data(self):
+        """VoF has its own fused pull step with its boundary handling (see step); LBMBase.step's boundary data is unused."""
+        return None
+
+    def _make_bounceback_walls(self):
         """
         Full-way BounceBack is applied densely, as a node mask selected within the fused step (see _step_m), instead of through index
-        scatters. The mask of both lattices (shape (..., 2)) is built here and no local index arrays are returned.
+        scatters. The mask of both lattices (shape (..., 2)) is built here.
         """
         spatial = (self.nx, self.ny) if self.dim == 2 else (self.nx, self.ny, self.nz)
         walls = np.zeros((*spatial, 2), dtype=np.int8)
@@ -351,7 +356,6 @@ class VoF(LBMBase):
                     walls[tuple(np.asarray(bc.indices, dtype=np.int64)) + (phase,)] = 1
         self._has_bounceback = tuple(bool(np.any(walls[..., phase])) for phase in range(2))
         self.bounceback_walls = self.distributed_array_init((*spatial, 2), jnp.int8, init_val=walls)
-        return [None, None]
 
     def _create_open_boundary_data(self):
         """
@@ -391,56 +395,6 @@ class VoF(LBMBase):
                 self._distribute_local(local_prescribed, self.precision_policy.compute_dtype),
             ))
         return tuple(phases), tuple(data)
-
-    def _make_local_wall_bc_data(self):
-        """One wall_bc_data dict and one solid-pin index array (or None) per lattice, see LBMBase._make_local_wall_bc_data."""
-        wall_bc_data_by_phase = []
-        solid_pin_indices_by_phase = []
-        for BCs in self.BCs:
-            wall_bc_data = {}
-            for bc_type, _, has_weights in WALL_BC_TYPES:
-                local_indices, (local_imissing, local_iknown, local_vel, local_weights) = self._collect_wall_bc_data(BCs, bc_type, has_weights)
-                wall_bc_data[bc_type] = (
-                    self._distribute_local(local_indices, jnp.int32),
-                    self._distribute_local(local_imissing, jnp.uint8),
-                    self._distribute_local(local_iknown, jnp.uint8),
-                    self._distribute_local(local_vel),
-                    self._distribute_local(local_weights),
-                )
-            wall_bc_data_by_phase.append(wall_bc_data)
-            solid_pin_indices_by_phase.append(self._distribute_local(self._collect_solid_pin_indices(BCs), jnp.int32))
-        return wall_bc_data_by_phase, solid_pin_indices_by_phase
-
-    def _make_local_inlet_outlet_data(self):
-        """One inlet_outlet_bc_data dict per lattice, see LBMBase._make_local_inlet_outlet_data."""
-        inlet_outlet_bc_data_by_phase = []
-        for BCs in self.BCs:
-            inlet_outlet_bc_data = {}
-            for bc_type, ttype, _ in INLET_OUTLET_BC_TYPES:
-                local_indices, (local_normals, local_imiddle_mask, local_iknown_mask, local_imissing, local_iknown, local_prescribed) = (
-                    self._collect_inlet_outlet_bc_data(BCs, bc_type, ttype)
-                )
-                inlet_outlet_bc_data[(bc_type, ttype)] = (
-                    self._distribute_local(local_indices, jnp.int32),
-                    self._distribute_local(local_normals),
-                    self._distribute_local(local_imiddle_mask, jnp.bool_),
-                    self._distribute_local(local_iknown_mask, jnp.bool_),
-                    self._distribute_local(local_imissing, jnp.uint8),
-                    self._distribute_local(local_iknown, jnp.uint8),
-                    self._distribute_local(local_prescribed),
-                )
-            inlet_outlet_bc_data_by_phase.append(inlet_outlet_bc_data)
-        return inlet_outlet_bc_data_by_phase
-
-    def _make_local_equilibrium_bc_data(self):
-        """One distributed local EquilibriumBC index array and value array (or None) per lattice, see LBMBase._make_local_equilibrium_bc_data."""
-        indices_by_phase = []
-        out_by_phase = []
-        for BCs in self.BCs:
-            local_indices, local_out = self._collect_equilibrium_bc_data(BCs)
-            indices_by_phase.append(self._distribute_local(local_indices, jnp.int32))
-            out_by_phase.append(self._distribute_local(local_out))
-        return indices_by_phase, out_by_phase
 
     def _host_neighbor(self, field, direction):
         """Value of a global host array at x + direction (periodic)."""

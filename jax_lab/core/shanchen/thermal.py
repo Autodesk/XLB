@@ -137,8 +137,8 @@ class MultiphaseThermal(Thermal):
             rhs = rhs + self.source(T) / rho_c_v
         return rhs
 
-    @partial(jit, static_argnums=(0, 4), donate_argnums=(1, 2))
-    def step(self, T_prev, f_poststreaming_tree, timestep, return_fpost=False):
+    @partial(jit, static_argnums=(0, 4))
+    def step(self, T_prev, state_tree, timestep, return_fpost=False):
         """
         This function performs a single step of the multiphase hybrid thermal LBM simulation.
 
@@ -151,7 +151,7 @@ class MultiphaseThermal(Thermal):
         ----------
         T_prev (jax.numpy.ndarray): The temperature field from the previous timestep.
 
-        f_poststreaming_tree (pytree of jax.numpy.ndarray): The post-streaming distribution functions.
+        state_tree (list of PopulationState): The fluid states (see Multiphase.step).
 
         timestep (int): The current timestep of the simulation.
 
@@ -161,15 +161,15 @@ class MultiphaseThermal(Thermal):
         -------
         T (jax.numpy.ndarray): The temperature field after the simulation step.
 
-        f_poststreaming_tree (pytree of jax.numpy.ndarray): The post-streaming distribution functions after the simulation step.
+        state_tree (list of PopulationState): The fluid states after the simulation step.
 
         f_postcollision_tree (pytree of jax.numpy.ndarray or None): The post-collision distribution functions after the
         simulation step, or None if return_fpost is False.
         """
         T = self.precision_policy.cast_to_compute(T_prev)
         T = self.apply_bc(T, timestep)
-        f_compute_tree = tree_map(lambda f: self.precision_policy.cast_to_compute(f), f_poststreaming_tree)
         fluid = self.fluid_solver
+        f_compute_tree = [self.precision_policy.cast_to_compute(fluid.stream(state)) for state in state_tree]
         rho_tree, _ = fluid.update_macroscopic(f_compute_tree)
         if self._shares_fluid_force():
             # The interaction force is computed once and shared with the collision of this step (same populations and
@@ -185,7 +185,7 @@ class MultiphaseThermal(Thermal):
             fluid._export_macroscopic = exported
             fluid.collision = lambda fin_tree, T=None: collision(fluid, fin_tree, T=T)
             try:
-                f_poststreaming_tree, f_postcollision_tree = fluid_step(fluid, f_poststreaming_tree, timestep, return_fpost, T)
+                state_tree, f_postcollision_tree = fluid_step(fluid, state_tree, timestep, return_fpost, T)
             finally:
                 fluid._shared_force = None
                 fluid._export_macroscopic = None
@@ -195,12 +195,12 @@ class MultiphaseThermal(Thermal):
             _, u_tree = exported[0]
         else:
             u_tree = fluid.macroscopic_velocity(f_compute_tree, rho_tree, T=T)
-            f_poststreaming_tree, f_postcollision_tree = fluid.step(f_poststreaming_tree, timestep, return_fpost, T)
+            state_tree, f_postcollision_tree = fluid.step(state_tree, timestep, return_fpost, T)
         T = self._advance_temperature(T, timestep, rho_tree, u_tree)
 
         T = self.apply_bc(T, timestep)
 
-        return self.precision_policy.cast_to_output(T), f_poststreaming_tree, f_postcollision_tree
+        return self.precision_policy.cast_to_output(T), state_tree, f_postcollision_tree
 
     def update_macroscopic_output(self, f_tree, T):
         """

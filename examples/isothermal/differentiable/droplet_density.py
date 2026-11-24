@@ -127,11 +127,12 @@ def run_simulation(model, sim_obj, rho_init_rand, t_designated):
     f_init_tree = sim_obj.equilibrium(rho_init_tree, u_init_tree)
 
     # Simulation loop
-    def sim_step(f_tree, step):
-        f_tree, _ = sim_obj.step(f_tree, step)
-        return f_tree, None
+    def sim_step(state_tree, step):
+        state_tree, _ = sim_obj.step(state_tree, step)
+        return state_tree, None
 
-    f_final_tree, _ = lax.scan(sim_step, f_init_tree, jnp.arange(t_designated))
+    state_tree, _ = lax.scan(sim_step, sim_obj.state_from_populations(f_init_tree), jnp.arange(t_designated))
+    f_final_tree = sim_obj.poststreaming(state_tree)
 
     # Get final density
     rho_final_tree, _ = sim_obj.update_macroscopic(f_final_tree)

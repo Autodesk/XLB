@@ -174,27 +174,12 @@ class PoolFluid3D(MultiphaseMRT):
             out_tree.append(self.stack_populations([self.precision_policy.cast_to_output(o) for o in out]))
         return out_tree
 
-    @partial(jit, static_argnums=(0, 3), donate_argnums=(1,))
-    def step(self, f_poststreaming_tree, timestep, return_fpost=False, T=None):
-        """Advance the fluid with delayed buoyancy.
+    # post_collision returns stack_populations stacks (see LBMBase.post_collision)
+    post_collision_per_direction = True
 
-        Parameters
-        ----------
-        f_poststreaming_tree (pytree of jax.numpy.ndarray): Component populations.
-        timestep (int): Current timestep.
-        return_fpost (bool, optional): Whether to return post-collision populations.
-        T (jax.numpy.ndarray, optional): Temperature field.
-
-        Returns
-        -------
-        tuple: Post-streaming and optional post-collision populations.
-        """
-        f_postcollision_tree = self.collision(f_poststreaming_tree, T=T)
-        f_postcollision_tree = self.add_buoyancy(f_poststreaming_tree, f_postcollision_tree, timestep)
-        f_postcollision_tree = self.apply_bc(f_postcollision_tree, f_poststreaming_tree, timestep, "PostCollision")
-        f_poststreaming_tree = tree_map(self.streaming, f_postcollision_tree)
-        f_poststreaming_tree = self.apply_bc(f_poststreaming_tree, f_postcollision_tree, timestep, "PostStreaming")
-        return f_poststreaming_tree, f_postcollision_tree if return_fpost else None
+    def post_collision(self, f_postcollision_tree, f_poststreaming_tree, timestep):
+        """Apply the delayed buoyancy to the post-collision populations (see add_buoyancy)."""
+        return self.add_buoyancy(f_poststreaming_tree, f_postcollision_tree, timestep)
 
 
 class PoolBoiling3D(MultiphaseThermal):
@@ -215,24 +200,25 @@ class PoolBoiling3D(MultiphaseThermal):
         self.thermal_BCs.append(DirichletTemperature(tuple(bbox["bottom"].T), prescribed=T_bottom))
         self.thermal_BCs.append(DirichletTemperature(tuple(bbox["top"].T), prescribed=T_top))
 
-    @partial(jit, static_argnums=(0, 4), donate_argnums=(1, 2))
-    def step(self, T_prev, f_poststreaming_tree, timestep, return_fpost=False):
+    @partial(jit, static_argnums=(0, 4))
+    def step(self, T_prev, state_tree, timestep, return_fpost=False):
         """Advance the coupled fields with timestep-aware buoyancy.
 
         Parameters
         ----------
         T_prev (jax.numpy.ndarray): Previous temperature field.
-        f_poststreaming_tree (pytree of jax.numpy.ndarray): Component populations.
+        state_tree (list of PopulationState): Fluid states (see Multiphase.step).
         timestep (int): Current timestep.
         return_fpost (bool, optional): Whether to return post-collision populations.
 
         Returns
         -------
-        tuple: Temperature, post-streaming, and post-collision populations.
+        tuple: Temperature, fluid states, and optional post-collision populations.
         """
         T = self.precision_policy.cast_to_compute(T_prev)
         T = self.apply_bc(T, timestep)
         fluid = self.fluid_solver
+        f_poststreaming_tree = [fluid.stream(state) for state in state_tree]
         rho_tree, u_tree, force_tree = fluid.force_corrected_fields(f_poststreaming_tree, T, timestep)
 
         # The collision reuses force_tree (same populations and temperature): the fluid step and its collision are traced
@@ -242,13 +228,13 @@ class PoolBoiling3D(MultiphaseThermal):
         fluid._shared_force = force_tree
         fluid.collision = lambda fin_tree, T=None: collision(fluid, fin_tree, T=T)
         try:
-            f_poststreaming_tree, f_postcollision_tree = fluid_step(fluid, f_poststreaming_tree, timestep, return_fpost, T)
+            state_tree, f_postcollision_tree = fluid_step(fluid, state_tree, timestep, return_fpost, T)
         finally:
             fluid._shared_force = None
             del fluid.collision
         T = self._advance_temperature(T, timestep, rho_tree, u_tree)
         T = self.apply_bc(T, timestep)
-        return self.precision_policy.cast_to_output(T), f_poststreaming_tree, f_postcollision_tree
+        return self.precision_policy.cast_to_output(T), state_tree, f_postcollision_tree
 
     @partial(jit, static_argnums=(0,), inline=True)
     def RHS(self, T, rho_tree, u_tree):

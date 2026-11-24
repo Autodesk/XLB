@@ -5,6 +5,7 @@ apply()/prepare_populations() (global indices) exactly, for both LBMBase and Mul
 
 import jax.numpy as jnp
 import numpy as np
+from _boundary_pass import boundary_pass, reference_poststreaming
 
 from jax_lab.core.boundary_conditions import (
     BounceBackHalfway,
@@ -105,11 +106,9 @@ def _expected_and_actual_single_phase(bc_class, with_vel):
     fin = _random_fin(sim.assign_fields_sharded().shape, sim.precision_policy.output_dtype)
     bc = sim.BCs[0]
 
-    # Ground truth: the boundary condition's own (global-index) prepare_populations + apply.
-    expected_full = bc.prepare_populations(jnp.array(fin), fin, "PostStreaming")
-    expected_full = expected_full.at[bc.indices].set(bc.apply(expected_full, fin))
-
-    actual_full = sim.apply_bc(jnp.array(fin), fin, 0, "PostStreaming")
+    # Ground truth: the boundary condition's own (global-index) prepare_populations + apply on the streamed populations
+    expected_full = reference_poststreaming(sim, bc, fin)
+    _, actual_full = boundary_pass(sim, fin, fin)
 
     expected_fluid = np.asarray(expected_full)[bc.indices]
     actual_fluid = np.asarray(actual_full)[bc.indices]
@@ -151,11 +150,8 @@ def _check_multiphase(bc_class, with_vel, tolerance=0.0):
     fin = _random_fin(fin_tree[0].shape, sim.precision_policy.output_dtype)
     bc = sim.BCs[0][0]
 
-    expected_full = bc.prepare_populations(jnp.array(fin), fin, "PostStreaming")
-    expected_full = expected_full.at[bc.indices].set(bc.apply(expected_full, fin))
-
-    actual_tree = sim.apply_bc([jnp.array(fin)], [fin], 0, "PostStreaming")
-    actual_full = actual_tree[0]
+    expected_full = reference_poststreaming(sim, bc, fin)
+    _, actual_full = boundary_pass(sim, fin, fin)
 
     fluid_diff = np.abs(np.asarray(actual_full)[bc.indices] - np.asarray(expected_full)[bc.indices])
     solid_diff = np.abs(np.asarray(actual_full)[tuple(bc.solid_indices)] - np.asarray(expected_full)[tuple(bc.solid_indices)])

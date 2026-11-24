@@ -16,28 +16,32 @@ import numpy as np
 import orbax.checkpoint as orb
 from jax import jit, shard_map
 from jax.experimental.multihost_utils import process_allgather
-from jax.sharding import NamedSharding, PartitionSpec
+from jax.sharding import PartitionSpec
 
 # Third-party libraries
 from jax.tree import map as tree_map
 from jax.tree import reduce
 
-from ..base import Components, LBMBase, _lattice_dot, _lattice_sum, component_mode, lattice_density_momentum, matvec_components, stack_components
+from ..base import (
+    Components,
+    LBMBase,
+    advance_quiet_steps,
+    quiet_steps,
+    _lattice_dot,
+    _lattice_sum,
+    component_mode,
+    lattice_density_momentum,
+    matvec_components,
+    stack_components,
+)
 
 # User-defined libraries
 from ..boundary_conditions import (
-    INLET_OUTLET_BC_TYPES,
-    NEQ_BC_TYPES,
-    WALL_BC_TYPES,
     BounceBack,
     BounceBackHalfway,
     BounceBackMoving,
-    EquilibriumBC,
-    ExactNonEquilibriumExtrapolation,
     InterpolatedBounceBackBouzidi,
     InterpolatedBounceBackDifferentiable,
-    ZouHe,
-    _neq_extrapolation_math,
     link_fullway_walls,
 )
 from ..lattice import LatticeD2Q9, LatticeD3Q19, LatticeD3Q27
@@ -175,16 +179,6 @@ class Multiphase(LBMBase):
         if uses_improved_wetting and self.n_devices > 1:
             self.global_min_max = jit(shard_map(self._global_min_max_m, mesh=self.mesh, in_specs=scalar_spec, out_specs=P(), check_vma=False))
         self.local_geometric_wetting = None
-        self._uses_local_neq_bc = self.n_devices > 1 and any(type(bc) in NEQ_BC_TYPES for component_bcs in self.BCs for bc in component_bcs)
-        if self._uses_local_neq_bc:
-            self.neq_bc_data = self._make_local_neq_bc_data()
-            variants = {data[:2] for component_data in self.neq_bc_data for data in component_data if data is not None}
-            exact_bc = next(
-                (bc for component_bcs in self.BCs for bc in component_bcs if type(bc) is ExactNonEquilibriumExtrapolation),
-                None,
-            )
-            correction_weights = tuple(np.asarray(exact_bc.w_NEQ).tolist()) if exact_bc is not None else None
-            self.local_neq_bc_kernels = self._build_local_neq_bc_kernels(scalar_spec, variants, correction_weights)
         G_ff_host = np.array(self.G_ff)
         # scalar_neighbor_sum: G_ff-weighted scalar neighbor sum, used by the wetting/average-density
         # denominator (one-x-halo _neighbor_stencil_m). scalar_gradient: fourth-order EFM gradient used by the
@@ -1273,6 +1267,32 @@ class Multiphase(LBMBase):
         totals = [t if t is not None else jnp.zeros_like(field) for t in totals]
         return jnp.concatenate(totals, axis=-1)
 
+    def neighbor_stencil(self, field, weights):
+        """
+        Weighted sum of a scalar field over its lattice neighbours, out = sum_i w_i field(x - c_i), in one fused pass (the
+        neighbours are slices of a padded copy of the field; no q-channel array is formed).
+
+        Parameters
+        ----------
+        field (jax.numpy.ndarray): Scalar field, shape (nx, ny, 1) or (nx, ny, nz, 1).
+
+        weights (array-like): Per-direction weights, shape (q,) for one output channel or (channels, q), e.g.
+            G_ff[None, :] * c for the vector sum_i G_ff_i c_i field(x - c_i) of a Shan-Chen force.
+
+        Returns
+        -------
+        (jax.numpy.ndarray): The weighted sums, shape (..., 1) or (..., channels).
+        """
+        weights = np.asarray(weights, dtype=np.float64)
+        key = (weights.shape, weights.tobytes())
+        stencils = self.__dict__.setdefault("_neighbor_stencils", {})
+        if key not in stencils:
+            spec = PartitionSpec("x")
+            stencils[key] = shard_map(
+                partial(self._neighbor_stencil_m, weights=weights), mesh=self.mesh, in_specs=spec, out_specs=spec, check_vma=False
+            )
+        return stencils[key](field)
+
     def _build_efm_gradient_offsets(self):
         """
         Collapse the fourth-order isotropic EFM gradient into static (offset, weight-vector) pairs.
@@ -1398,228 +1418,6 @@ class Multiphase(LBMBase):
     def _make_bounceback_mask(self):
         """One full-way BounceBack mask (or None) per component (see LBMBase._bounceback_mask_for)."""
         return [self._bounceback_mask_for(BCs) for BCs in self.BCs]
-
-    def _make_local_bounceback_indices(self):
-        """
-        Distribute one padded local BounceBack index array per component (self.BCs is a list of per-component
-        boundary condition lists for Multiphase, unlike the flat list in LBMBase).
-
-        Returns
-        -------
-        (list): One distributed local index array (or None) per component, see LBMBase._make_local_bounceback_indices.
-        """
-        sharding = NamedSharding(self.mesh, PartitionSpec("x", None, None))
-        local_bounceback_indices = []
-        for BCs in self.BCs:
-            local_indices = self._collect_bounceback_indices(BCs)
-            if local_indices is None:
-                local_bounceback_indices.append(None)
-                continue
-            indices = self.distributed_array_init(local_indices.shape, jnp.int32, init_val=local_indices, sharding=sharding)
-            indices.block_until_ready()
-            local_bounceback_indices.append(indices)
-        return local_bounceback_indices
-
-    def _make_local_wall_bc_data(self):
-        """
-        Distribute, per component and per concrete wall boundary condition type in WALL_BC_TYPES, the padded
-        local fluid-node indices and auxiliary data, plus one merged padded local solid-node index array per
-        component (self.BCs is a list of per-component boundary condition lists for Multiphase, unlike the flat
-        list in LBMBase).
-
-        Returns
-        -------
-        (list, list): One wall_bc_data dict and one solid-pin index array (or None) per component, see
-        LBMBase._make_local_wall_bc_data.
-        """
-        wall_bc_data_by_component = []
-        solid_pin_indices_by_component = []
-        for BCs in self.BCs:
-            wall_bc_data = {}
-            for bc_type, _, has_weights in WALL_BC_TYPES:
-                local_indices, (local_imissing, local_iknown, local_vel, local_weights) = self._collect_wall_bc_data(BCs, bc_type, has_weights)
-                wall_bc_data[bc_type] = (
-                    self._distribute_local(local_indices, jnp.int32),
-                    self._distribute_local(local_imissing, jnp.uint8),
-                    self._distribute_local(local_iknown, jnp.uint8),
-                    self._distribute_local(local_vel),
-                    self._distribute_local(local_weights),
-                )
-            wall_bc_data_by_component.append(wall_bc_data)
-            solid_pin_indices_by_component.append(self._distribute_local(self._collect_solid_pin_indices(BCs), jnp.int32))
-        return wall_bc_data_by_component, solid_pin_indices_by_component
-
-    def _make_local_inlet_outlet_data(self):
-        """
-        Distribute, per component and per (concrete type, prescribed-value type) pair in INLET_OUTLET_BC_TYPES,
-        the padded local fluid-node indices and auxiliary data (self.BCs is a list of per-component boundary
-        condition lists for Multiphase, unlike the flat list in LBMBase).
-
-        Returns
-        -------
-        (list): One inlet_outlet_bc_data dict per component, see LBMBase._make_local_inlet_outlet_data.
-        """
-        inlet_outlet_bc_data_by_component = []
-        for BCs in self.BCs:
-            inlet_outlet_bc_data = {}
-            for bc_type, ttype, _ in INLET_OUTLET_BC_TYPES:
-                local_indices, (local_normals, local_imiddle_mask, local_iknown_mask, local_imissing, local_iknown, local_prescribed) = (
-                    self._collect_inlet_outlet_bc_data(BCs, bc_type, ttype)
-                )
-                inlet_outlet_bc_data[(bc_type, ttype)] = (
-                    self._distribute_local(local_indices, jnp.int32),
-                    self._distribute_local(local_normals),
-                    self._distribute_local(local_imiddle_mask, jnp.bool_),
-                    self._distribute_local(local_iknown_mask, jnp.bool_),
-                    self._distribute_local(local_imissing, jnp.uint8),
-                    self._distribute_local(local_iknown, jnp.uint8),
-                    self._distribute_local(local_prescribed),
-                )
-            inlet_outlet_bc_data_by_component.append(inlet_outlet_bc_data)
-        return inlet_outlet_bc_data_by_component
-
-    def _make_local_equilibrium_bc_data(self):
-        """
-        Distribute, per component, the padded local EquilibriumBC indices and precomputed equilibrium values
-        (self.BCs is a list of per-component boundary condition lists for Multiphase, unlike the flat list in
-        LBMBase).
-
-        Returns
-        -------
-        (list, list): One distributed local index array and one distributed equilibrium-value array (or None)
-        per component, see LBMBase._make_local_equilibrium_bc_data.
-        """
-        indices_by_component = []
-        out_by_component = []
-        for BCs in self.BCs:
-            local_indices, local_out = self._collect_equilibrium_bc_data(BCs)
-            indices_by_component.append(self._distribute_local(local_indices, jnp.int32))
-            out_by_component.append(self._distribute_local(local_out))
-        return indices_by_component, out_by_component
-
-    def local_neq_bc_m(
-        self,
-        fout,
-        local_indices,
-        local_neighbor_indices,
-        local_imissing,
-        local_prescribed,
-        *,
-        exact,
-        needs_halo,
-        correction_weights,
-    ):
-        """Apply one static non-equilibrium extrapolation boundary using shard-local indices."""
-        indices = local_indices[0]
-        neighbor_indices = local_neighbor_indices[0]
-        prescribed = local_prescribed[0]
-
-        if needs_halo:
-            left_halo = self.send_right(fout[-1:], "x")
-            right_halo = self.send_left(fout[:1], "x")
-            neighbor_field = jnp.concatenate((left_halo, fout, right_halo), axis=0)
-            neighbor_indices = neighbor_indices.at[:, 0].add(1)
-        else:
-            neighbor_field = fout
-
-        idx = tuple(indices[:, axis] for axis in range(self.dim))
-        neighbor_idx = tuple(neighbor_indices[:, axis] for axis in range(self.dim))
-        fbd = fout.at[idx].get(mode="fill", fill_value=0.0)
-        f_nbr = neighbor_field.at[neighbor_idx].get(mode="fill", fill_value=0.0)
-
-        c = jnp.asarray(self.lattice.c, dtype=self.precision_policy.compute_dtype)
-        imissing = local_imissing[0]
-        fbd = _neq_extrapolation_math(
-            fbd,
-            f_nbr,
-            prescribed,
-            imissing,
-            self.lattice.w,
-            c,
-            correction_weights if exact else None,
-        )
-
-        return fout.at[idx].set(fbd, mode="drop")
-
-    def _build_local_neq_bc_kernels(self, field_spec, variants, correction_weights):
-        """Build only extrapolation-kernel variants used by configured multiphase boundaries."""
-        P = PartitionSpec
-        aux_spec = P("x", None, None)
-        return {
-            (exact, needs_halo): jit(
-                shard_map(
-                    partial(
-                        self.local_neq_bc_m,
-                        exact=exact,
-                        needs_halo=needs_halo,
-                        correction_weights=correction_weights if exact else None,
-                    ),
-                    mesh=self.mesh,
-                    in_specs=(field_spec, aux_spec, aux_spec, aux_spec, aux_spec),
-                    out_specs=field_spec,
-                    check_vma=False,
-                )
-            )
-            for exact, needs_halo in variants
-        }
-
-    @staticmethod
-    def _expand_neq_prescribed(values, count):
-        """Normalize prescribed density to one row per boundary node."""
-        values = np.asarray(values)
-        if values.ndim == 0:
-            return np.full((count, 1), values.item(), dtype=values.dtype)
-        if values.ndim == 1:
-            if values.shape[0] == count:
-                return values[:, None]
-            return np.broadcast_to(values, (count, values.shape[0])).copy()
-        if values.shape[0] == count:
-            return values
-        return np.broadcast_to(values, (count, *values.shape)).copy()
-
-    def _collect_neq_bc_data(self, bc):
-        """Build local data for one multiphase non-equilibrium extrapolation boundary."""
-        if type(bc) not in NEQ_BC_TYPES:
-            return None
-        if not bc.neighbors_found:
-            bc.find_neighbors()
-            bc.neighbors_found = True
-
-        indices = np.asarray(bc.indices, dtype=np.int32).T
-        if len(indices) == 0:
-            return None
-        neighbor_indices = np.asarray(bc.indices_nbr, dtype=np.int32).T
-        prescribed = self._expand_neq_prescribed(bc.prescribed, len(indices))
-        imissing = np.asarray(bc.imissing)
-        local_indices, (local_neighbors, local_imissing, local_prescribed) = self._split_local_indices(
-            indices,
-            neighbor_indices,
-            imissing,
-            prescribed,
-        )
-
-        local_nx = self.nx // self.n_devices
-        owner = indices[:, 0] // local_nx
-        needs_halo = False
-        for device in range(self.n_devices):
-            count = int(np.count_nonzero(owner == device))
-            if count == 0:
-                continue
-            local_neighbors[device, :count, 0] -= device * local_nx
-            needs_halo = needs_halo or bool(np.any((local_neighbors[device, :count, 0] < 0) | (local_neighbors[device, :count, 0] >= local_nx)))
-
-        return (
-            type(bc) is ExactNonEquilibriumExtrapolation,
-            needs_halo,
-            self._distribute_local(local_indices, jnp.int32),
-            self._distribute_local(local_neighbors, jnp.int32),
-            self._distribute_local(local_imissing, jnp.uint8),
-            self._distribute_local(local_prescribed, self.precision_policy.compute_dtype),
-        )
-
-    def _make_local_neq_bc_data(self):
-        """Build local extrapolation data per component while preserving BC ordering."""
-        return [[self._collect_neq_bc_data(bc) for bc in component_bcs] for component_bcs in self.BCs]
 
     @partial(jit, static_argnums=(0, 3), inline=True)
     def equilibrium(self, rho_tree, u_tree, cast_output=True):
@@ -2453,149 +2251,51 @@ class Multiphase(LBMBase):
         )
         return tree_map(lambda f_postcollision, delta_feq: f_postcollision + delta_feq, f_postcollision_tree, delta_feq_tree)
 
-    @partial(jit, static_argnums=(0, 4), donate_argnums=(1,))
-    def apply_bc(self, fout_tree, fin_tree, timestep, implementation_step):
-        """
-        This function extends apply_bc to pytrees.
+    def _make_streaming_bc_data(self):
+        """Boundary data of the time step, one per component (see LBMBase.prepare_streaming)."""
+        return [self._streaming_bcs(BCs, mask is not None) for BCs, mask in zip(self.BCs, self.bounceback_mask, strict=True)]
 
-        Full-way BounceBack, every wall boundary condition in WALL_BC_TYPES (BounceBackHalfway,
-        InterpolatedBounceBackBouzidi, InterpolatedBounceBackDifferentiable), EquilibriumBC, and every inlet/
-        outlet boundary condition in INLET_OUTLET_BC_TYPES (ZouHe, Regularized) are handled separately per
-        component, in batched calls using local (per-shard, int32) indices, instead of the generic per-BC
-        global-index loop.
+    @partial(jit, static_argnums=(0,))
+    def state_from_populations(self, f_tree):
+        """The per-component states whose streamed populations are f_tree (see LBMBase.state_from_populations)."""
+        return [LBMBase.state_from_populations.__wrapped__(self, f) for f in f_tree]
+
+    @partial(jit, static_argnums=(0,))
+    def poststreaming(self, state_tree):
+        """Post-streaming populations of the per-component states, as (..., q) arrays."""
+        return [self.stream(state) for state in state_tree]
+
+    @partial(jit, static_argnums=(0, 3))
+    def step(self, state_tree, timestep, return_fpost=False, T=None):
+        """
+        One time step of every component: pull streaming, collision and the boundary conditions (see LBMBase.step). The
+        interaction force is computed from the streamed populations of all components inside the collision.
 
         Parameters
         ----------
-        fout_tree (pytree of jax.numpy.ndarray): The post-collision or post-streaming distribution functions where bc
-            needs to be applied.
+        state_tree (list of PopulationState): Post-collision populations of the previous step, per component.
 
-        fin_tree (pytree of jax.numpy.ndarray): The pre-collision or post-collision distribution functions.
+        timestep (int): Current timestep.
 
-        timestep (int): Current simulation timestep, used by dynamic boundary conditions.
+        return_fpost (bool): Also return the post-collision populations (list of (..., q) arrays).
 
-        implementation_step (str): The implementation step at which the boundary conditions should be applied.
-
-        Returns
-        -------
-        (pytree of jax.numpy.ndarray): The output distribution functions after applying the boundary conditions.
-        """
-
-        def _apply_bc_(fin, fout, bc):
-            if isinstance(bc, (BounceBack, BounceBackHalfway, EquilibriumBC, ZouHe)):
-                return fout
-            fout = bc.prepare_populations(fout, fin, implementation_step)
-            if bc.implementation_step == implementation_step:
-                if bc.is_dynamic:
-                    fout = bc.apply(fout, fin, timestep)
-                else:
-                    fout = fout.at[bc.indices].set(bc.apply(fout, fin))
-            return fout
-
-        def __apply_bc__(fout, fin, BCs, component_neq_data=None):
-            for bc_index, bc in enumerate(BCs):
-                local_neq_data = component_neq_data[bc_index] if component_neq_data is not None else None
-                if local_neq_data is not None:
-                    exact, needs_halo, local_indices, local_neighbors, local_imissing, local_prescribed = local_neq_data
-                    if bc.implementation_step == implementation_step:
-                        fout = self.local_neq_bc_kernels[(exact, needs_halo)](
-                            fout,
-                            local_indices,
-                            local_neighbors,
-                            local_imissing,
-                            local_prescribed,
-                        )
-                    continue
-                fout = _apply_bc_(fin, fout, bc)
-            return fout
-
-        if self._uses_local_neq_bc:
-            fout_tree = [
-                __apply_bc__(fout, fin, BCs, component_neq_data)
-                for fout, fin, BCs, component_neq_data in zip(fout_tree, fin_tree, self.BCs, self.neq_bc_data, strict=True)
-            ]
-        else:
-            fout_tree = [__apply_bc__(fout, fin, BCs) for fout, fin, BCs in zip(fout_tree, fin_tree, self.BCs, strict=True)]
-
-        if implementation_step == "PostCollision":
-            # Components whose bounce-back the collision already applied (see LBMBase.apply_fused_bounceback) are skipped
-            fused = self._collision_applies_bounceback()
-            fout_tree = [
-                self.local_bounceback(fout, fin, local_indices) if local_indices is not None and not (fused and mask is not None) else fout
-                for fout, fin, local_indices, mask in zip(fout_tree, fin_tree, self.local_bounceback_indices, self.bounceback_mask, strict=True)
-            ]
-
-        if implementation_step == "PostStreaming":
-            new_fout_tree = []
-            for fout, fin, wall_bc_data, solid_pin_indices, inlet_outlet_bc_data, equilibrium_bc_indices, equilibrium_bc_values in zip(
-                fout_tree,
-                fin_tree,
-                self.wall_bc_data,
-                self.solid_pin_indices,
-                self.inlet_outlet_bc_data,
-                self.local_equilibrium_bc_indices,
-                self.local_equilibrium_bc_values,
-                strict=True,
-            ):
-                if solid_pin_indices is not None:
-                    fout = self.local_solid_pin(fout, solid_pin_indices)
-                for bc_type, _, _ in WALL_BC_TYPES:
-                    local_indices, local_imissing, local_iknown, local_vel, local_weights = wall_bc_data[bc_type]
-                    if local_indices is not None:
-                        fout = self.local_wall_bc_kernels[bc_type](fout, fin, local_indices, local_imissing, local_iknown, local_vel, local_weights)
-                if equilibrium_bc_indices is not None:
-                    fout = self.local_equilibrium_bc(fout, equilibrium_bc_indices, equilibrium_bc_values)
-                for bc_type, ttype, _ in INLET_OUTLET_BC_TYPES:
-                    local_indices, local_normals, local_imiddle_mask, local_iknown_mask, local_imissing, local_iknown, local_prescribed = (
-                        inlet_outlet_bc_data[(bc_type, ttype)]
-                    )
-                    if local_indices is not None:
-                        fout = self.local_inlet_outlet_kernels[(bc_type, ttype)](
-                            fout, local_indices, local_normals, local_imiddle_mask, local_iknown_mask, local_imissing, local_iknown, local_prescribed
-                        )
-                new_fout_tree.append(fout)
-            fout_tree = new_fout_tree
-
-        return fout_tree
-
-    @partial(jit, static_argnums=(0, 3), donate_argnums=(1,))
-    def step(self, f_poststreaming_tree, timestep, return_fpost=False, T=None):
-        """
-        This function performs a single step of the LBM simulation.
-
-        It first performs the collision step, which is the relaxation of the distribution functions
-        towards their equilibrium values. It then applies the respective boundary conditions to the
-        post-collision distribution functions.
-
-        The function then performs the streaming step, which is the propagation of the distribution
-        functions in the lattice. It then applies the respective boundary conditions to the post-streaming
-        distribution functions.
-
-        Parameters
-        ----------
-        f_poststreaming_tree (pytree of jax.numpy.ndarray): Post-streaming distribution function.
-
-        timestep (int): Current timestep
-
-        return_fpost (bool): Return post-collision distribution function (pytree).
-
-        T (jax.numpy.ndarray, optional): Temperature field, required when the EOS is thermal
-        (see the hybrid thermal solver in thermal.py).
+        T (jax.numpy.ndarray, optional): Temperature field, required when the EOS is thermal (see the hybrid thermal
+        solver in thermal.py).
 
         Returns
         -------
-        f_poststreaming_tree (pytree of jax.numpy.ndarray): Post-streamed distribution function.
+        state_tree (list of PopulationState): The states after this step.
 
-        f_collision_tree (pytree of jax.numpy.ndarray {Optional}): Post-collision distribution function.
+        f_postcollision_tree (list of jax.numpy.ndarray or None): Post-collision populations, or None.
         """
-        f_postcollision_tree = self._direction_major_hint(self.collision(f_poststreaming_tree, T=T))
-        f_postcollision_tree = self.apply_bc(f_postcollision_tree, f_poststreaming_tree, timestep, "PostCollision")
-        f_poststreaming_tree = self._direction_major_hint(tree_map(lambda f_postcollision: self.streaming(f_postcollision), f_postcollision_tree))
-        f_poststreaming_tree = self.apply_bc(f_poststreaming_tree, f_postcollision_tree, timestep, "PostStreaming")
-
-        if return_fpost:
-            return f_poststreaming_tree, f_postcollision_tree
-        else:
-            return f_poststreaming_tree, None
+        f_poststreaming_tree = [self.stream(state) for state in state_tree]
+        f_postcollision_tree = self.post_collision(self.collision(f_poststreaming_tree, T=T), f_poststreaming_tree, timestep)
+        results = [
+            self._prepare_streaming(f_postcollision, state, timestep, bc_data)
+            for f_postcollision, state, bc_data in zip(f_postcollision_tree, state_tree, self.streaming_bc_data, strict=True)
+        ]
+        new_state_tree = [state for state, _ in results]
+        return new_state_tree, ([jnp.stack(fields, axis=-1) for _, fields in results] if return_fpost else None)
 
     def run(self, t_max):
         """
@@ -2636,15 +2336,23 @@ class Multiphase(LBMBase):
                 if not (t_max > start_step):
                     raise ValueError(f"Simulation already exceeded maximum allowable steps (t_max  = {t_max}). Consider increasing t_max.")
 
-        # Inside the time loop the populations are held direction-major in device memory (see
-        # LBMBase._direction_major_step); they are moved back to the default layout wherever they leave the loop.
-        f_tree = self._to_direction_major(f_tree)
-        step = self._direction_major_step(f_tree, False)
+        # The loop advances the per-component states (post-collision populations, see step); the post-streaming
+        # populations are formed from them only where they are used (output, checkpoints, the returned value)
+        state_tree = self.state_from_populations(f_tree)
+        del f_tree
+        # Compile the device loop up front (a zero-step call), so that it is not timed (MLUPS)
+        state_tree = self.advance(state_tree, start_step, 0)
         if self.compute_MLUPS:
             start = time.time()
 
         # Loop over all time steps
-        for timestep in range(start_step, t_max + 1):
+        timestep = start_step
+        while timestep <= t_max:
+            # Steps without host-side events, see advance_quiet_steps
+            quiet = quiet_steps(timestep, t_max, self.io_rate, self.print_info_rate, self.checkpoint_rate)
+            if quiet:
+                state_tree, timestep = advance_quiet_steps(self, state_tree, timestep, quiet, self.advance, lambda s, t: self.step(s, t)[0])
+                continue
             io_flag = self.io_rate > 0 and (timestep % self.io_rate == 0 or timestep == t_max)
             print_iter_flag = self.print_info_rate > 0 and timestep % self.print_info_rate == 0
             checkpoint_flag = self.checkpoint_rate > 0 and timestep % self.checkpoint_rate == 0
@@ -2676,8 +2384,9 @@ class Multiphase(LBMBase):
             #     rho_total_prev = process_allgather(rho_total_prev)
             #     u_total_prev = process_allgather(u_total_prev)
 
-            # Perform one time-step (collision, streaming, and boundary conditions)
-            f_tree, fstar_tree = step(f_tree, timestep)
+            # Perform one time-step (streaming, collision, and boundary conditions)
+            state_tree, fstar_tree = self.step(state_tree, timestep, io_flag and self.return_fpost)
+            f_tree = self.poststreaming(state_tree) if (io_flag or checkpoint_flag) else None
 
             # Print the progress of the simulation
             if print_iter_flag:
@@ -2717,8 +2426,8 @@ class Multiphase(LBMBase):
                 # Save the data
                 self.handle_io_timestep(
                     timestep,
-                    self._to_default_layout(f_tree),
-                    self._to_default_layout(fstar_tree),
+                    f_tree,
+                    fstar_tree,
                     p_tree,
                     p_total,
                     u_tree,
@@ -2738,20 +2447,20 @@ class Multiphase(LBMBase):
                 logger.info(f"Saving checkpoint at timestep {timestep}/{t_max}")
                 state = {}
                 c_name = lambda i: f"component_{i}"
-                f_saved = self._to_default_layout(f_tree)
                 for i in range(self.n_components):
-                    state[c_name(i)] = f_saved[i]
+                    state[c_name(i)] = f_tree[i]
 
                 self.mngr.save(timestep, args=orb.args.StandardSave(state))
 
             # Start the timer for the MLUPS computation after the first timestep (to remove compilation overhead)
             if self.compute_MLUPS and timestep == 1:
-                jax.block_until_ready(f_tree)
+                jax.block_until_ready(state_tree)
                 start = time.time()
+            timestep += 1
 
         if self.compute_MLUPS:
             # Compute and print the performance of the simulation in MLUPS
-            jax.block_until_ready(f_tree)
+            jax.block_until_ready(state_tree)
             end = time.time()
             if self.dim == 2:
                 logger.info(
@@ -2785,7 +2494,7 @@ class Multiphase(LBMBase):
         self._output_writer.finish()
         if self.mngr is not None:
             self.mngr.wait_until_finished()
-        return self._to_default_layout(f_tree)
+        return self.poststreaming(state_tree)
 
     def handle_io_timestep(
         self,
@@ -2871,10 +2580,6 @@ class Multiphase(LBMBase):
 class MultiphaseBGK(Multiphase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-    # Direction-major populations in run() by default (with the per-direction collision: +68% in 3D, +4% in 2D;
-    # see LBMBase._direction_major_step)
-    _direction_major_dims = (2, 3)
 
     def _collision_applies_bounceback(self):
         """The per-direction collision applies the full-way bounce-back itself (see LBMBase.apply_fused_bounceback)."""
@@ -2967,9 +2672,6 @@ class MultiphaseMRT(Multiphase):
     equilibrium, compute_force or adjust_surface_tension methods, wetting schemes and the
     kappa surface-tension term are handled inside it (see collision()).
     """
-
-    # Direction-major populations in run() by default (2.2-4.4x faster in 3D, 4-9% in 2D; see LBMBase._direction_major_step)
-    _direction_major_dims = (2, 3)
 
     def _collision_applies_bounceback(self):
         """The fused collision (every configuration) applies the full-way bounce-back itself (see LBMBase.apply_fused_bounceback)."""
@@ -4375,31 +4077,23 @@ class MultiphaseCascade(Multiphase):
         psi_tree = self.compute_potential(rho_tree, T=T)
         return self._apply_force_fields(Tdash_tree, F_tree, psi_tree)
 
-    # Direction-major populations in run() by default (with the component-mode collision: +46% in 3D, +6% in 2D;
-    # see LBMBase._direction_major_step)
-    _direction_major_dims = (2, 3)
-
-    _CASCADE_TRANSFORMS = (
-        "compute_central_moment",
-        "compute_central_moment_inverse",
-        "compute_eq_central_moments",
-        "compute_force_central_moments",
-        "_apply_force_fields",
-    )
-
     def _collision_applies_bounceback(self):
         """The per-direction collision applies the full-way bounce-back itself (see LBMBase.apply_fused_bounceback)."""
-        return (
-            type(self).collision is MultiphaseCascade.collision and self._uses_default_cascade_apply_force and self._uses_default_cascade_transforms()
-        )
+        return type(self).collision is MultiphaseCascade.collision and self._uses_component_collision()
 
-    def _uses_default_cascade_transforms(self):
-        """Whether all moment transforms used by the collision are this class's own (then the component-mode collision applies)."""
-        return all(getattr(type(self), name) is getattr(MultiphaseCascade, name) for name in self._CASCADE_TRANSFORMS)
+    def _uses_component_collision(self):
+        """
+        Whether collision() takes the per-direction (component-mode) formulation: always, unless a subclass overrides the forcing
+        step on stacked (..., q) moments (apply_force or _apply_force_fields), which only the array formulation calls. Overridden
+        moment transforms (compute_central_moment, compute_central_moment_inverse, compute_eq_central_moments,
+        compute_force_central_moments) are traced in component mode, so they must read components as x[..., k] and build their
+        output with stack_components.
+        """
+        return self._uses_default_cascade_apply_force and type(self)._apply_force_fields is MultiphaseCascade._apply_force_fields
 
     def _collision_components(self, fin_tree, rho_tree, u_tree, F_tree, psi_tree):
         """
-        The cascaded collision evaluated per lattice direction (component mode), for the default moment transforms.
+        The cascaded collision evaluated per lattice direction (component mode).
 
         Same algorithm as the array path of collision(): raw moments f @ M, shift to central moments, relaxation
         Tdash @ (I - S) + Tdash_eq @ S, forcing C @ (I - S / 2), shift back, populations @ M_inv. Here the (..., q) intermediates
@@ -4411,7 +4105,8 @@ class MultiphaseCascade(Multiphase):
         dtype = self.precision_policy.compute_dtype
         q = self.lattice.q
         eye = np.eye(q)
-        transform = lambda name: getattr(MultiphaseCascade, name).__wrapped__
+        # The class's own (possibly overridden) transforms, unjitted, so that they trace in component mode
+        transform = lambda name: getattr(getattr(type(self), name), "__wrapped__", getattr(type(self), name))
         with component_mode():
             m_tree = [
                 matvec_components(Components([f[..., i] for i in range(q)], dtype), self.sparse_collision_terms(np.asarray(M)), dtype)
@@ -4462,7 +4157,7 @@ class MultiphaseCascade(Multiphase):
         else:
             u_tree = self.macroscopic_velocity(fin_tree, rho_tree, T=T)
             F_tree = self.compute_force(rho_tree, T=T)
-        if self._uses_default_cascade_apply_force and self._uses_default_cascade_transforms():
+        if self._uses_component_collision():
             if force_psi_tree is None or (self.wetting_formulation is not None and any(self._has_wetting_bc)):
                 psi_tree = self.compute_potential(rho_tree, T=T)
             else:
